@@ -157,7 +157,7 @@ bằng bất kỳ markdown viewer nào.
 | Giao diện | Next.js hoặc Streamlit (đội tự chọn, hướng dẫn ở chương 6) |
 | Lint / test | ruff + pytest 8 |
 | DevOps | Docker + GitHub Actions |
-
+123
 ## AI usage logging
 
 Mọi prompt được ghi vào `.ai-log/session.jsonl` và tự động gửi lên grading server
