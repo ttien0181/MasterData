@@ -4,10 +4,6 @@
 
 _Nhóm T119: LNTT.exe_
 
-**Ghi chú phiên bản (v2)**
-
-Bản này chỉnh sửa theo góp ý của mentor sau vòng review lần 1. Các phần được sửa/bổ sung: (1) thêm vai trò Viewer; (2) tách rõ 2 agent matching (Rule Agent + Embedding Agent) và cơ chế hợp nhất quyết định; (3) đưa Active Learning từ Roadmap vào thiết kế MVP; (4) đặc tả riêng cơ chế Split (tách bản ghi) khác với Rollback; (5) bổ sung mô tả tập dữ liệu gán nhãn cho việc đánh giá; (6) rút gọn Phần 4 — nhóm tự đề xuất phương án trước, chỉ giữ lại câu hỏi thật sự cần mentor phản biện. Các phần còn lại giữ nguyên nội dung gốc.
-
 # Phần 1. 1-Page Brief
 
 **Định vị:** AI Agent phát hiện dữ liệu trùng, chuẩn hóa và xây dựng Golden Record có kiểm soát (HITL)
@@ -67,8 +63,6 @@ MasterOne là nền tảng AI-powered Master Data Resolution có Data Quality Ga
 ## 2.3 Vai trò & quyền hạn
 
 <div class="joplin-table-wrapper"><table><thead><tr><th><p><strong>Vai trò</strong></p></th><th><p><strong>Trách nhiệm chính</strong></p></th><th><p><strong>Quyền hạn</strong></p></th></tr></thead><tbody><tr><td><p>Data Steward</p></td><td><ul><li>Kết nối/upload dữ liệu</li><li>Xem lỗi chuẩn hóa &amp; duplicate candidates</li><li>Xem giải thích matching</li><li>Sửa golden record, submit merge</li><li>Xử lý case AI không chắc chắn</li></ul></td><td><p>Đề xuất &amp; thao tác thường ngày, không tự duyệt merge rủi ro cao</p></td></tr><tr><td><p>Data Approver / Manager</p></td><td><ul><li>Duyệt rule chuẩn hóa mới</li><li>Duyệt merge rủi ro cao</li><li>Xem audit log, rollback, duyệt split</li><li>Quản lý policy &amp; theo dõi chất lượng dữ liệu</li></ul></td><td><p>Quyền phê duyệt cao nhất, chịu trách nhiệm governance</p></td></tr><tr><td><p>Viewer</p></td><td><ul><li>Xem Dashboard, Cluster Detail, Golden Record, Merge History</li><li>Xem báo cáo Evaluation</li><li>Không upload, không chỉnh sửa, không duyệt</li></ul></td><td><p>Chỉ đọc (read-only) trên toàn hệ thống</p></td></tr></tbody></table></div>
-
-Viewer được bổ sung theo đúng phạm vi Cơ bản của đề bài (2 vai trò Steward/Viewer). Approver được giữ lại như một vai trò mở rộng cho luồng HITL rủi ro cao, tách biệt với Viewer về mặt quyền hạn.
 
 ## 2.4 Kiến trúc luồng xử lý
 
@@ -205,70 +199,3 @@ Baseline so sánh: (1) Exact match, (2) Fuzzy only, (3) Fuzzy + Embedding, (4) P
 V1: Core DATA-12 + DATA-17 (đã gồm Active Learning mức cơ bản trong MVP) → V2: Source Trust → V3: Active Learning nâng cao (re-train tự động) → V4: Temporal Identity → V5: Identity Graph → V6: Realtime Entity Resolution → V7: Master Data Intelligence Platform.
 
 Ưu tiên mở rộng đầu tiên sau MVP: Source Trust — vì Active Learning mức cơ bản đã được đưa vào MVP (2.5.4), bước tiếp theo gần với core nhất là Source Trust, giúp tăng độ tin cậy của Golden Record Agent khi các nguồn có lịch sử sai khác nhau.
-
-# Phần 3. Wireframe / UI Flow
-
-Mô tả các màn hình chính và luồng thao tác của người dùng. Đây là bản wireframe mô tả (nội dung & cấu trúc màn hình); có thể dựng thành mockup trực quan (Figma) ở bước tiếp theo.
-
-## 3.1 Danh sách màn hình
-
-<div class="joplin-table-wrapper"><table><thead><tr><th><p><strong>Màn hình</strong></p></th><th><p><strong>Mục đích</strong></p></th><th><p><strong>Thành phần chính</strong></p></th></tr></thead><tbody><tr><td><p>Dashboard</p></td><td><p>Tổng quan sức khỏe dữ liệu &amp; tiến độ xử lý</p></td><td><ul><li>Số liệu: duplicate rate, golden coverage, false merge rate</li><li>Danh sách job gần đây theo trạng thái</li><li>Cảnh báo cần xử lý (pending review)</li></ul></td></tr><tr><td><p>Data Sources</p></td><td><p>Kết nối &amp; quản lý nguồn dữ liệu</p></td><td><ul><li>Danh sách nguồn (CRM/ERP/Billing/CSV)</li><li>Nút kết nối/upload mới</li><li>Trạng thái đồng bộ gần nhất</li></ul></td></tr><tr><td><p>Standardization Review</p></td><td><p>Duyệt rule chuẩn hóa trước khi áp dụng</p></td><td><ul><li>Bảng Before → After theo từng rule</li><li>Bộ lọc theo loại trường (tên, SĐT, địa chỉ)</li><li>Nút Approve / Reject / Edit rule</li></ul></td></tr><tr><td><p>Duplicate Queue</p></td><td><p>Xử lý hàng đợi các cặp/nhóm nghi trùng</p></td><td><ul><li>Danh sách candidate theo confidence score, có cờ conflict (Rule vs Embedding lệch nhau)</li><li>Bộ lọc theo trạng thái (chưa xử lý/đã duyệt)</li><li>Truy cập nhanh vào Cluster Detail</li></ul></td></tr><tr><td><p>Cluster Detail</p></td><td><p>Xem chi tiết một cụm bản ghi nghi trùng</p></td><td><ul><li>Danh sách bản ghi trong cụm kèm nguồn gốc</li><li>Bảng so sánh trường theo từng nguồn</li><li>Giải thích lý do khớp, tách riêng đóng góp của Rule Agent và Embedding Agent</li><li>Hành động: Reject / Edit / Approve</li></ul></td></tr><tr><td><p>Golden Record Review</p></td><td><p>Duyệt đề xuất bản ghi master</p></td><td><ul><li>Bản ghi đề xuất với provenance từng trường</li><li>Trích dẫn chính sách governance áp dụng</li><li>Nút Approve (Steward) / Approve rủi ro cao (Approver)</li></ul></td></tr><tr><td><p>Merge History</p></td><td><p>Tra cứu lịch sử merge &amp; audit</p></td><td><ul><li>Bảng nhật ký: đề xuất AI, quyết định Steward/Approver, thời gian</li><li>Nút Rollback và nút Yêu cầu Split cho từng merge</li><li>Bộ lọc theo thời gian/người duyệt</li></ul></td></tr><tr><td><p>Evaluation</p></td><td><p>Theo dõi chất lượng hệ thống</p></td><td><ul><li>Biểu đồ Precision/Recall/F1 theo thời gian, tách theo Rule Agent / Embedding Agent / Arbiter</li><li>False Merge Rate, Blocking Recall</li><li>Human Acceptance Rate / Edit Rate</li><li>Biểu đồ đề xuất threshold từ Active Learning (chờ Approver duyệt)</li></ul></td></tr></tbody></table></div>
-
-## 3.2 Luồng thao tác chính (User Flow)
-
-Luồng của Data Steward, từ khi nạp dữ liệu đến khi có golden record được duyệt:
-
-- 1\. Vào Data Sources → kết nối/upload CRM + ERP
-- 2\. Hệ thống tự động chạy Profiling → chuyển sang Standardization Review
-- 3\. Steward xem Before/After, duyệt hoặc chỉnh rule chuẩn hóa (HITL #1)
-- 4\. Hệ thống chạy Blocking + Matching (Rule Agent // Embedding Agent chạy song song) → Decision Arbiter hợp nhất → sinh Duplicate Queue
-- 5\. Steward mở từng candidate trong Duplicate Queue → xem Cluster Detail, đọc giải thích matching (kể cả trường hợp 2 agent bất đồng)
-- 6\. Hệ thống đề xuất Golden Record cho từng cụm đã xác nhận → Steward Reject / Edit / Approve (HITL #2)
-- 7\. Nếu merge được đánh giá rủi ro cao → chuyển cho Approver duyệt (HITL #3)
-- 8\. Sau khi duyệt → hệ thống Merge, ghi Audit Log; Steward có thể yêu cầu Rollback hoặc Split nếu phát hiện sai (Split cần Approver duyệt)
-- 9\. Steward/Approver theo dõi chất lượng tổng thể tại Evaluation Dashboard; Viewer có thể xem toàn bộ các màn hình trên ở chế độ chỉ đọc
-
-## 3.3 Nguyên tắc thiết kế UI
-
-- Không có hành động merge nào diễn ra ẩn — mọi đề xuất AI đều hiển thị rõ evidence và cho phép chỉnh sửa trước khi duyệt
-- Phân biệt rõ trực quan giữa dữ liệu gốc (raw) và dữ liệu đã chuẩn hóa/golden (badge nguồn dữ liệu)
-- Ưu tiên hiển thị theo độ rủi ro/độ tin cậy (confidence) để Steward xử lý case quan trọng trước; case có cờ conflict giữa Rule Agent và Embedding Agent được ưu tiên hiển thị đầu hàng đợi
-- Luôn có lối ra rollback/split dễ tiếp cận từ Merge History
-
-# Phần 4. Câu hỏi cần giải đáp
-
-Nhóm đã tự đề xuất phương án ban đầu cho từng câu hỏi (in nghiêng) trước khi xin ý kiến mentor, để buổi trao đổi tập trung vào phản biện thay vì hỏi mở.
-
-## 4.1 Phạm vi & định vị sản phẩm
-
-**Đề xuất của nhóm:** _giữ nguyên phạm vi khách hàng/nhà cung cấp cho đến hết MVP để tập trung chiều sâu (chất lượng matching, HITL, governance); mở rộng sang sản phẩm/địa điểm/tài sản chỉ nên đặt ở roadmap V4–V5 khi Identity Graph đã sẵn sàng. Điểm khác biệt cốt lõi so với Informatica MDM/Reltio/IBM InfoSphere mà nhóm hướng tới là mức độ kiểm soát của con người (HITL ở từng bước rủi ro) và khả năng giải thích (explainability) chứ không cạnh tranh trực tiếp về độ phủ tính năng hay chi phí enterprise._
-
-- Câu hỏi cho mentor: Với định vị "kiểm soát + giải thích được" thay vì cạnh tranh tính năng, nhóm nên nhấn mạnh thêm khía cạnh nào để thuyết phục hơn trong bối cảnh đồ án học thuật?
-- Câu hỏi cho mentor: Nên định vị là công cụ nội bộ cho doanh nghiệp vừa/lớn, hay lớp add-on tích hợp CRM/ERP sẵn có — phương án nào hợp lý hơn cho quy mô một đồ án MVP?
-
-## 4.2 Kỹ thuật & dữ liệu
-
-**Đề xuất của nhóm:** _dùng blocking key kết hợp — tên đã bỏ dấu + chuẩn hóa (unidecode) ghép n-gram, cộng với 4 số cuối số điện thoại làm khóa phụ; với ngưỡng confidence, đề xuất bắt đầu ở mức bảo thủ (auto-approve chỉ khi final_confidence rất cao và rule_score + embedding_score đồng thuận), các trường định danh cứng như Tax ID ưu tiên rule 100%, còn tên/địa chỉ cho embedding trọng số cao hơn; matching cốt lõi (Rule Agent, blocking) dùng model nhẹ/rule-based, LLM lớn chỉ dùng ở bước sinh giải thích ngôn ngữ tự nhiên và xử lý case Arbiter bất đồng, để kiểm soát chi phí; batch là đủ cho MVP, streaming để ở roadmap V6._
-
-- Câu hỏi cho mentor: Cách blocking bằng bỏ dấu + n-gram tên có đủ recall cho dữ liệu tiếng Việt thực tế không, hay cần cân nhắc thêm phonetic encoding riêng cho tiếng Việt?
-- Câu hỏi cho mentor: Mentor có gợi ý bộ từ điển/benchmark chuẩn hóa địa danh, tên riêng tiếng Việt đáng tin cậy nào để tham khảo, tránh nhóm tự xây từ đầu không?
-- Câu hỏi cho mentor: Ngưỡng bảo thủ ban đầu như trên có hợp lý để trình bày trong báo cáo, hay nên có số liệu thử nghiệm sơ bộ trước khi chốt?
-
-## 4.3 Quản trị & tuân thủ
-
-**Đề xuất của nhóm:** _chính sách source priority nên do đội nghiệp vụ định nghĩa (vì gắn với hiểu biết domain) nhưng đội kỹ thuật review tính khả thi khi hiện thực hóa thành rule; review định kỳ theo quý hoặc khi có nguồn dữ liệu mới. Audit log và khả năng rollback/split đề xuất lưu tối thiểu theo chu kỳ báo cáo tài chính/tuân thủ nội bộ (ví dụ 1–3 năm tùy chính sách doanh nghiệp), không xóa cứng mà chuyển sang lưu trữ lạnh sau thời gian hoạt động chính._
-
-- Câu hỏi cho mentor: Với dữ liệu cá nhân (họ tên, SĐT, địa chỉ), đồ án có cần mô phỏng tuân thủ theo quy định bảo vệ dữ liệu cá nhân hiện hành (VD: Nghị định về bảo vệ dữ liệu cá nhân) ở mức nào — chỉ ở mức thiết kế/đề cập, hay cần cơ chế kỹ thuật cụ thể (ẩn danh hóa, phân quyền truy cập trường nhạy cảm)?
-
-## 4.4 Trải nghiệm người dùng & vận hành
-
-**Đề xuất của nhóm:** _ở MVP ưu tiên xử lý theo từng cặp/cụm riêng lẻ để đảm bảo chất lượng review, bulk approve/reject để ở bản mở rộng sau khi đã có đủ dữ liệu tin cậy về độ chính xác hệ thống. Case routing đề xuất theo mức rủi ro (confidence thấp/case conflict → Steward kinh nghiệm hoặc Approver) làm tiêu chí chính cho MVP._
-
-- Câu hỏi cho mentor: Cơ chế cảnh báo chủ động khi tỉ lệ reject tăng đột biến ở một nguồn — có nên đưa vào MVP như một chỉ số cảnh báo đơn giản trên Dashboard, hay để hẳn ở roadmap vì cần đủ dữ liệu lịch sử mới có ý nghĩa thống kê?
-
-## 4.5 Hướng mở rộng
-
-**Đề xuất của nhóm:** _sau khi đã đưa Active Learning mức cơ bản vào MVP (2.5.4), nhóm cho rằng Source Trust là hướng mở rộng thực tế nhất tiếp theo vì trực tiếp cải thiện chất lượng Golden Record Agent. Explainability Layer nâng cao (giải thích bằng ngôn ngữ tự nhiên, thân thiện với người không rành kỹ thuật) là điểm khác biệt trải nghiệm đáng đầu tư sớm vì đã có nền tảng từ Decision Arbiter reasoning._
-
-- Câu hỏi cho mentor: Giữa Source Trust và Explainability Layer nâng cao, nếu chỉ chọn một hướng đầu tư sâu thêm cho phần trình bày/demo đồ án, mentor khuyến nghị hướng nào để tạo điểm nhấn khác biệt?
-- Câu hỏi cho mentor: Phát hiện near-duplicate thời gian thực ngay tại thời điểm nhập liệu — nhóm đánh giá đây là hướng giá trị cao nhưng đổi kiến trúc nhiều (cần đổi từ batch sang streaming); mentor có cho rằng nên demo một phiên bản rất đơn giản của tính năng này trong đồ án để minh họa ý tưởng, hay để nguyên ở dạng đề xuất roadmap?
