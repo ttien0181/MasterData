@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 # Học tập: hiểu cách khởi tạo ứng dụng FastAPI
 # Học tập: nắm rõ vòng đời lifespan và routing
+#
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
