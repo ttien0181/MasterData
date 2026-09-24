@@ -14,7 +14,13 @@ bash scripts/_pyrun.sh scripts/submit_log.py || true
 exit 0
 '@
 
-Set-Content -Path $HookFile -Value $HookBody -Encoding UTF8 -NoNewline
+# Git runs this file as a Unix script. A UTF-8 BOM before #! makes the
+# shebang invalid on Windows and causes "cannot spawn .../pre-push".
+[System.IO.File]::WriteAllText(
+    (Join-Path (Get-Location).Path $HookFile),
+    $HookBody,
+    [System.Text.UTF8Encoding]::new($false)
+)
 Write-Host "[ai-log] Git pre-push hook installed."
 
 if (-not (Test-Path .ai-log)) { New-Item -ItemType Directory -Path .ai-log | Out-Null }
