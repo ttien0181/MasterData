@@ -66,7 +66,7 @@ rồi thay vào chỗ `<get-your-api-key-from-dashboard-phoenix>` — giá trị
 ### 4. Cài hook ghi log AI
 
 ```bash
-bash scripts/setup_hooks.sh                                      # Linux / macOS / Git Bash
+bash scripts/setup_hooks.sh                                    # Linux / macOS / Git Bash
 powershell -ExecutionPolicy Bypass -File scripts\setup_hooks.ps1 # Windows PowerShell
 ```
 
@@ -82,6 +82,16 @@ uvicorn src.main:app --reload --port 8000
 
 Swagger UI ở <http://localhost:8000/docs>. Hoặc dùng `make run`, `make test`,
 `make lint` — xem `Makefile`.
+
+### Chạy giao diện MDM local
+
+Giao diện Streamlit cho phép chọn một dataset, theo dõi pipeline và xem lịch sử benchmark:
+
+```bash
+python -m streamlit run ui/app.py
+```
+
+Mở URL local mà Streamlit in ra trong terminal. Kết quả benchmark tiếp tục được lưu trong `benchmark/results/`.
 
 ## Cấu trúc thư mục
 
@@ -194,4 +204,3 @@ Báo lỗ hổng bảo mật theo [SECURITY.md](SECURITY.md), đừng mở publi
 [MIT](LICENSE) — dùng tự do cho mục đích giáo dục.
 
 123456
-
