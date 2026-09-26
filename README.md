@@ -49,7 +49,7 @@ của đội thì báo BTC — repo tự tạo nằm ngoài org sẽ không đư
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements.txt 
 ```
 
 ### 3. Cấu hình biến môi trường
