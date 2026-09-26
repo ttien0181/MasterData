@@ -55,7 +55,7 @@ pip install -r requirements.txt
 ### 3. Cấu hình biến môi trường
 
 ```bash
-cp .env.example .env
+cp .env.example .env 
 ```
 
 Mở `.env` và điền `OPENAI_API_KEY`. Riêng `AI_LOG_API_KEY`, mỗi thành viên tự
