@@ -4,7 +4,7 @@ Cảm ơn bạn đã quan tâm. Repo này gồm hai phần với quy trình revi
 
 | Phần | Đường dẫn | Ai duyệt |
 |------|-----------|----------|
-| Code template | `src/`, `tests/`, `scripts/`, Dockerfile… | Maintainer bất kỳ |
+| Backend, frontend và script | `backend/`, `frontend/`, `scripts/`, Dockerfile… | Maintainer bất kỳ |
 | **Technical Book** | `docs/guide/**` | **Bắt buộc** @AI20K-Build-Phase/book-maintainers |
 
 ## Technical Book — lưu ý quan trọng
@@ -27,8 +27,8 @@ Khi sửa nội dung sách, mô tả rõ trong PR: **chương nào**, **sửa g�
    `feat:`, `fix:`, `docs:`, `chore:`, `test:`, `refactor:`
 3. Chạy kiểm tra trước khi push:
    ```bash
-   ruff check .
-   pytest
+   uv run --python .venv python -m ruff check backend/src backend/tests backend/migrations
+   uv run --python .venv python -m pytest backend/tests -q
    ```
 4. Mở PR vào `main`. CI (`.github/workflows/ci.yml`) phải xanh.
 

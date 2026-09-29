@@ -1,29 +1,21 @@
-# AI20K Agent Template
+# MasterOne
 
-Template chính thức cho học viên VinUni AI20K Build Phase: cấu trúc dự án, code
-mẫu và hướng dẫn kỹ thuật để xây dựng một AI Agent hoàn chỉnh — từ kiến trúc,
-code, test cho đến deploy và nộp bài Demo Day.
+MasterOne là prototype quản lý dữ liệu khách hàng: nạp CSV từ CRM/ERP, tìm cặp hồ sơ có tín hiệu khớp, duyệt thủ công và tạo bản nháp Golden Record. Backend FastAPI nằm trong `backend/`, frontend Next.js trong `frontend/`. Repo bắt đầu từ template AI20K; tài liệu mẫu ban đầu vẫn nằm trong `docs/guide/`.
 
 Technical Guidebook: <https://phoenix.note.transformerlabs.ai/technical-book>
 
-## Template có sẵn những gì
+## Thành phần trong repo
 
-- **Cấu trúc thư mục tách lớp** — `agents/`, `api/`, `services/`, `models/` đã
-  chia sẵn, không phải bàn lại từ đầu.
-- **Code mẫu chạy được** — LangGraph agent (state, node, tool), FastAPI routes,
-  Pydantic settings, schema.
-- **Docker và CI** — Dockerfile multi-stage, `docker-compose.yml`, workflow
-  GitHub Actions chạy `ruff` + `pytest` khi push lên `main`/`develop` và khi mở
-  pull request vào `main`.
-- **Technical Guidebook 10 chương** trong `docs/guide/`, đồng thời đọc được
-  online.
-- **Checklist 10 deliverables** của Demo Day.
-- **AI usage logging** — hook cài sẵn cho 6 công cụ AI, log tự động gửi lên
-  grading server mỗi lần `git push`.
+- **Backend** — package Python `masterone`, FastAPI, auth, MDM, SQLite và Alembic trong `backend/`.
+- **Frontend** — ứng dụng Next.js trong `frontend/` để nạp dữ liệu, duyệt hồ sơ và tạo bản nháp Golden Record.
+- **Docker và CI** — Dockerfile, `docker-compose.yml` và GitHub Actions kiểm tra cả backend lẫn frontend.
+- **AI usage logging** — các hook trong `scripts/` và thư mục cấu hình công cụ tại root; log được gửi khi push theo thiết lập của template.
+- **Technical Guidebook** — tài liệu mẫu của Ban tổ chức trong `docs/guide/`; các ví dụ đường dẫn `src/` trong sách mô tả template ban đầu.
 
 ## Yêu cầu
 
-- Python 3.11 (phiên bản CI đang dùng)
+- `uv` để quản lý Python 3.11+ và môi trường ảo; không cần cài Python toàn hệ thống
+- Node.js 22 trở lên và npm cho frontend (CI dùng Node.js 22)
 - Git
 - Docker — tuỳ chọn, chỉ cần nếu chạy `docker compose`
 
@@ -47,16 +39,20 @@ của đội thì báo BTC — repo tự tạo nằm ngoài org sẽ không đư
 ### 2. Cài môi trường
 
 ```bash
-python3.11 -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -r requirements.txt 
+uv venv --python 3.11 .venv
+uv pip install --python .venv -r requirements.txt
+npm --prefix frontend ci
 ```
+
+Chỉ cần cài lại frontend khi clone mới hoặc khi dependencies thay đổi. Xem [MDM_DEV.md](MDM_DEV.md) để thiết lập và chạy bằng PowerShell trên Windows.
 
 ### 3. Cấu hình biến môi trường
 
 ```bash
-cp .env.example .env 
+test -f .env || cp .env.example .env
 ```
+
+Trên Windows PowerShell, dùng `if (-not (Test-Path .env)) { Copy-Item .env.example .env }`. Giữ `.env` hiện tại nếu file đã tồn tại.
 
 Mở `.env` và điền `OPENAI_API_KEY`. Riêng `AI_LOG_API_KEY`, mỗi thành viên tự
 tạo key riêng tại [dashboard Phoenix](https://phoenix.note.transformerlabs.ai/api-keys)
@@ -74,40 +70,48 @@ Chạy một lần sau khi clone. Hook ghi lại prompt khi bạn dùng Claude C
 Codex CLI, Gemini CLI, Antigravity hoặc GitHub Copilot, và cài pre-push hook để
 đẩy log lên server.
 
-### 5. Chạy server
+### 5. Chạy backend và frontend
 
-```bash
-uvicorn src.main:app --reload --port 8000
+Từ thư mục gốc repo, chạy migration lần đầu hoặc sau khi có revision mới, rồi mở hai terminal:
+
+```powershell
+uv run --python .venv python -m masterone.mdm.migrate
 ```
 
-Swagger UI ở <http://localhost:8000/docs>. Hoặc dùng `make run`, `make test`,
-`make lint` — xem `Makefile`.
+Terminal 1 — backend:
 
-### Chạy giao diện MDM local
-
-Giao diện Streamlit cho phép chọn một dataset, theo dõi pipeline và xem lịch sử benchmark:
-
-```bash
-python -m streamlit run ui/app.py
+```powershell
+uv run --python .venv python -m uvicorn masterone.main:app --reload --port 8000
 ```
 
-Mở URL local mà Streamlit in ra trong terminal. Kết quả benchmark tiếp tục được lưu trong `benchmark/results/`.
+Terminal 2 — frontend:
+
+```powershell
+npm --prefix frontend run dev
+```
+
+Mở ứng dụng tại <http://localhost:3000> và Swagger UI tại <http://localhost:8000/docs>. Backend cũng có thể chạy bằng `make run`; `make test` và `make lint` dùng để kiểm tra — xem `Makefile`.
+
+Chạy các lệnh backend từ thư mục gốc repo để `.env`, `backend/alembic.ini` và `data/masterone.db` được tìm đúng vị trí. Xem [MDM_DEV.md](MDM_DEV.md) để chạy frontend, tạo tài khoản và thử luồng MDM.
+
 
 ## Cấu trúc thư mục
 
 ```
-src/
-  agents/            LangGraph agent
-    graph.py         State graph (nodes + edges)
-    state.py         State schema (TypedDict)
-    nodes/           Node functions
-    tools/           Agent tools (@tool)
-  api/routes.py      FastAPI endpoints
-  models/schemas.py  Pydantic schemas
-  services/llm.py    LLM client
-  config.py          Pydantic Settings
-  main.py            App entry point
-tests/               pytest suite
+backend/
+  pyproject.toml     Python package và dependency duy nhất
+  alembic.ini        Cấu hình migration
+  migrations/        Alembic revisions
+  src/masterone/
+    main.py          FastAPI entry point
+    api/             HTTP routes
+    auth/            User, session, CSRF
+    db/              SQLAlchemy Base và session
+    mdm/             Import, matching, Golden Record
+    agents/           LangGraph agent mẫu
+  tests/             pytest và CSV fixtures
+frontend/            Next.js application
+data/                SQLite local, không commit
 scripts/             Hook ghi log AI + installer
 docs/
   guide/             Technical Guidebook (nguồn của bản online)
@@ -146,7 +150,7 @@ bằng bất kỳ markdown viewer nào.
 
 | # | Deliverable | Vị trí | Template lo tới đâu |
 |---|---|---|---|
-| 1 | Source code | `src/` | Khung sẵn |
+| 1 | Source code | `backend/src/masterone/`, `frontend/` | Prototype đang phát triển |
 | 2 | README | copy `README_boilerplate.md` thành `README.md` | Khung sẵn |
 | 3 | Architecture diagram | `docs/architecture_diagram.md` | Khung sẵn |
 | 4 | AI logs | LangSmith (3 biến môi trường) + auto AI usage logging | Cấu hình sẵn |
@@ -162,12 +166,11 @@ bằng bất kỳ markdown viewer nào.
 | Lớp | Công nghệ |
 |---|---|
 | Agent | LangGraph + LangChain 0.3 |
-| Backend | FastAPI 0.115 + Uvicorn |
-| LLM | OpenAI, mặc định `gpt-4o-mini` (đổi trong `src/config.py`) |
-| Giao diện | Next.js hoặc Streamlit (đội tự chọn, hướng dẫn ở chương 6) |
+| Backend | FastAPI + Uvicorn, package `masterone` |
+| LLM | OpenAI, mặc định `gpt-4o-mini` (đổi trong `backend/src/masterone/config.py`) |
+| Giao diện | Next.js trong `frontend/` |
 | Lint / test | ruff + pytest 8 |
 | DevOps | Docker + GitHub Actions |
-123
 ## AI usage logging
 
 Mọi prompt được ghi vào `.ai-log/session.jsonl` và tự động gửi lên grading server

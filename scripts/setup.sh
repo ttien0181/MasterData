@@ -5,16 +5,9 @@ set -e
 
 echo "=== AI20K Project Setup ==="
 
-# Check Python version
-python3 -c "import sys; assert sys.version_info >= (3, 11), 'Python 3.11+ required'"
-echo "Python version OK"
-
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
+# uv manages Python; no system Python installation is required.
+uv venv .venv
+uv pip install --python .venv -r requirements.txt
 
 # Create .env if not exists
 if [ ! -f .env ]; then
@@ -25,4 +18,5 @@ fi
 # Create data directories
 mkdir -p data/chroma
 
-echo "Setup complete! Run: uvicorn src.main:app --reload"
+uv run --python .venv python -m masterone.mdm.migrate
+echo "Setup complete! Run: uv run --python .venv python -m uvicorn masterone.main:app --reload"

@@ -1,21 +1,21 @@
 .PHONY: run test lint format typecheck check clean
 
 run:
-	uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+	uv run --python .venv python -m uvicorn masterone.main:app --reload --host 0.0.0.0 --port 8000
 
 test:
-	pytest tests/ -v
+	uv run --python .venv python -m pytest backend/tests/ -v
 
 lint:
-	ruff check src/ tests/
+	uv run --python .venv python -m ruff check backend/src/ backend/tests/ backend/migrations/
 
 format:
-	ruff format src/ tests/
+	uv run --python .venv python -m ruff format backend/src/ backend/tests/ backend/migrations/
 
 typecheck:
-	mypy src/
+	mypy backend/src/
 
-check: lint format test
+check: lint test
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +

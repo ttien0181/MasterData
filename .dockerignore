@@ -2,8 +2,16 @@
 .gitignore
 .env
 .venv
+data/
+frontend/
+backend/tests/
+sandbox/
+.ai-log/
 __pycache__
 *.pyc
+*.egg-info/
+build/
+.uv-cache/
 .pytest_cache
 .ruff_cache
 docs/

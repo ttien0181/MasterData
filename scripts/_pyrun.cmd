@@ -1,7 +1,13 @@
 @echo off
 REM Cross-platform Python launcher for AI log hooks (Windows cmd.exe).
-REM Tries py -3 -> python -> python3 in order, runs the given script with all args.
+REM Tries uv -> py -3 -> python -> python3 in order, runs the given script with all args.
 REM Exits 0 silently if no Python is found - hooks must never block the AI tool.
+
+where uv >nul 2>nul
+if %ERRORLEVEL%==0 (
+  uv run python %*
+  exit /b %ERRORLEVEL%
+)
 
 where py >nul 2>nul
 if %ERRORLEVEL%==0 (

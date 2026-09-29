@@ -1,38 +1,16 @@
-# Architecture Diagram
-
-## System Overview
+# Sơ đồ kiến trúc MasterOne
 
 ```mermaid
-graph TB
-    User([User]) --> UI[Frontend<br/>React/Next.js]
-    UI -->|REST API| API[FastAPI Backend]
-    API --> Agent[LangGraph Agent]
-    Agent --> LLM[LLM Service<br/>GPT-4o / Gemini]
-    Agent --> Tools[Agent Tools]
-    Tools --> DB[(Database)]
-    Agent --> VS[Vector Store<br/>ChromaDB]
+flowchart TB
+    Steward[Data Steward] --> UI[Next.js · frontend/]
+    UI -->|Đăng ký, đăng nhập, MDM API| Routes[FastAPI · backend/src/masterone/api/]
+    Routes --> Auth[auth/ · phiên, CSRF, quyền]
+    Routes --> MDM[mdm/ · CSV, matching, review, draft]
+    Auth --> DB[db/ · SQLAlchemy session]
+    MDM --> DB
+    DB --> SQLite[(data/masterone.db)]
+    Alembic[backend/migrations/ · Alembic] --> SQLite
+    TemplateAgent[agents/ · luồng mẫu độc lập] --> LLM[services/llm.py]
 ```
 
-## Agent Flow
-
-```mermaid
-graph LR
-    START((Start)) --> Input[Parse Input]
-    Input --> Analyze[Analyze Query]
-    Analyze --> Decide{Need Tool?}
-    Decide -->|Yes| CallTool[Call Tool]
-    CallTool --> Analyze
-    Decide -->|No| Generate[Generate Response]
-    Generate --> END((End))
-```
-
-## Component Details
-
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| Frontend | React/Next.js | User interface |
-| Backend | FastAPI | API server |
-| Agent | LangGraph | AI agent orchestration |
-| LLM | OpenAI/Gemini | Language model |
-| Database | PostgreSQL/SQLite | Data persistence |
-| Vector Store | ChromaDB | RAG / embeddings |
+Các file CSV chỉ được giữ dưới dạng source records đã nhập. Matcher tạo candidate; quyết định của người duyệt và bản nháp Golden Record được lưu riêng. Frontend chỉ hiển thị import thuộc tài khoản đang đăng nhập; backend kiểm tra quyền trước khi trả dữ liệu.

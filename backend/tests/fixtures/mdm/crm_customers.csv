@@ -1,0 +1,4 @@
+source_record_id,name,email,phone,address,tax_id
+C-001,Công ty An Bình,contact@anbinh.example,0901001001,"12 Lê Lợi, Hà Nội",0101001001
+C-002,Minh Châu,chaucustomer@example,0902002002,"8 Trần Phú, Đà Nẵng",
+C-003,Nam Việt,hello@namviet.example,0903003003,"15 Hai Bà Trưng, TP.HCM",0303003003

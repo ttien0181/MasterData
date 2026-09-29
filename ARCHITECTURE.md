@@ -1,110 +1,34 @@
-# Architecture Document
+# Kiến trúc MasterOne hiện tại
 
-## System Overview
-
-[Tóm tắt 2-3 câu về kiến trúc hệ thống]
-
-## Architecture Diagram
+MasterOne là ứng dụng hai phần: Next.js trong `frontend/` và FastAPI trong package cài được `backend/src/masterone/`. Mỗi tài khoản sở hữu các lần import của mình. Backend xử lý CSV CRM/ERP, gợi ý các cặp hồ sơ bằng tín hiệu khớp chính xác và lưu quyết định cùng bản nháp Golden Record trong SQLite.
 
 ```mermaid
-graph TB
-    subgraph Frontend
-        UI[React/Next.js UI]
-    end
-
-    subgraph Backend[FastAPI Backend]
-        API[API Routes]
-        Agent[LangGraph Agent]
-        LLM[LLM Service]
-        Tools[Agent Tools]
-    end
-
-    subgraph Data[Data Layer]
-        DB[(Database)]
-        Vector[Vector Store]
-    end
-
-    UI -->|HTTP/REST| API
-    API --> Agent
-    Agent --> LLM
-    Agent --> Tools
-    Agent --> Vector
-    Tools --> DB
-    API --> DB
+flowchart LR
+    U[Data Steward] --> FE[Next.js frontend]
+    FE -->|Cookie phiên, CSRF, REST| API[FastAPI masterone.api]
+    API --> AUTH[masterone.auth]
+    API --> MDM[masterone.mdm]
+    AUTH --> DB[(SQLite data/masterone.db)]
+    MDM --> DB
+    MIG[backend/migrations] --> DB
 ```
 
-## Components
+## Ranh giới mã nguồn
 
-### 1. Frontend (React/Next.js)
-- **Purpose:** [mô tả]
-- **Key Features:** [danh sách]
-- **State Management:** [approach]
+| Thư mục | Trách nhiệm |
+| --- | --- |
+| `backend/src/masterone/api/` | HTTP routes, validation và response |
+| `backend/src/masterone/auth/` | User/session ORM, mật khẩu, Origin, CSRF và giới hạn đăng nhập sai |
+| `backend/src/masterone/db/` | `Base`, UTC clock, engine và session dependency |
+| `backend/src/masterone/mdm/` | Import CSV, matcher, sở hữu import, candidate và Golden Record |
+| `backend/migrations/` | Alembic revision `0001`–`0004`; không tự tạo schema khi app khởi động |
+| `backend/tests/` | Test API, auth, ownership, migration và agent mẫu |
+| `frontend/` | UI, trạng thái phiên phía client và API client |
 
-### 2. Backend (FastAPI)
-- **Purpose:** [mô tả]
-- **API Design:** RESTful
-- **Authentication:** [JWT/None]
+`agents/`, `models/` và `services/` hiện chứa luồng AI mẫu của template; sản phẩm MDM chưa phụ thuộc vào luồng đó. Việc di chuyển thư mục trong đợt này không thay đổi endpoint hay thuật toán matching.
 
-### 3. AI Agent (LangGraph)
-- **Agent Type:** [ReAct / Plan-and-Execute / Custom]
-- **State:** [mô tả state schema]
-- **Nodes:** [danh sách nodes]
-- **Tools:** [danh sách tools]
-- **Flow:**
+## Dữ liệu và vận hành
 
-```mermaid
-graph LR
-    START --> A[Node A]
-    A --> B{Decision}
-    B -->|Yes| C[Node C]
-    B -->|No| D[Node D]
-    C --> E[END]
-    D --> E
-```
+Chạy backend từ thư mục gốc repo. `masterone.config` đọc `.env` ở root, và SQLite mặc định tại `data/masterone.db`. `backend/alembic.ini` cùng `backend/migrations/` được tìm tương đối từ root; chạy `python -m masterone.mdm.migrate` trước khi khởi động app. CI cài package qua root `requirements.txt`, một shim trỏ tới `backend/pyproject.toml`; Docker cài package không editable.
 
-### 4. Database
-- **Type:** [PostgreSQL / SQLite]
-- **Tables:** [danh sách]
-- **Migrations:** Alembic
-
-### 5. Vector Store
-- **Type:** [ChromaDB / FAISS / Pinecone]
-- **Embeddings:** [model]
-- **Purpose:** [RAG / similarity search]
-
-## Data Flow
-
-1. User gửi request từ Frontend
-2. API route nhận và validate input
-3. Agent xử lý qua LangGraph pipeline
-4. LLM generate response
-5. Tools thực thi actions (nếu cần)
-6. Response trả về Frontend
-
-## Deployment Architecture
-
-```mermaid
-graph LR
-    subgraph Docker
-        FE[Frontend Container]
-        BE[Backend Container]
-        DB_C[Database Container]
-    end
-    FE --> BE --> DB_C
-```
-
-## Security
-
-- API keys stored in `.env` (never commit)
-- Input validation via Pydantic
-- Rate limiting on API endpoints
-- CORS configured for frontend domain
-
-## Design Decisions
-
-| Decision | Choice | Reason |
-|----------|--------|--------|
-| Framework | FastAPI | Async, auto-docs, type-safe |
-| Agent | LangGraph | Flexible state management |
-| Database | [choice] | [reason] |
-| Frontend | Next.js | [reason] |
+Phiên đăng nhập được lưu server-side, cookie `HttpOnly`; mutation yêu cầu Origin hợp lệ và CSRF token. Import/candidate được kiểm tra chủ sở hữu trên từng API. Import cũ chưa có chủ sở hữu được giữ trong SQLite và chỉ chuyển bằng CLI offline sau khi xác minh.

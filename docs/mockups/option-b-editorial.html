@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MasterOne — Option B: Editorial (Typography-first)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F6F5F2;
+  --surface: #FFFFFF;
+  --ink: #14140F;
+  --ink-2: #59564C;
+  --ink-3: #9D9A8E;
+  --line: #E6E3DA;
+  --line-2: #D5D2C8;
+  --good: #3D6B4F;
+  --good-bg: #E3EFE6;
+  --good-border: #C5DFC9;
+  --bad: #A6431F;
+  --bad-bg: #F7E8E0;
+  --bad-border: #EACFC1;
+  --sans: 'Inter', -apple-system, sans-serif;
+  --serif: 'Fraunces', Georgia, serif;
+  --mono: 'IBM Plex Mono', monospace;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.55; }
+button, input, select { font: inherit; }
+button { cursor: pointer; border: none; background: none; }
+.stage { display: none; }
+.stage.active { display: block; animation: fadeIn .35s ease; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---- SHARED BUTTONS ---- */
+.btn {
+  appearance: none; border: none; cursor: pointer; font-family: var(--sans); font-weight: 700;
+  font-size: 14.5px; border-radius: 11px; padding: 13px 22px;
+  display: inline-flex; align-items: center; gap: 8px; letter-spacing: -0.01em;
+  transition: all .15s;
+}
+.btn-main { background: var(--ink); color: #fff; }
+.btn-main:hover { background: #000; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+.btn-outline { background: none; border: 1.5px solid var(--line); color: var(--ink-2); font-weight: 600; }
+.btn-outline:hover { border-color: var(--ink-3); }
+.btn-ghost { background: none; color: var(--ink-3); font-weight: 600; }
+.btn-ghost:hover { color: var(--ink); }
+.btn-reject { background: none; border: 1.5px solid var(--line); color: var(--ink-2); font-weight: 600; }
+.btn-reject:hover { border-color: var(--bad); color: var(--bad); }
+
+.src-tag { font-family: var(--mono); font-size: 11px; font-weight: 500; }
+.src-tag.crm { color: var(--good); }
+.src-tag.erp { color: var(--bad); }
+
+/* ==== STAGE 1: INTAKE ==== */
+#s-intake { min-height: 100vh; display: flex; flex-direction: column; }
+.intake-top {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 28px 40px 0;
+}
+.wordmark { font-family: var(--serif); font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
+.intake-meta { font-size: 13px; color: var(--ink-3); font-family: var(--mono); }
+.intake-center {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 40px 20px;
+}
+.intake-center h1 {
+  font-family: var(--serif); font-weight: 500; font-size: 48px; line-height: 1.08;
+  margin: 0 0 16px; max-width: 580px; letter-spacing: -0.02em;
+}
+.intake-center p { color: var(--ink-2); font-size: 16px; max-width: 440px; margin: 0 0 48px; line-height: 1.6; }
+
+.dropzones { display: flex; gap: 24px; align-items: stretch; }
+.dz {
+  width: 280px; border: 1.5px dashed var(--line); border-radius: 20px;
+  padding: 28px 24px; text-align: left; background: var(--surface);
+  transition: all .2s; cursor: pointer; display: flex; flex-direction: column;
+}
+.dz:hover { border-color: var(--ink-3); box-shadow: 0 8px 30px rgba(0,0,0,.06); transform: translateY(-2px); }
+.dz.filled { border-style: solid; border-color: var(--ink); }
+.dz.filled:hover { transform: translateY(-2px); }
+.dz-icon {
+  width: 42px; height: 42px; border-radius: 12px; background: var(--bg);
+  display: flex; align-items: center; justify-content: center; margin-bottom: 18px;
+  font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--ink-2);
+}
+.dz.filled .dz-icon { background: var(--ink); color: #fff; }
+.dz-role { font-size: 12.5px; color: var(--ink-3); margin-bottom: 3px; }
+.dz-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+.dz-file {
+  display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12.5px;
+  color: var(--ink-2); background: var(--bg); padding: 10px 12px; border-radius: 9px; margin-top: auto;
+}
+.dz-file .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); flex: none; }
+.dz-empty { font-size: 13px; color: var(--ink-3); margin-top: auto; }
+.intake-connector {
+  display: flex; align-items: center; justify-content: center; color: var(--ink-3);
+  font-family: var(--serif); font-size: 24px; font-style: italic; padding: 0 4px;
+}
+
+.intake-bottom {
+  padding: 24px 40px; display: flex; justify-content: space-between; align-items: center;
+  border-top: 1px solid var(--line);
+}
+.intake-bottom .fields { font-size: 13px; color: var(--ink-3); }
+.intake-bottom .fields b { color: var(--ink-2); font-family: var(--mono); font-weight: 500; }
+
+/* ==== STAGE 2: REVIEW DECK ==== */
+#s-review { min-height: 100vh; display: flex; flex-direction: column; }
+.rv-top {
+  display: flex; align-items: center; padding: 18px 36px; gap: 20px;
+  border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.rv-exit { font-size: 13px; color: var(--ink-3); text-decoration: none; cursor: pointer; font-weight: 500; }
+.rv-exit:hover { color: var(--ink); }
+.rv-progress-track {
+  flex: 1; height: 4px; background: var(--line); border-radius: 4px; overflow: hidden;
+}
+.rv-progress-fill { height: 100%; width: 33%; background: var(--ink); border-radius: 4px; transition: width .3s; }
+.rv-count { font-family: var(--mono); font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+
+.rv-body {
+  flex: 1; display: grid; grid-template-columns: 72px 1fr 72px; align-items: center;
+  padding: 24px 0 16px;
+}
+.rv-nav-arrow {
+  display: flex; align-items: center; justify-content: center; height: 100%;
+  color: var(--ink-3); cursor: pointer; font-size: 28px; user-select: none;
+  transition: color .15s;
+}
+.rv-nav-arrow:hover { color: var(--ink); }
+
+.rv-card { max-width: 780px; margin: 0 auto; width: 100%; padding: 0 24px; }
+.rv-entity-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
+.rv-entity-name { font-family: var(--serif); font-size: 34px; font-weight: 500; letter-spacing: -0.02em; }
+.rv-conf { display: flex; align-items: baseline; gap: 6px; }
+.rv-conf .n { font-family: var(--serif); font-size: 28px; font-weight: 600; }
+.rv-conf .n.high { color: var(--good); }
+.rv-conf .l { font-size: 12.5px; color: var(--ink-3); }
+.rv-sub { font-size: 13px; color: var(--ink-3); margin-bottom: 28px; font-family: var(--mono); }
+
+.rv-signal-strip { display: flex; gap: 8px; margin-bottom: 28px; flex-wrap: wrap; }
+.signal {
+  font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 20px;
+}
+.signal.good { background: var(--good-bg); color: var(--good); border: 1px solid var(--good-border); }
+.signal.bad { background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad-border); }
+
+.rv-fields { display: flex; flex-direction: column; gap: 2px; margin-bottom: 32px; }
+.rv-field {
+  display: grid; grid-template-columns: 140px 1fr 1fr; gap: 16px;
+  padding: 16px 18px; border-radius: 12px; align-items: center;
+  transition: background .15s;
+}
+.rv-field:hover { background: rgba(0,0,0,.015); }
+.rv-field.diverge { background: var(--bad-bg); }
+.rv-field.diverge:hover { background: #F2DDD3; }
+.rv-fname { font-size: 13px; color: var(--ink-2); font-weight: 600; }
+.rv-fname .tag { display: block; font-size: 10.5px; font-weight: 500; color: var(--bad); margin-top: 4px; }
+.rv-field:not(.diverge) .rv-fname .tag { color: var(--good); }
+.rv-val { font-size: 15.5px; }
+.rv-val .src { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); display: block; margin-bottom: 3px; }
+mark.hl { background: #F3CBAE; color: var(--bad); padding: 0 2px; border-radius: 4px; font-weight: 700; }
+
+.rv-actions { display: flex; gap: 10px; }
+.rv-actions .btn-accept { flex: 1; justify-content: center; }
+.rv-hint {
+  text-align: center; font-size: 12px; color: var(--ink-3); margin-top: 18px;
+  font-family: var(--mono);
+}
+kbd {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 5px;
+  padding: 2px 7px; font-family: var(--mono); font-size: 11px; box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+
+.rv-strip {
+  display: flex; gap: 8px; padding: 16px 36px; border-top: 1px solid var(--line);
+  overflow-x: auto; background: var(--surface);
+}
+.rv-thumb {
+  flex: none; width: 160px; padding: 12px 14px; border-radius: 10px;
+  border: 1.5px solid var(--line); cursor: pointer; background: var(--surface);
+  transition: all .15s;
+}
+.rv-thumb:hover { border-color: var(--ink-3); transform: translateY(-1px); }
+.rv-thumb.current { border-color: var(--ink); box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.rv-thumb .n { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+.rv-thumb .s { font-size: 10.5px; color: var(--ink-3); }
+.rv-thumb.done { opacity: .45; }
+.rv-thumb .s.tag-done { color: var(--good); font-weight: 600; }
+
+/* ==== STAGE 3: GOLDEN RECORD ==== */
+#s-golden { min-height: 100vh; }
+.gr-shell { max-width: 720px; margin: 0 auto; padding: 60px 24px 120px; }
+.gr-top-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 48px; padding-bottom: 20px; border-bottom: 1px solid var(--line);
+}
+.gr-back { font-size: 13px; color: var(--ink-3); text-decoration: none; cursor: pointer; font-weight: 500; }
+.gr-back:hover { color: var(--ink); }
+.gr-eyebrow { font-family: var(--mono); font-size: 12.5px; color: var(--ink-3); margin-bottom: 10px; }
+.gr-title { font-family: var(--serif); font-size: 42px; font-weight: 500; margin: 0 0 12px; letter-spacing: -0.02em; line-height: 1.1; }
+.gr-sub { color: var(--ink-2); font-size: 16px; margin-bottom: 48px; max-width: 540px; line-height: 1.6; }
+
+.gr-field { padding: 28px 0; border-top: 1px solid var(--line); }
+.gr-field:first-of-type { border-top: 2px solid var(--ink); }
+.gr-field-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+.gr-fname { font-size: 17px; font-weight: 700; }
+.gr-status { font-size: 12px; font-weight: 600; }
+.gr-status.ok { color: var(--ink-3); }
+.gr-status.pick { color: var(--bad); }
+
+.gr-current { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+.gr-current .val { font-family: var(--serif); font-size: 24px; font-weight: 400; }
+.gr-src-badge {
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  background: var(--ink); color: #fff; padding: 3px 10px; border-radius: 6px;
+}
+
+.gr-alt {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 15px; color: var(--ink-2); padding: 10px 0; cursor: pointer;
+  border-radius: 8px; transition: background .15s; margin: 0 -8px; padding: 10px 8px;
+}
+.gr-alt:hover { background: rgba(0,0,0,.03); }
+.gr-alt:hover .swap { opacity: 1; }
+.gr-alt .from { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-right: 10px; }
+.swap { font-size: 12.5px; font-weight: 700; color: var(--ink); opacity: 0; text-decoration: underline; transition: opacity .2s; }
+
+.gr-final {
+  position: sticky; bottom: 0;
+  background: linear-gradient(180deg, transparent, var(--bg) 30%);
+  padding: 30px 0 0; margin-top: 16px;
+}
+.gr-final-bar {
+  background: var(--ink); color: #fff; border-radius: 16px; padding: 22px 28px;
+  display: flex; align-items: center; justify-content: space-between;
+  box-shadow: 0 8px 30px rgba(0,0,0,.15);
+}
+.gr-final-bar .t { font-size: 14px; color: #C9C7BC; max-width: 400px; line-height: 1.5; }
+.gr-final-bar .btn-main { background: #fff; color: var(--ink); }
+.gr-final-bar .btn-main:hover { background: #f0f0eb; }
+
+/* DEMO SWITCHER */
+.demo-switch {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  z-index: 50; display: flex; gap: 3px; background: var(--ink); border-radius: 14px;
+  padding: 4px; box-shadow: 0 8px 30px rgba(0,0,0,.25);
+}
+.demo-switch button {
+  padding: 9px 18px; border-radius: 10px; font-size: 12.5px; font-weight: 600;
+  color: #B8B6AC; transition: all .2s;
+}
+.demo-switch button.on { background: #fff; color: var(--ink); }
+</style>
+</head>
+<body>
+
+<!-- ============ STAGE 1: INTAKE ============ -->
+<div class="stage active" id="s-intake">
+  <div class="intake-top">
+    <div class="wordmark">masterone</div>
+    <div class="intake-meta">Khách hàng · lần hợp nhất #01</div>
+  </div>
+  <div class="intake-center">
+    <h1>Hai danh sách khách hàng, một sự thật.</h1>
+    <p>Tải lên hai tệp CSV. Chúng tôi tìm những hồ sơ nhiều khả năng là cùng một khách hàng, để bạn duyệt trong vài phút.</p>
+    <div class="dropzones">
+      <div class="dz filled">
+        <div class="dz-icon">A</div>
+        <div class="dz-role">Nguồn thứ nhất</div>
+        <div class="dz-title">CRM</div>
+        <div class="dz-file"><span class="dot"></span>crm_customers.csv · 3 dòng</div>
+      </div>
+      <div class="intake-connector">＋</div>
+      <div class="dz filled">
+        <div class="dz-icon">B</div>
+        <div class="dz-role">Nguồn thứ hai</div>
+        <div class="dz-title">ERP</div>
+        <div class="dz-file"><span class="dot"></span>erp_customers.csv · 3 dòng</div>
+      </div>
+    </div>
+  </div>
+  <div class="intake-bottom">
+    <div class="fields">Đã nhận diện cột định danh: <b>source_record_id</b>, <b>name</b></div>
+    <button class="btn btn-main" onclick="go('s-review')">Tìm hồ sơ trùng lặp →</button>
+  </div>
+</div>
+
+<!-- ============ STAGE 2: REVIEW DECK ============ -->
+<div class="stage" id="s-review">
+  <div class="rv-top">
+    <a class="rv-exit" onclick="go('s-intake')">← Nạp lại dữ liệu</a>
+    <div class="rv-progress-track"><div class="rv-progress-fill"></div></div>
+    <div class="rv-count">1 / 3 cặp cần duyệt</div>
+  </div>
+
+  <div class="rv-body">
+    <div class="rv-nav-arrow">‹</div>
+
+    <div class="rv-card">
+      <div class="rv-entity-row">
+        <div class="rv-entity-name">Công ty An Bình</div>
+        <div class="rv-conf"><span class="n high">87%</span><span class="l">độ tin cậy</span></div>
+      </div>
+      <div class="rv-sub">ERP · E-401 &nbsp;↔&nbsp; CRM · C-001</div>
+
+      <div class="rv-signal-strip">
+        <span class="signal good">Mã số thuế trùng khớp</span>
+        <span class="signal good">Email trùng khớp</span>
+        <span class="signal bad">Số điện thoại khác nhau</span>
+      </div>
+
+      <div class="rv-fields">
+        <div class="rv-field">
+          <div class="rv-fname">Tên khách hàng<span class="tag">khớp</span></div>
+          <div class="rv-val"><span class="src">ERP · E-401</span>Công ty An Bình</div>
+          <div class="rv-val"><span class="src">CRM · C-001</span>Công ty An Bình</div>
+        </div>
+        <div class="rv-field diverge">
+          <div class="rv-fname">Điện thoại<span class="tag">khác số</span></div>
+          <div class="rv-val"><span class="src">ERP · E-401</span>02<mark class="hl">41001001</mark></div>
+          <div class="rv-val"><span class="src">CRM · C-001</span>09<mark class="hl">01001001</mark></div>
+        </div>
+        <div class="rv-field">
+          <div class="rv-fname">Email<span class="tag">khớp</span></div>
+          <div class="rv-val"><span class="src">ERP · E-401</span>contact@anbinh.example</div>
+          <div class="rv-val"><span class="src">CRM · C-001</span>contact@anbinh.example</div>
+        </div>
+        <div class="rv-field diverge">
+          <div class="rv-fname">Địa chỉ<span class="tag">chỉ khác dấu</span></div>
+          <div class="rv-val"><span class="src">ERP · E-401</span>12 Le Loi, Ha Noi</div>
+          <div class="rv-val"><span class="src">CRM · C-001</span>12 L<mark class="hl">ê</mark> L<mark class="hl">ợ</mark>i, H<mark class="hl">à</mark> N<mark class="hl">ội</mark></div>
+        </div>
+        <div class="rv-field">
+          <div class="rv-fname">Mã số thuế<span class="tag">khớp</span></div>
+          <div class="rv-val"><span class="src">ERP · E-401</span>0101001001</div>
+          <div class="rv-val"><span class="src">CRM · C-001</span>0101001001</div>
+        </div>
+      </div>
+
+      <div class="rv-actions">
+        <button class="btn btn-reject">Không phải cùng khách hàng</button>
+        <button class="btn btn-ghost">Để sau</button>
+        <button class="btn btn-main btn-accept" onclick="go('s-golden')">Xác nhận là một khách hàng →</button>
+      </div>
+      <div class="rv-hint"><kbd>←</kbd> <kbd>→</kbd> chuyển cặp &nbsp;·&nbsp; <kbd>Enter</kbd> xác nhận &nbsp;·&nbsp; <kbd>Esc</kbd> từ chối</div>
+    </div>
+
+    <div class="rv-nav-arrow">›</div>
+  </div>
+
+  <div class="rv-strip">
+    <div class="rv-thumb current"><div class="n">Công ty An Bình</div><div class="s">Đang xem</div></div>
+    <div class="rv-thumb"><div class="n">Minh Châu Trading</div><div class="s">Chờ duyệt</div></div>
+    <div class="rv-thumb"><div class="n">Nam Việt Corp</div><div class="s">Chờ duyệt</div></div>
+    <div class="rv-thumb done"><div class="n">Hoa Mai Corp</div><div class="s tag-done">Đã gộp</div></div>
+  </div>
+</div>
+
+<!-- ============ STAGE 3: GOLDEN RECORD ============ -->
+<div class="stage" id="s-golden">
+  <div class="gr-shell">
+    <div class="gr-top-bar">
+      <a class="gr-back" onclick="go('s-review')">← Quay lại duyệt</a>
+      <span style="font:400 12px var(--mono);color:var(--ink-3);">ERP E-401 + CRM C-001</span>
+    </div>
+    <div class="gr-eyebrow">Công ty An Bình · Golden Record</div>
+    <h1 class="gr-title">Bản ghi chuẩn</h1>
+    <p class="gr-sub">Với mỗi trường khác nhau, chúng tôi đã chọn giá trị đáng tin hơn. Bấm vào giá trị còn lại nếu bạn muốn đổi.</p>
+
+    <div class="gr-field">
+      <div class="gr-field-head"><span class="gr-fname">Tên khách hàng</span><span class="gr-status ok">hai nguồn khớp nhau</span></div>
+      <div class="gr-current"><span class="val">Công ty An Bình</span><span class="gr-src-badge">ERP</span></div>
+    </div>
+    <div class="gr-field">
+      <div class="gr-field-head"><span class="gr-fname">Điện thoại</span><span class="gr-status pick">đã chọn CRM — mới cập nhật gần đây</span></div>
+      <div class="gr-current"><span class="val">0901001001</span><span class="gr-src-badge">CRM</span></div>
+      <div class="gr-alt"><span><span class="from">ERP</span>0241001001</span><span class="swap">Dùng giá trị này thay thế</span></div>
+    </div>
+    <div class="gr-field">
+      <div class="gr-field-head"><span class="gr-fname">Email</span><span class="gr-status ok">hai nguồn khớp nhau</span></div>
+      <div class="gr-current"><span class="val">contact@anbinh.example</span><span class="gr-src-badge">ERP</span></div>
+    </div>
+    <div class="gr-field">
+      <div class="gr-field-head"><span class="gr-fname">Địa chỉ</span><span class="gr-status pick">đã chọn CRM — có dấu tiếng Việt đầy đủ</span></div>
+      <div class="gr-current"><span class="val">12 Lê Lợi, Hà Nội</span><span class="gr-src-badge">CRM</span></div>
+      <div class="gr-alt"><span><span class="from">ERP</span>12 Le Loi, Ha Noi</span><span class="swap">Dùng giá trị này thay thế</span></div>
+    </div>
+    <div class="gr-field">
+      <div class="gr-field-head"><span class="gr-fname">Mã số thuế</span><span class="gr-status ok">hai nguồn khớp nhau</span></div>
+      <div class="gr-current"><span class="val">0101001001</span><span class="gr-src-badge">ERP</span></div>
+    </div>
+
+    <div class="gr-final">
+      <div class="gr-final-bar">
+        <span class="t">Dữ liệu gốc ở CRM và ERP giữ nguyên. Có thể tách lại bất cứ lúc nào.</span>
+        <button class="btn btn-main" onclick="go('s-review')">Lưu bản ghi chuẩn →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DEMO SWITCHER -->
+<div class="demo-switch">
+  <button class="on" data-s="s-intake" onclick="go('s-intake')">1 · Nạp dữ liệu</button>
+  <button data-s="s-review" onclick="go('s-review')">2 · Duyệt</button>
+  <button data-s="s-golden" onclick="go('s-golden')">3 · Golden Record</button>
+</div>
+
+<script>
+function go(id) {
+  document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.demo-switch button').forEach(b => b.classList.remove('on'));
+  document.querySelector('.demo-switch button[data-s="'+id+'"]').classList.add('on');
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('.gr-alt').forEach(alt => {
+  alt.addEventListener('click', () => {
+    const field = alt.closest('.gr-field');
+    const current = field.querySelector('.gr-current');
+    const curVal = current.querySelector('.val').textContent;
+    const curSrc = current.querySelector('.gr-src-badge').textContent;
+    const altFrom = alt.querySelector('.from').textContent;
+    const altSpan = alt.querySelector('span');
+    const altVal = altSpan.textContent.replace(altFrom, '');
+    current.querySelector('.val').textContent = altVal;
+    current.querySelector('.gr-src-badge').textContent = altFrom;
+    alt.querySelector('.from').textContent = curSrc;
+    altSpan.innerHTML = '<span class="from">' + curSrc + '</span>' + curVal;
+  });
+});
+</script>
+</body>
+</html>

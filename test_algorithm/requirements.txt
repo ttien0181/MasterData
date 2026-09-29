@@ -1,0 +1,4 @@
+splink>=5.0,<6
+pandas>=2.0,<3
+recordlinkage>=0.14,<0.15
+jellyfish>=1.0

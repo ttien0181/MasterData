@@ -1,0 +1,242 @@
+[
+  {
+    "dataset": "febrl3",
+    "method": "splink_em",
+    "records": {
+      "train": 3002,
+      "validation": 998,
+      "test": 1000
+    },
+    "label_budget_per_class": null,
+    "validation_threshold": 0.0004043760041619009,
+    "validation": {
+      "true_pairs": 1343,
+      "candidate_pairs": 3027,
+      "predicted_pairs": 1310,
+      "true_positive": 1299,
+      "false_positive": 11,
+      "false_negative": 44,
+      "precision": 0.9916030534351145,
+      "recall": 0.9672375279225615,
+      "f1": 0.9792687523558236,
+      "candidate_recall": 0.9679821295606851
+    },
+    "test": {
+      "true_pairs": 1296,
+      "candidate_pairs": 2521,
+      "predicted_pairs": 1254,
+      "true_positive": 1242,
+      "false_positive": 12,
+      "false_negative": 54,
+      "precision": 0.9904306220095693,
+      "recall": 0.9583333333333334,
+      "f1": 0.9741176470588236,
+      "candidate_recall": 0.9583333333333334
+    },
+    "timings_seconds": {
+      "train": 0.778,
+      "test_prediction": 0.116,
+      "total": 1.056
+    }
+  },
+  {
+    "dataset": "febrl3",
+    "method": "recordlinkage_ecm",
+    "records": {
+      "train": 3002,
+      "validation": 998,
+      "test": 1000
+    },
+    "label_budget_per_class": null,
+    "validation_threshold": 0.18040191141582237,
+    "validation": {
+      "true_pairs": 1343,
+      "candidate_pairs": 6769,
+      "predicted_pairs": 1325,
+      "true_positive": 1312,
+      "false_positive": 13,
+      "false_negative": 31,
+      "precision": 0.990188679245283,
+      "recall": 0.9769173492181683,
+      "f1": 0.9835082458770614,
+      "candidate_recall": 0.9776619508562919
+    },
+    "test": {
+      "true_pairs": 1296,
+      "candidate_pairs": 6275,
+      "predicted_pairs": 1254,
+      "true_positive": 1236,
+      "false_positive": 18,
+      "false_negative": 60,
+      "precision": 0.9856459330143541,
+      "recall": 0.9537037037037037,
+      "f1": 0.9694117647058824,
+      "candidate_recall": 0.9544753086419753
+    },
+    "timings_seconds": {
+      "train": 0.281,
+      "test_prediction": 0.06,
+      "total": 0.406
+    }
+  },
+  {
+    "dataset": "febrl3",
+    "method": "recordlinkage_logistic",
+    "records": {
+      "train": 3002,
+      "validation": 998,
+      "test": 1000
+    },
+    "label_budget_per_class": 1000,
+    "validation_threshold": 0.6069857550143429,
+    "validation": {
+      "true_pairs": 1343,
+      "candidate_pairs": 6769,
+      "predicted_pairs": 1298,
+      "true_positive": 1298,
+      "false_positive": 0,
+      "false_negative": 45,
+      "precision": 1.0,
+      "recall": 0.9664929262844378,
+      "f1": 0.9829609996213556,
+      "candidate_recall": 0.9776619508562919
+    },
+    "test": {
+      "true_pairs": 1296,
+      "candidate_pairs": 6275,
+      "predicted_pairs": 1218,
+      "true_positive": 1215,
+      "false_positive": 3,
+      "false_negative": 81,
+      "precision": 0.9975369458128078,
+      "recall": 0.9375,
+      "f1": 0.9665871121718377,
+      "candidate_recall": 0.9544753086419753
+    },
+    "timings_seconds": {
+      "train": 0.102,
+      "test_prediction": 0.062,
+      "total": 0.321
+    }
+  },
+  {
+    "dataset": "febrl4",
+    "method": "splink_em",
+    "records": {
+      "train": 6000,
+      "validation": 2000,
+      "test": 2000
+    },
+    "label_budget_per_class": null,
+    "validation_threshold": 0.02929543998441529,
+    "validation": {
+      "true_pairs": 1000,
+      "candidate_pairs": 4474,
+      "predicted_pairs": 987,
+      "true_positive": 984,
+      "false_positive": 3,
+      "false_negative": 16,
+      "precision": 0.9969604863221885,
+      "recall": 0.984,
+      "f1": 0.9904378459989935,
+      "candidate_recall": 0.986
+    },
+    "test": {
+      "true_pairs": 1000,
+      "candidate_pairs": 4141,
+      "predicted_pairs": 983,
+      "true_positive": 981,
+      "false_positive": 2,
+      "false_negative": 19,
+      "precision": 0.9979654120040692,
+      "recall": 0.981,
+      "f1": 0.9894099848714069,
+      "candidate_recall": 0.983
+    },
+    "timings_seconds": {
+      "train": 1.008,
+      "test_prediction": 0.167,
+      "total": 1.397
+    }
+  },
+  {
+    "dataset": "febrl4",
+    "method": "recordlinkage_ecm",
+    "records": {
+      "train": 6000,
+      "validation": 2000,
+      "test": 2000
+    },
+    "label_budget_per_class": null,
+    "validation_threshold": 0.9721408987679556,
+    "validation": {
+      "true_pairs": 1000,
+      "candidate_pairs": 8641,
+      "predicted_pairs": 971,
+      "true_positive": 971,
+      "false_positive": 0,
+      "false_negative": 29,
+      "precision": 1.0,
+      "recall": 0.971,
+      "f1": 0.9852866565195332,
+      "candidate_recall": 0.987
+    },
+    "test": {
+      "true_pairs": 1000,
+      "candidate_pairs": 8054,
+      "predicted_pairs": 962,
+      "true_positive": 962,
+      "false_positive": 0,
+      "false_negative": 38,
+      "precision": 1.0,
+      "recall": 0.962,
+      "f1": 0.9806320081549439,
+      "candidate_recall": 0.98
+    },
+    "timings_seconds": {
+      "train": 0.366,
+      "test_prediction": 0.076,
+      "total": 0.527
+    }
+  },
+  {
+    "dataset": "febrl4",
+    "method": "recordlinkage_logistic",
+    "records": {
+      "train": 6000,
+      "validation": 2000,
+      "test": 2000
+    },
+    "label_budget_per_class": 1000,
+    "validation_threshold": 0.6336614043095279,
+    "validation": {
+      "true_pairs": 1000,
+      "candidate_pairs": 8641,
+      "predicted_pairs": 978,
+      "true_positive": 974,
+      "false_positive": 4,
+      "false_negative": 26,
+      "precision": 0.9959100204498977,
+      "recall": 0.974,
+      "f1": 0.9848331648129423,
+      "candidate_recall": 0.987
+    },
+    "test": {
+      "true_pairs": 1000,
+      "candidate_pairs": 8054,
+      "predicted_pairs": 972,
+      "true_positive": 964,
+      "false_positive": 8,
+      "false_negative": 36,
+      "precision": 0.9917695473251029,
+      "recall": 0.964,
+      "f1": 0.9776876267748479,
+      "candidate_recall": 0.98
+    },
+    "timings_seconds": {
+      "train": 0.157,
+      "test_prediction": 0.077,
+      "total": 0.457
+    }
+  }
+]

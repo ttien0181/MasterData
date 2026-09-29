@@ -1,0 +1,4 @@
+source_record_id,name,email,phone,address,tax_id
+E-401,Công ty An Bình,contact@anbinh.example,0241001001,"12 Le Loi, Ha Noi",0101001001
+E-402,Châu Minh,chaucustomer@example,0902002002,"8 Trần Phú, Đà Nẵng",
+E-403,Nam Việt Ltd,operations@namviet.example,0903003003,"15 Hai Bà Trưng, TP.HCM",0303003003
