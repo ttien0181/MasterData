@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ApiError, login, register, setCsrfToken } from "@/lib/api";
 import { setActiveImportUser } from "@/lib/activeImport";
+import ThemeToggle from "./ThemeToggle";
 
 export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
@@ -32,6 +33,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   }
 
   return <main className="auth-page">
+    <ThemeToggle className="auth-theme-toggle" />
     <div className="auth-card">
       <div className="auth-brand"><span className="navbar-logo">M</span><strong>Master<span>One</span></strong></div>
       <p className="auth-eyebrow">QUẢN LÝ DỮ LIỆU CHỦ</p>

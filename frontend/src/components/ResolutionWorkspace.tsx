@@ -16,6 +16,7 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
   const [overview, setOverview] = useState<ResolutionOverview | null>(null);
   const [runHistory, setRunHistory] = useState<ResolutionRunHistory["items"]>([]);
   const [files, setFiles] = useState<File[]>([]);
+  const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessageState] = useState("");
   const [messageVersion, setMessageVersion] = useState(0);
@@ -25,6 +26,17 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
     setMessageState(next);
     setMessageVersion((version) => version + 1);
   }, []);
+
+  function addFiles(incoming: File[]) {
+    const csvFiles = incoming.filter((file) => file.name.toLowerCase().endsWith(".csv"));
+    if (csvFiles.length !== incoming.length) setMessage("Chỉ hỗ trợ file CSV.");
+    const next = [...files];
+    for (const file of csvFiles) {
+      if (!next.some((selected) => selected.name === file.name && selected.size === file.size && selected.lastModified === file.lastModified)) next.push(file);
+    }
+    if (next.length > 10) { setMessage("Mỗi lần nạp tối đa 10 file CSV."); return; }
+    setFiles(next);
+  }
 
   useEffect(() => {
     if (!message) return;
@@ -95,17 +107,17 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
     catch (error) { setMessage(error instanceof Error ? error.message : "Không tải được lần chạy"); }
   }
 
-  const processedCount = overview ? overview.counts.auto + overview.counts.rejected : 0;
-  const totalCount = overview ? processedCount + overview.counts.review : 0;
-  return <AppShell stage={stage} pendingCount={overview?.counts.review ?? 0} processedCount={processedCount}
-    totalCount={totalCount} user={user} onNavigate={setStage}
+  return <AppShell stage={stage} pendingCount={overview?.counts.review ?? 0}
+    mergeCount={overview?.counts.auto ?? 0} rejectedCount={overview?.counts.rejected ?? 0}
+    processedCount={overview?.processed_count ?? 0} totalCount={overview?.total_count ?? 0}
+    user={user} onNavigate={setStage}
     onLogout={() => void onLogout().catch(() => setMessage("Không thể đăng xuất lúc này."))}>
     <main className="container workspace resolution-workspace" id="top">
       <PageHeader stage={stage} />
       {message && <div className="notice toast" role="status"><span className="toast-icon" aria-hidden="true">i</span><span className="toast-message">{message}</span><button type="button" aria-label="Đóng thông báo" onClick={() => setMessage("")}>×</button></div>}
       {stage === "overview" && <section className="resolution-overview">
         <div className="resolution-overview-head">
-          <div><p className="section-kicker">WORKSPACE SNAPSHOT</p><h2>{overview ? "Trạng thái phân giải" : "Bắt đầu từ dữ liệu của bạn"}</h2>
+          <div><p className="section-kicker">Dữ liệu khách hàng · lần nạp hiện tại</p><h2>{overview ? "Trạng thái phân giải" : "Bắt đầu từ dữ liệu của bạn"}</h2>
             <p>{overview ? `Run ${runId.slice(0, 8)} · ${overview.record_count.toLocaleString("vi-VN")} bản ghi · ${overview.file_count} file` : "Nạp một hoặc nhiều file CSV. Từng dòng có thể đến từ CRM, ERP hoặc BILL."}</p></div>
           <button className="button primary btn btn-primary" type="button" onClick={() => setStage("import")}>＋ Nạp dữ liệu</button>
         </div>
@@ -116,30 +128,35 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
             {(overview.status === "RETRYABLE_FAILED" || overview.status === "FAILED") && <button className="button outline" type="button" disabled={busy} onClick={() => void retryRun()}>Chạy lại</button>}
           </div>}
           <div className="stat-grid resolution-stats">
-            <button className="card stat-card resolution-stat" type="button" onClick={() => setStage("auto")}><span className="stat-value">{overview.counts.auto}</span><span className="stat-label">Item sẽ gộp</span><span className="stat-change">Gộp</span></button>
-            <button className="card stat-card resolution-stat" type="button" onClick={() => setStage("rejected")}><span className="stat-value">{overview.counts.rejected}</span><span className="stat-label">Cặp không gộp</span><span className="stat-change">Không gộp</span></button>
-            <button className="card stat-card resolution-stat" type="button" onClick={() => setStage("review")}><span className="stat-value">{overview.counts.review}</span><span className="stat-label">Trường hợp cần xử lý</span><span className="stat-change">Cần review</span></button>
-            <button className="card stat-card resolution-stat" type="button" onClick={() => setStage("history")}><span className="stat-value">{overview.history_count}</span><span className="stat-label">Bản CSV đã xuất</span><span className="stat-change">Lịch sử</span></button>
+            <button className="card stat-card resolution-stat" type="button" onClick={() => setStage("auto")}><span className="stat-value">{overview.counts.auto.toLocaleString("vi-VN")}</span><span className="stat-label">Item sẽ gộp</span><span className="stat-change">Xem danh sách Gộp →</span></button>
+            <button className="card stat-card resolution-stat" type="button" onClick={() => setStage("rejected")}><span className="stat-value">{overview.counts.rejected.toLocaleString("vi-VN")}</span><span className="stat-label">Cặp không gộp</span><span className="stat-change">Xem danh sách Không gộp →</span></button>
+            <button className="card stat-card resolution-stat" type="button" onClick={() => setStage("review")}><span className="stat-value">{overview.counts.review.toLocaleString("vi-VN")}</span><span className="stat-label">Trường hợp cần xử lý</span><span className="stat-change">Mở hàng đợi review →</span></button>
+            <button className="card stat-card resolution-stat" type="button" onClick={() => setStage("history")}><span className="stat-value">{overview.history_count.toLocaleString("vi-VN")}</span><span className="stat-label">Bản CSV đã xuất</span><span className="stat-change">Xem lịch sử →</span></button>
           </div>
-          {runHistory.length > 1 && <section className="card recent-runs"><div className="recent-runs-title"><div><p className="section-kicker">RUN ARCHIVE</p><h3>Các lần nạp gần đây</h3></div><button className="button outline" type="button" onClick={() => setStage("history")}>Mở lịch sử →</button></div>
+          {runHistory.length > 1 && <section className="card recent-runs"><div className="recent-runs-title"><div><p className="section-kicker">Lần nạp dữ liệu</p><h3>Các lần nạp gần đây</h3></div><span className="muted-copy">Chọn một lần nạp để xem dữ liệu của nó</span></div>
             {runHistory.slice(0, 5).map((run) => <button type="button" className={`recent-run-row ${run.run_id === runId ? "current" : ""}`} key={run.run_id} onClick={() => void switchRun(run.run_id)}>
-              <span><b>{run.files.join(", ") || "Run dữ liệu"}</b><small>{new Date(run.created_at).toLocaleString("vi-VN")}</small></span><span>{run.record_count.toLocaleString("vi-VN")} bản ghi</span><span>{run.status}</span>
+              <span><b>{run.files.join(", ") || "Lần nạp dữ liệu"}</b><small>{new Date(run.created_at).toLocaleString("vi-VN")}</small></span><span>{run.record_count.toLocaleString("vi-VN")} bản ghi</span><span>{run.status === "COMPLETED" ? "Đã xử lý" : run.status === "FAILED" ? "Thất bại" : "Đang xử lý"}</span>
             </button>)}
           </section>}
-          <section className="card source-summary"><div><p className="section-kicker">SOURCE MIX</p><h3>Phân bố nguồn dữ liệu</h3></div><div className="source-summary-values">
-            {Object.entries(overview.source_counts).map(([source, count]) => <span className="source-count" key={source}><b>{source}</b><strong>{count.toLocaleString("vi-VN")}</strong></span>)}
+          <section className="card source-summary"><div><p className="section-kicker">Toàn bộ bản ghi đầu vào</p><h3>Phân bố nguồn dữ liệu</h3><small>{overview.record_count.toLocaleString("vi-VN")} bản ghi từ {overview.file_count} file</small></div><div className="source-summary-values">
+            {Object.entries(overview.source_counts).map(([source, count]) => <span className="source-count" key={source}><b>{source}</b><strong>{count.toLocaleString("vi-VN")}</strong><span className="source-share" aria-label={`${source}: ${count.toLocaleString("vi-VN")} bản ghi`}><span style={{ width: `${overview.record_count ? count / overview.record_count * 100 : 0}%` }} /></span></span>)}
           </div></section>
         </>}
       </section>}
 
       {stage === "import" && <section className="card card-body resolution-intake">
-        <div className="intake-copy"><p className="section-kicker">MULTI SOURCE INGESTION</p><h2>Gộp dữ liệu nguồn vào một lần chạy</h2><p>Chọn một hoặc nhiều CSV cùng schema. Hệ thống đọc cột <code>source_system</code> trên từng dòng và dò trùng trên tất cả nguồn.</p></div>
+        <div className="intake-copy"><div><p className="section-kicker">Dữ liệu đầu vào</p><h2>Phân giải mọi bản ghi trong một lần nạp</h2><p>Chọn một hoặc nhiều CSV cùng schema. Hệ thống đọc cột <code>source_system</code> trên từng dòng và dò trùng trên tất cả nguồn.</p></div></div>
         <form onSubmit={(event) => void handleUpload(event)}>
-          <label className="resolution-dropzone"><span className="drop-icon">＋</span><strong>{files.length ? `${files.length} file đã chọn` : "Thả file CSV vào đây hoặc chọn từ máy"}</strong><small>Schema Linh: id, source_system, full_name, phone_number, email_address, raw_address</small>
-            <input type="file" accept=".csv,text/csv" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []))} />
+          <label className={`resolution-dropzone ${dragging ? "dragging" : ""}`}
+            onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+            onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
+            onDrop={(event) => { event.preventDefault(); setDragging(false); addFiles(Array.from(event.dataTransfer.files)); }}>
+            <span className="drop-icon">＋</span><strong>{files.length ? `${files.length} file đã chọn` : "Thả file CSV vào đây hoặc chọn từ máy"}</strong><small>Chọn nhiều file; có thể bổ sung file trước khi nạp.</small>
+            <input type="file" accept=".csv,text/csv" multiple onChange={(event) => { addFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
           </label>
-          {files.length > 0 && <ul className="file-list">{files.map((file) => <li key={`${file.name}-${file.size}`}><span>{file.name}</span><small>{(file.size / 1024).toFixed(0)} KB</small></li>)}</ul>}
-          <div className="intake-footer"><span>Tối đa 5 MiB và 5.000 dòng mỗi file. pairs.csv chỉ dùng cho đánh giá offline.</span><button className="button primary btn btn-primary" type="submit" disabled={!files.length || busy}>{busy ? "Đang nạp…" : "Nạp và phân giải →"}</button></div>
+          <div className="intake-schema" aria-label="Các cột CSV"><span>Các cột CSV</span>{["id", "source_system", "full_name", "phone_number", "email_address", "raw_address"].map((column) => <code key={column}>{column}</code>)}</div>
+          {files.length > 0 && <ul className="file-list">{files.map((file) => <li key={`${file.name}-${file.size}-${file.lastModified}`}><span>{file.name}</span><small>{(file.size / 1024).toFixed(0)} KB</small><button type="button" aria-label={`Bỏ file ${file.name}`} onClick={() => setFiles((current) => current.filter((selected) => selected !== file))}>Bỏ file ×</button></li>)}</ul>}
+          <div className="intake-footer"><span>Tối đa 10 file mỗi lần nạp · 5 MiB và 5.000 dòng mỗi file.</span><button className="button primary btn btn-primary" type="submit" disabled={!files.length || busy}>{busy ? "Đang nạp…" : "Nạp và phân giải →"}</button></div>
         </form>
       </section>}
 
