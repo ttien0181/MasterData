@@ -3,12 +3,15 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AuthUser } from "@/lib/api";
 
-export type Stage = "import" | "review" | "golden";
+export type Stage = "overview" | "import" | "auto" | "rejected" | "review" | "history";
 
 const stages: { id: Stage; label: string }[] = [
+  { id: "overview", label: "Tổng quan" },
   { id: "import", label: "Nạp dữ liệu" },
-  { id: "review", label: "Duyệt hồ sơ" },
-  { id: "golden", label: "Golden Record" },
+  { id: "rejected", label: "Không gộp" },
+  { id: "review", label: "Cần review" },
+  { id: "auto", label: "Gộp" },
+  { id: "history", label: "Lịch sử" },
 ];
 
 export function Icon({ name, size = 18 }: { name: "menu" | "close" | "moon" | "sun" | "database" | "scan" | "layers" | "chevron" | "logout" | "alert"; size?: number }) {
@@ -93,9 +96,9 @@ export default function AppShell({ stage, pendingCount, processedCount, totalCou
       <div className="sidebar-spacer" />
       <div className="sidebar-session">
         <span className="session-overline">PHIÊN LÀM VIỆC</span>
-        <strong>{totalCount ? `${processedCount}/${totalCount} cặp đã xử lý` : "Chưa có dữ liệu"}</strong>
+        <strong>{totalCount ? `${processedCount}/${totalCount} mục đã xử lý` : "Chưa có dữ liệu"}</strong>
         <div className="session-progress" role="progressbar" aria-valuenow={processedCount} aria-valuemin={0} aria-valuemax={totalCount || 1} aria-label="Tiến độ duyệt hồ sơ"><span style={{ width: `${progress}%` }} /></div>
-        <small>{totalCount ? `${pendingCount} cặp đang chờ duyệt` : "Nạp CRM và ERP để bắt đầu"}</small>
+        <small>{totalCount ? `${pendingCount} mục đang chờ xử lý` : "Nạp dữ liệu để bắt đầu"}</small>
       </div>
     </aside>
 

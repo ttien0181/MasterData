@@ -1,0 +1,46 @@
+{
+  "dataset": "masterone_test",
+  "entity_type": "PERSON",
+  "policy_version": "person-v1",
+  "record_count": 4213,
+  "source_counts": {
+    "BILL": 1407,
+    "CRM": 1408,
+    "ERP": 1398
+  },
+  "candidate_count": 252702,
+  "all_possible_pairs": 8872578,
+  "reduction_ratio": 0.971519,
+  "blocking_recall": {
+    "same_source": {
+      "gold_pair_count": 623,
+      "blocked_pair_count": 622,
+      "blocking_recall": 0.998395
+    },
+    "cross_source": {
+      "gold_pair_count": 4816,
+      "blocked_pair_count": 4803,
+      "blocking_recall": 0.997301
+    }
+  },
+  "labeled_pair_metrics": {
+    "pair_count": 1200,
+    "positive_count": 960,
+    "negative_count": 240,
+    "match_precision": 1.0,
+    "match_recall": 0.947917,
+    "hard_negative_count": 240,
+    "hard_negative_false_positive_rate": 0.0
+  },
+  "cluster_pair_metrics": {
+    "predicted_positive_pairs": 4941,
+    "gold_positive_pairs": 5439,
+    "precision": 1.0,
+    "recall": 0.908439,
+    "f1": 0.952023
+  },
+  "limitations": [
+    "pairs.csv là tập nhãn được lấy mẫu, không đại diện mọi cặp.",
+    "entity_id chỉ được dùng để chấm điểm offline; không truyền vào pipeline matching."
+  ]
+}

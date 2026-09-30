@@ -28,7 +28,7 @@ BASELINE_FOREIGN_KEYS = {
     "mdm_golden_record_drafts": {("candidate_id", "mdm_candidates")},
     "mdm_audit_events": {("candidate_id", "mdm_candidates")},
 }
-HEAD = "0004"
+HEAD = "0010"
 
 
 def alembic_config(url: str, config_path: str | Path | None = None) -> Config:
@@ -76,11 +76,11 @@ def upgrade_database(url: str) -> None:
 
 def require_current(engine) -> None:
     if not inspect(engine).has_table("alembic_version"):
-        raise RuntimeError("MDM database has no migration version. Run: python -m masterone.mdm.migrate from the repository root")
+        raise RuntimeError("MDM database has no migration version. Run: uv run --python .venv python -m masterone.mdm.migrate from the repository root")
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one_or_none()
     if revision != HEAD:
-        raise RuntimeError(f"MDM database is at migration {revision}; expected {HEAD}. Run: python -m masterone.mdm.migrate from the repository root")
+        raise RuntimeError(f"MDM database is at migration {revision}; expected {HEAD}. Run: uv run --python .venv python -m masterone.mdm.migrate from the repository root")
 
 
 if __name__ == "__main__":

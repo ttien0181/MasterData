@@ -2,21 +2,24 @@ import type { ReactNode } from "react";
 import type { Decision, Source } from "@/lib/contracts";
 import type { Stage } from "./AppShell";
 
-const pageCopy: Record<Stage, { title: string; description: string; number: string }> = {
-  import: { title: "Nạp dữ liệu", description: "Kết nối hai nguồn dữ liệu để tìm những hồ sơ có thể thuộc cùng một khách hàng.", number: "01" },
-  review: { title: "Rà soát hồ sơ", description: "Kiểm tra bằng chứng, quyết định từng cặp và giữ quyền kiểm soát trong tay Data Steward.", number: "02" },
-  golden: { title: "Tạo bản ghi chuẩn", description: "Chọn giá trị tốt nhất từ hồ sơ nguồn. Mỗi trường đều giữ lại xuất xứ.", number: "03" },
+const pageCopy: Record<Stage, { title: string; description: string; section: string }> = {
+  overview: { title: "Tổng quan dữ liệu", description: "Theo dõi các đề xuất phân giải và hoạt động gần đây.", section: "OVERVIEW" },
+  import: { title: "Nạp dữ liệu", description: "Tải một hoặc nhiều file để tìm bản ghi trùng trên toàn bộ dữ liệu.", section: "DATA INTAKE" },
+  auto: { title: "Gộp", description: "Chọn giá trị cho các nhóm sẽ gộp, rồi xuất CSV cuối cùng cho toàn bộ dữ liệu.", section: "MERGE" },
+  rejected: { title: "Không gộp", description: "Xem các cặp được xác định là không cùng khách hàng.", section: "NON MATCH" },
+  review: { title: "Cần review", description: "Kiểm tra các trường hợp chưa đủ bằng chứng hoặc có rủi ro cụm.", section: "HUMAN REVIEW" },
+  history: { title: "Lịch sử", description: "Tải lại các bản CSV đã xuất trong lần nạp dữ liệu này.", section: "EXPORT HISTORY" },
 };
 
 export function PageHeader({ stage }: { stage: Stage }) {
   const copy = pageCopy[stage];
   return <div className="page-header">
     <div>
-      <p className="page-overline">CUSTOMER DATA OPERATIONS <span>/</span> {copy.number}</p>
+      <p className="page-overline">CUSTOMER DATA OPERATIONS <span>/</span> {copy.section}</p>
       <h1 className="page-title">{copy.title}</h1>
       <p className="page-desc">{copy.description}</p>
     </div>
-    <span className="page-stage-label">BƯỚC {copy.number} / 03</span>
+    <span className="page-stage-label">MASTER DATA · PERSON</span>
   </div>;
 }
 

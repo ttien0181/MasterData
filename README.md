@@ -1,13 +1,13 @@
 # MasterOne
 
-MasterOne là prototype quản lý dữ liệu khách hàng: nạp CSV từ CRM/ERP, tìm cặp hồ sơ có tín hiệu khớp, duyệt thủ công và tạo bản nháp Golden Record. Backend FastAPI nằm trong `backend/`, frontend Next.js trong `frontend/`. Repo bắt đầu từ template AI20K; tài liệu mẫu ban đầu vẫn nằm trong `docs/guide/`.
+MasterOne là prototype khử trùng dữ liệu khách hàng: nạp nhiều CSV, dò trùng trong và giữa các nguồn, duyệt các item chưa chắc chắn, chọn giá trị chuẩn và xuất một CSV cuối cùng cho toàn bộ run. Backend FastAPI nằm trong `backend/`, frontend Next.js trong `frontend/`. Hướng dẫn chạy và luồng sử dụng ở [MDM_DEV.md](MDM_DEV.md). Repo bắt đầu từ template AI20K; tài liệu mẫu ban đầu vẫn nằm trong `docs/guide/`.
 
 Technical Guidebook: <https://phoenix.note.transformerlabs.ai/technical-book>
 
 ## Thành phần trong repo
 
 - **Backend** — package Python `masterone`, FastAPI, auth, MDM, SQLite và Alembic trong `backend/`.
-- **Frontend** — ứng dụng Next.js trong `frontend/` để nạp dữ liệu, duyệt hồ sơ và tạo bản nháp Golden Record.
+- **Frontend** — ứng dụng Next.js trong `frontend/` với các tab Gộp, Không gộp, Cần review và Lịch sử CSV.
 - **Docker và CI** — Dockerfile, `docker-compose.yml` và GitHub Actions kiểm tra cả backend lẫn frontend.
 - **AI usage logging** — các hook trong `scripts/` và thư mục cấu hình công cụ tại root; log được gửi khi push theo thiết lập của template.
 - **Technical Guidebook** — tài liệu mẫu của Ban tổ chức trong `docs/guide/`; các ví dụ đường dẫn `src/` trong sách mô tả template ban đầu.
@@ -81,7 +81,7 @@ uv run --python .venv python -m masterone.mdm.migrate
 Terminal 1 — backend:
 
 ```powershell
-uv run --python .venv python -m uvicorn masterone.main:app --reload --port 8000
+uv run --python .venv python -m uvicorn masterone.main:app --reload --port 8001
 ```
 
 Terminal 2 — frontend:
@@ -90,7 +90,7 @@ Terminal 2 — frontend:
 npm --prefix frontend run dev
 ```
 
-Mở ứng dụng tại <http://localhost:3000> và Swagger UI tại <http://localhost:8000/docs>. Backend cũng có thể chạy bằng `make run`; `make test` và `make lint` dùng để kiểm tra — xem `Makefile`.
+Mở ứng dụng tại <http://localhost:3000> và Swagger UI tại <http://localhost:8001/docs>. Backend cũng có thể chạy bằng `make run`; `make test` và `make lint` dùng để kiểm tra — xem `Makefile`.
 
 Chạy các lệnh backend từ thư mục gốc repo để `.env`, `backend/alembic.ini` và `data/masterone.db` được tìm đúng vị trí. Xem [MDM_DEV.md](MDM_DEV.md) để chạy frontend, tạo tài khoản và thử luồng MDM.
 

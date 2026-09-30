@@ -9,12 +9,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from masterone.api.auth import router as auth_router
 from masterone.api.mdm_imports import router as mdm_imports_router
 from masterone.api.mdm_reviews import router as mdm_reviews_router
+from masterone.api.mdm_runs import router as mdm_runs_router
+from masterone.api.mdm_resolution import router as mdm_resolution_router
 from masterone.api.routes import router
 from masterone.auth import models as auth_models  # noqa: F401 - registers auth tables
 from masterone.config import get_settings
 from masterone.db.session import create_database
 from masterone.mdm import models as mdm_models  # noqa: F401 - registers SQLAlchemy models
 from masterone.mdm.migrate import require_current
+from masterone.mdm.resolution_worker import ResolutionWorker
 
 
 @asynccontextmanager
@@ -26,10 +29,17 @@ async def lifespan(app: FastAPI):
     require_current(engine)
     app.state.engine = engine
     app.state.session_factory = factory
+    worker = None
+    if settings.app_env != "test":
+        worker = ResolutionWorker(factory)
+        worker.start()
+        app.state.resolution_worker = worker
     print(f"Starting {settings.app_name} in {settings.app_env} mode")
     try:
         yield
     finally:
+        if worker is not None:
+            worker.close()
         engine.dispose()
     print("Shutting down...")
 
@@ -53,6 +63,8 @@ app.add_middleware(
 app.include_router(router, prefix="/api/v1")
 app.include_router(mdm_imports_router, prefix="/api/v1")
 app.include_router(mdm_reviews_router, prefix="/api/v1")
+app.include_router(mdm_runs_router, prefix="/api/v1")
+app.include_router(mdm_resolution_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 
 
