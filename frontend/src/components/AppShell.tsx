@@ -95,7 +95,7 @@ export default function AppShell({ stage, pendingCount, processedCount, totalCou
         <span className="session-overline">PHIÊN LÀM VIỆC</span>
         <strong>{totalCount ? `${processedCount}/${totalCount} cặp đã xử lý` : "Chưa có dữ liệu"}</strong>
         <div className="session-progress" role="progressbar" aria-valuenow={processedCount} aria-valuemin={0} aria-valuemax={totalCount || 1} aria-label="Tiến độ duyệt hồ sơ"><span style={{ width: `${progress}%` }} /></div>
-        <small>{totalCount ? `${pendingCount} cặp đang chờ duyệt` : "Nạp CRM và ERP để bắt đầu"}</small>
+        <small>{totalCount ? `${pendingCount} cặp đang chờ duyệt` : "Nạp CRM, ERP và BILL để bắt đầu"}</small>
       </div>
     </aside>
 

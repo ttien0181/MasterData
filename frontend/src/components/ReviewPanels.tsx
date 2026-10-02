@@ -21,7 +21,7 @@ export function ReviewQueue({ candidates, selected, pendingCount, acceptedCount,
         </div>
         <StatusBadge decision={item.decision} />
       </button>)}
-      {!candidates.length && <div className="empty-state"><span>∅</span><b>Chưa có gợi ý trùng lặp</b><p>Hãy tải lại hai file hoặc thử dữ liệu có email, số điện thoại hay tên trùng khớp.</p></div>}
+      {!candidates.length && <div className="empty-state"><span>∅</span><b>Chưa có gợi ý trùng lặp</b><p>Hãy kiểm tra các file đã nạp hoặc thử dữ liệu có email, số điện thoại hay tên trùng khớp.</p></div>}
     </div>
   </section>;
 }

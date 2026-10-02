@@ -3,7 +3,7 @@ import type { Decision, Source } from "@/lib/contracts";
 import type { Stage } from "./AppShell";
 
 const pageCopy: Record<Stage, { title: string; description: string; number: string }> = {
-  import: { title: "Nạp dữ liệu", description: "Kết nối hai nguồn dữ liệu để tìm những hồ sơ có thể thuộc cùng một khách hàng.", number: "01" },
+  import: { title: "Nạp dữ liệu", description: "Kết nối dữ liệu CRM, ERP và BILL để tìm các hồ sơ có thể thuộc cùng một khách hàng.", number: "01" },
   review: { title: "Rà soát hồ sơ", description: "Kiểm tra bằng chứng, quyết định từng cặp và giữ quyền kiểm soát trong tay Data Steward.", number: "02" },
   golden: { title: "Tạo bản ghi chuẩn", description: "Chọn giá trị tốt nhất từ hồ sơ nguồn. Mỗi trường đều giữ lại xuất xứ.", number: "03" },
 };

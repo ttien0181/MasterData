@@ -51,6 +51,6 @@ export function GoldenRecordPreview({ candidate, draft, requiredFields, saved }:
         <small className={`preview-origin origin ${source ? source.source.toLowerCase() : ""}`}>{source ? `${source.source} · ${source.source_record_id}` : hasValue ? "Chưa chọn nguồn" : "Bỏ trống"}</small>
       </div>;
     })}</div>
-    <div className="preview-note"><span>◉</span><p>Đây là bản nháp. Lưu sẽ ghi audit; dữ liệu CRM và ERP vẫn nguyên vẹn.</p></div>
+    <div className="preview-note"><span>◉</span><p>Đây là bản nháp. Lưu sẽ ghi audit; dữ liệu nguồn vẫn nguyên vẹn.</p></div>
   </aside>;
 }

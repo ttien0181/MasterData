@@ -150,6 +150,7 @@ button:focus-visible, input:focus-visible, select:focus-visible,
 .app-shell .stat-change { order: 2; margin-top: 7px; color: var(--ink-3); font-size: 11px; font-weight: 500; }
 .app-shell .stat-change.up { color: var(--green); }
 .app-shell .upload-grid { gap: 16px; }
+.app-shell .upload-grid.file-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .app-shell .upload-card { min-height: 235px; padding: 23px; border: 1.5px dashed var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-xs); }
 .app-shell .upload-card:hover { border-color: var(--blue); background: var(--blue-bg); }
 .app-shell .upload-card.filled { border-style: solid; border-color: var(--green-border); background: var(--surface); }

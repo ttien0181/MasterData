@@ -53,7 +53,7 @@ Luôn chạy lệnh backend từ **thư mục gốc repo**: `.env`, `backend/ale
 5. Tải lại trang. Phiên đăng nhập được phục hồi từ cookie `HttpOnly`; ID import đang hoạt động được lưu trong `localStorage` theo user ID. Trạng thái và bản nháp vẫn nằm trong SQLite.
 6. Đăng xuất và đăng nhập tài khoản khác; tài khoản thứ hai không xem được import của tài khoản đầu dù biết ID.
 
-Mỗi file giới hạn 5 MiB và 5.000 dòng dữ liệu. Mỗi import trả tối đa 1.000 ứng viên. Chỉ các trường đã định nghĩa được hiển thị trong phần so sánh. Quyết định và lưu bản nháp có audit event; source records không bị sửa.
+Mỗi file giới hạn 10 MiB và 10.000 dòng dữ liệu. Mỗi import trả tối đa 1.000 ứng viên. Chỉ các trường đã định nghĩa được hiển thị trong phần so sánh. Quyết định và lưu bản nháp có audit event; source records không bị sửa.
 
 ## Import cũ và bảo mật
 

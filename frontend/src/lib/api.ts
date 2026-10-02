@@ -44,10 +44,11 @@ export const login = (email: string, password: string) => authRequest<AuthUser>(
 });
 export const logout = () => authRequest<{ ok: boolean }>("/logout", { method: "POST", headers: { "X-CSRF-Token": csrfToken } });
 
-export function uploadFiles(crm: File, erp: File) {
+export function uploadFiles(crm: File, erp: File, bill?: File | null) {
   const data = new FormData();
   data.append("crm_file", crm);
   data.append("erp_file", erp);
+  if (bill) data.append("bill_file", bill);
   return request<{ import_id: string; profile: ImportSummary["profile"]; candidate_count: number }>("/imports", { method: "POST", body: data });
 }
 export const getImport = (id: string) => request<ImportSummary>(`/imports/${id}`);

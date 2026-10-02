@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     # Vector Store
     chroma_persist_dir: str = "./data/chroma"
 
+    # Cloudflare R2 storage
+    r2_endpoint_url: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket: str = ""
+    large_file_url_ttl_seconds: int = Field(default=900, ge=60, le=3600)
+
 
 @lru_cache
 def get_settings() -> Settings:

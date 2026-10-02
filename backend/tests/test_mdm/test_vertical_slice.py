@@ -64,7 +64,7 @@ def test_invalid_csv_does_not_create_partial_import(client):
 
 
 def test_row_limit_does_not_persist_partial_import(client):
-    rows = "source_record_id,name\n" + "".join(f"C-{index},Customer {index}\n" for index in range(5001))
+    rows = "source_record_id,name\n" + "".join(f"C-{index},Customer {index}\n" for index in range(10001))
     response = import_pair(client, rows.encode(), ERP)
     assert response.status_code == 413
     with client.session_factory() as session:
