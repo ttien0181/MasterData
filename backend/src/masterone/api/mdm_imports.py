@@ -13,10 +13,11 @@ router = APIRouter(prefix="/mdm/imports", tags=["MDM imports"])
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def post_import(
-    crm_file: UploadFile = File(...), erp_file: UploadFile = File(...), db: Session = Depends(get_session),
+    crm_file: UploadFile = File(...), erp_file: UploadFile = File(...),
+    bill_file: UploadFile | None = File(None), db: Session = Depends(get_session),
     auth: CurrentSession = Depends(require_mutation),
 ):
-    batch = await create_import(db, crm_file, erp_file, auth.user.id)
+    batch = await create_import(db, crm_file, erp_file, auth.user.id, bill_file)
     suggestions = PrototypeMatcher().match(batch.records)
     for candidate in suggestions:
         db.add(candidate)
