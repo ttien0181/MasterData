@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Source_Sans_3, JetBrains_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import "./dashboard.css";
+import "./glass.css";
 
-const inter = Inter({
+const sourceSans = Source_Sans_3({
   subsets: ["latin", "vietnamese"],
   display: "swap",
   variable: "--font-sans",
@@ -22,8 +24,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="vi" className={`${inter.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
-      <body className={inter.className}>{children}</body>
+    <html lang="vi" className={`${sourceSans.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
+      <body className={sourceSans.className}>
+        <Script id="masterone-theme" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: `try{var saved=localStorage.getItem('masterone.theme');document.documentElement.dataset.theme=saved==='light'||saved==='dark'?saved:(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}catch(e){document.documentElement.dataset.theme='light'}` }} />
+        {children}
+      </body>
     </html>
   );
 }
