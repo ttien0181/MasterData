@@ -2,6 +2,7 @@ from alembic import context
 from masterone.auth import models as auth_models  # noqa: F401
 from masterone.db.base import Base
 from masterone.mdm import models  # noqa: F401
+from masterone.storage import repository as storage_repository  # noqa: F401
 from sqlalchemy import engine_from_config, pool
 
 config = context.config

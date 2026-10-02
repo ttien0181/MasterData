@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "sqlite:///./data/app.db"
     mdm_database_url: str = "sqlite:///./data/masterone.db"
+    work_dir: str = "./data/work"
+    redis_url: str = ""
+    redis_progress_ttl_seconds: int = Field(default=86400, ge=60)
+    storage_code_version: str = "mdm-storage-v1"
 
     # Vector Store
     chroma_persist_dir: str = "./data/chroma"

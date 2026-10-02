@@ -1,0 +1,578 @@
+{
+  "baseline_version": "mdm-exact-signal-v1",
+  "source_order": [
+    "CRM",
+    "ERP",
+    "BILL"
+  ],
+  "matcher_engine": "exact-signal-prototype-v1",
+  "matcher_fields": [
+    "email",
+    "phone",
+    "tax_id",
+    "name"
+  ],
+  "candidate_limit": 1000,
+  "input_fingerprint_sha256": "9196c69b20a82bb1429c20cc032a9401047cb303189fcd7e7371707d23cac5a7",
+  "profiles": {
+    "CRM": {
+      "row_count": 5,
+      "accepted_count": 5,
+      "rejected_count": 0,
+      "missing_optional": {
+        "email": 2,
+        "phone": 1
+      },
+      "validation_issue_count": 0
+    },
+    "ERP": {
+      "row_count": 5,
+      "accepted_count": 5,
+      "rejected_count": 0,
+      "missing_optional": {
+        "email": 1
+      },
+      "validation_issue_count": 0
+    },
+    "BILL": {
+      "row_count": 5,
+      "accepted_count": 5,
+      "rejected_count": 0,
+      "missing_optional": {
+        "email": 3,
+        "phone": 1
+      },
+      "validation_issue_count": 0
+    }
+  },
+  "row_count": 15,
+  "record_ids": [
+    {
+      "id": "r0001",
+      "source": "CRM",
+      "source_record_id": "crm-001",
+      "field_types": {
+        "source_record_id": "str",
+        "name": "str",
+        "phone": "str",
+        "email": "str",
+        "address": "str",
+        "tax_id": "str"
+      }
+    },
+    {
+      "id": "r0002",
+      "source": "CRM",
+      "source_record_id": "crm-002",
+      "field_types": {
+        "source_record_id": "str",
+        "name": "str",
+        "phone": "str",
+        "email": "str",
+        "address": "str",
+        "tax_id": "str"
+      }
+    },
+    {
+      "id": "r0003",
+      "source": "CRM",
+      "source_record_id": "crm-003",
+      "field_types": {
+        "source_record_id": "str",
+        "name": "str",
+        "phone": "str",
+        "email": "str",
+        "address": "str",
+        "tax_id": "str"
+      }
+    },
+    {
+      "id": "r0004",
+      "source": "CRM",
+      "source_record_id": "crm-004",
+      "field_types": {
+        "source_record_id": "str",
+        "name": "str",
+        "phone": "str",
+        "email": "str",
+        "address": "str",
+        "tax_id": "str"
+      }
+    },
+    {
+      "id": "r0005",
+      "source": "CRM",
+      "source_record_id": "crm-005",
+      "field_types": {
+        "source_record_id": "str",
+        "name": "str",
+        "phone": "str",
+        "email": "str",
+        "address": "str",
+        "tax_id": "str"
+      }
+    },
+    {
+      "id": "r0006",
+      "source": "ERP",
+      "source_record_id": "erp-001",
+      "field_types": {
+        "source_record_id": "str",
+        "name": "str",
+        "phone": "str",
+        "email": "str",
+        "address": "str",
+        "tax_id": "str"
+      }
+    },
+    {
+      "id": "r0007",
+      "source": "ERP",
+      "source_record_id": "erp-002",
+      "field_types": {
+        "source_record_id": "str",
+        "name": "str",
+        "phone": "str",
+        "email": "str",
+        "address": "str",
+        "tax_id": "str"
+      }
+    },
+    {
+      "id": "r0008",
+      "source": "ERP",
+      "source_record_id": "erp-003",
+      "field_types": {
+        "source_record_id": "str",
+        "name": "str",
+        "phone": "str",
+        "email": "str",
+        "address": "str",
+        "tax_id": "str"
+      }
+    },
+    {
+      "id": "r0009",
+      "source": "ERP",
+      "source_record_id": "erp-004",
+      "field_types": {
+        "source_record_id": "str",
+        "name": "str",
+        "phone": "str",
+        "email": "str",
+        "address": "str",
+        "tax_id": "str"
+      }
+    },
+    {
+      "id": "r0010",
+      "source": "ERP",
+      "source_record_id": "erp-005",
+      "field_types": {
+        "source_record_id": "str",
+        "name": "str",
+        "phone": "str",
+        "email": "str",
+        "address": "str",
+        "tax_id": "str"
+      }
+    },
+    {
+      "id": "r0011",
+      "source": "BILL",
+      "source_record_id": "bill-001",
+      "field_types": {
+        "source_record_id": "str",
+        "name": "str",
+        "phone": "str",
+        "email": "str",
+        "address": "str",
+        "tax_id": "str"
+      }
+    },
+    {
+      "id": "r0012",
+      "source": "BILL",
+      "source_record_id": "bill-002",
+      "field_types": {
+        "source_record_id": "str",
+        "name": "str",
+        "phone": "str",
+        "email": "str",
+        "address": "str",
+        "tax_id": "str"
+      }
+    },
+    {
+      "id": "r0013",
+      "source": "BILL",
+      "source_record_id": "bill-003",
+      "field_types": {
+        "source_record_id": "str",
+        "name": "str",
+        "phone": "str",
+        "email": "str",
+        "address": "str",
+        "tax_id": "str"
+      }
+    },
+    {
+      "id": "r0014",
+      "source": "BILL",
+      "source_record_id": "bill-004",
+      "field_types": {
+        "source_record_id": "str",
+        "name": "str",
+        "phone": "str",
+        "email": "str",
+        "address": "str",
+        "tax_id": "str"
+      }
+    },
+    {
+      "id": "r0015",
+      "source": "BILL",
+      "source_record_id": "bill-005",
+      "field_types": {
+        "source_record_id": "str",
+        "name": "str",
+        "phone": "str",
+        "email": "str",
+        "address": "str",
+        "tax_id": "str"
+      }
+    }
+  ],
+  "candidate_count": 13,
+  "candidate_counts_by_evidence_field": {
+    "email": 5,
+    "name": 13,
+    "phone": 10,
+    "tax_id": 13
+  },
+  "pairs": [
+    {
+      "id_a": "r0001",
+      "id_b": "r0006",
+      "source_record_a": "crm-001",
+      "source_record_b": "erp-001",
+      "source_a": "CRM",
+      "source_b": "ERP",
+      "evidence": [
+        {
+          "field": "email",
+          "value": "an@example.com"
+        },
+        {
+          "field": "name",
+          "value": "nguyen van an"
+        },
+        {
+          "field": "phone",
+          "value": "0901000001"
+        },
+        {
+          "field": "tax_id",
+          "value": "100001"
+        }
+      ]
+    },
+    {
+      "id_a": "r0001",
+      "id_b": "r0011",
+      "source_record_a": "crm-001",
+      "source_record_b": "bill-001",
+      "source_a": "CRM",
+      "source_b": "BILL",
+      "evidence": [
+        {
+          "field": "name",
+          "value": "nguyen van an"
+        },
+        {
+          "field": "phone",
+          "value": "0901000001"
+        },
+        {
+          "field": "tax_id",
+          "value": "100001"
+        }
+      ]
+    },
+    {
+      "id_a": "r0002",
+      "id_b": "r0007",
+      "source_record_a": "crm-002",
+      "source_record_b": "erp-002",
+      "source_a": "CRM",
+      "source_b": "ERP",
+      "evidence": [
+        {
+          "field": "name",
+          "value": "tran thi binh"
+        },
+        {
+          "field": "phone",
+          "value": "0901000002"
+        },
+        {
+          "field": "tax_id",
+          "value": "100002"
+        }
+      ]
+    },
+    {
+      "id_a": "r0002",
+      "id_b": "r0012",
+      "source_record_a": "crm-002",
+      "source_record_b": "bill-002",
+      "source_a": "CRM",
+      "source_b": "BILL",
+      "evidence": [
+        {
+          "field": "email",
+          "value": "binh@example.com"
+        },
+        {
+          "field": "name",
+          "value": "tran thi binh"
+        },
+        {
+          "field": "phone",
+          "value": "0901000002"
+        },
+        {
+          "field": "tax_id",
+          "value": "100002"
+        }
+      ]
+    },
+    {
+      "id_a": "r0003",
+      "id_b": "r0008",
+      "source_record_a": "crm-003",
+      "source_record_b": "erp-003",
+      "source_a": "CRM",
+      "source_b": "ERP",
+      "evidence": [
+        {
+          "field": "name",
+          "value": "le van cuong"
+        },
+        {
+          "field": "phone",
+          "value": "0901000003"
+        },
+        {
+          "field": "tax_id",
+          "value": "100003"
+        }
+      ]
+    },
+    {
+      "id_a": "r0003",
+      "id_b": "r0013",
+      "source_record_a": "crm-003",
+      "source_record_b": "bill-003",
+      "source_a": "CRM",
+      "source_b": "BILL",
+      "evidence": [
+        {
+          "field": "name",
+          "value": "le van cuong"
+        },
+        {
+          "field": "phone",
+          "value": "0901000003"
+        },
+        {
+          "field": "tax_id",
+          "value": "100003"
+        }
+      ]
+    },
+    {
+      "id_a": "r0004",
+      "id_b": "r0009",
+      "source_record_a": "crm-004",
+      "source_record_b": "erp-004",
+      "source_a": "CRM",
+      "source_b": "ERP",
+      "evidence": [
+        {
+          "field": "email",
+          "value": "dung@example.com"
+        },
+        {
+          "field": "name",
+          "value": "pham thi dung"
+        },
+        {
+          "field": "tax_id",
+          "value": "100004"
+        }
+      ]
+    },
+    {
+      "id_a": "r0004",
+      "id_b": "r0014",
+      "source_record_a": "crm-004",
+      "source_record_b": "bill-004",
+      "source_a": "CRM",
+      "source_b": "BILL",
+      "evidence": [
+        {
+          "field": "email",
+          "value": "dung@example.com"
+        },
+        {
+          "field": "name",
+          "value": "pham thi dung"
+        },
+        {
+          "field": "phone",
+          "value": "0901000004"
+        },
+        {
+          "field": "tax_id",
+          "value": "100004"
+        }
+      ]
+    },
+    {
+      "id_a": "r0005",
+      "id_b": "r0015",
+      "source_record_a": "crm-005",
+      "source_record_b": "bill-005",
+      "source_a": "CRM",
+      "source_b": "BILL",
+      "evidence": [
+        {
+          "field": "name",
+          "value": "hoang van nam"
+        },
+        {
+          "field": "tax_id",
+          "value": "100005"
+        }
+      ]
+    },
+    {
+      "id_a": "r0006",
+      "id_b": "r0011",
+      "source_record_a": "erp-001",
+      "source_record_b": "bill-001",
+      "source_a": "ERP",
+      "source_b": "BILL",
+      "evidence": [
+        {
+          "field": "name",
+          "value": "nguyen van an"
+        },
+        {
+          "field": "phone",
+          "value": "0901000001"
+        },
+        {
+          "field": "tax_id",
+          "value": "100001"
+        }
+      ]
+    },
+    {
+      "id_a": "r0007",
+      "id_b": "r0012",
+      "source_record_a": "erp-002",
+      "source_record_b": "bill-002",
+      "source_a": "ERP",
+      "source_b": "BILL",
+      "evidence": [
+        {
+          "field": "name",
+          "value": "tran thi binh"
+        },
+        {
+          "field": "phone",
+          "value": "0901000002"
+        },
+        {
+          "field": "tax_id",
+          "value": "100002"
+        }
+      ]
+    },
+    {
+      "id_a": "r0008",
+      "id_b": "r0013",
+      "source_record_a": "erp-003",
+      "source_record_b": "bill-003",
+      "source_a": "ERP",
+      "source_b": "BILL",
+      "evidence": [
+        {
+          "field": "name",
+          "value": "le van cuong"
+        },
+        {
+          "field": "phone",
+          "value": "0901000003"
+        },
+        {
+          "field": "tax_id",
+          "value": "100003"
+        }
+      ]
+    },
+    {
+      "id_a": "r0009",
+      "id_b": "r0014",
+      "source_record_a": "erp-004",
+      "source_record_b": "bill-004",
+      "source_a": "ERP",
+      "source_b": "BILL",
+      "evidence": [
+        {
+          "field": "email",
+          "value": "dung@example.com"
+        },
+        {
+          "field": "name",
+          "value": "pham thi dung"
+        },
+        {
+          "field": "tax_id",
+          "value": "100004"
+        }
+      ]
+    }
+  ],
+  "master_grouping": [
+    [
+      "r0001",
+      "r0006",
+      "r0011"
+    ],
+    [
+      "r0002",
+      "r0007",
+      "r0012"
+    ],
+    [
+      "r0003",
+      "r0008",
+      "r0013"
+    ],
+    [
+      "r0004",
+      "r0009",
+      "r0014"
+    ],
+    [
+      "r0005",
+      "r0015"
+    ],
+    [
+      "r0010"
+    ]
+  ]
+}

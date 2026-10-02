@@ -1,4 +1,4 @@
-"""Safely initialize or upgrade the local SQLite MDM database."""
+"""Safely initialize or upgrade the MDM database."""
 
 import argparse
 from pathlib import Path
@@ -28,7 +28,7 @@ BASELINE_FOREIGN_KEYS = {
     "mdm_golden_record_drafts": {("candidate_id", "mdm_candidates")},
     "mdm_audit_events": {("candidate_id", "mdm_candidates")},
 }
-HEAD = "0004"
+HEAD = "0005_storage_registry"
 
 
 def alembic_config(url: str, config_path: str | Path | None = None) -> Config:
@@ -42,34 +42,34 @@ def alembic_config(url: str, config_path: str | Path | None = None) -> Config:
 
 
 def upgrade_database(url: str) -> None:
-    if not url.startswith("sqlite:///"):
-        raise ValueError("The current migration workflow supports SQLite only")
-    db_path = url.removeprefix("sqlite:///")
-    if db_path != ":memory:":
+    is_sqlite = url.startswith("sqlite:///")
+    db_path = url.removeprefix("sqlite:///") if is_sqlite else None
+    if db_path and db_path != ":memory:":
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(url)
     inspector = inspect(engine)
-    with engine.connect() as connection:
-        if connection.execute(text("PRAGMA integrity_check")).scalar_one() != "ok":
-            raise RuntimeError("SQLite integrity check failed; restore from backup")
-    tables = set(inspector.get_table_names()) - {"alembic_version"}
-    if tables and "alembic_version" not in inspector.get_table_names():
-        if tables != BASELINE.keys():
-            raise RuntimeError(f"Unversioned database has unexpected tables: {sorted(tables)}")
-        for table, columns in BASELINE.items():
-            actual = {item["name"] for item in inspector.get_columns(table)}
-            if actual != columns:
-                raise RuntimeError(f"Unversioned database has unexpected columns in {table}: {sorted(actual)}")
-            expected_indexes = BASELINE_INDEXES.get(table, set())
-            actual_indexes = {item["name"] for item in inspector.get_indexes(table)}
-            if not expected_indexes <= actual_indexes:
-                raise RuntimeError(f"Unversioned database is missing indexes in {table}")
-            expected_fks = BASELINE_FOREIGN_KEYS.get(table, set())
-            actual_fks = {(item["constrained_columns"][0], item["referred_table"])
-                          for item in inspector.get_foreign_keys(table)}
-            if not expected_fks <= actual_fks:
-                raise RuntimeError(f"Unversioned database is missing foreign keys in {table}")
-        command.stamp(alembic_config(url), "0001")
+    if is_sqlite:
+        with engine.connect() as connection:
+            if connection.execute(text("PRAGMA integrity_check")).scalar_one() != "ok":
+                raise RuntimeError("SQLite integrity check failed; restore from backup")
+        tables = set(inspector.get_table_names()) - {"alembic_version"}
+        if tables and "alembic_version" not in inspector.get_table_names():
+            if tables != BASELINE.keys():
+                raise RuntimeError(f"Unversioned database has unexpected tables: {sorted(tables)}")
+            for table, columns in BASELINE.items():
+                actual = {item["name"] for item in inspector.get_columns(table)}
+                if actual != columns:
+                    raise RuntimeError(f"Unversioned database has unexpected columns in {table}: {sorted(actual)}")
+                expected_indexes = BASELINE_INDEXES.get(table, set())
+                actual_indexes = {item["name"] for item in inspector.get_indexes(table)}
+                if not expected_indexes <= actual_indexes:
+                    raise RuntimeError(f"Unversioned database is missing indexes in {table}")
+                expected_fks = BASELINE_FOREIGN_KEYS.get(table, set())
+                actual_fks = {(item["constrained_columns"][0], item["referred_table"])
+                              for item in inspector.get_foreign_keys(table)}
+                if not expected_fks <= actual_fks:
+                    raise RuntimeError(f"Unversioned database is missing foreign keys in {table}")
+            command.stamp(alembic_config(url), "0001")
     engine.dispose()
     command.upgrade(alembic_config(url), "head")
 

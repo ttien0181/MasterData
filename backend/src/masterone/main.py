@@ -16,6 +16,7 @@ from masterone.config import get_settings
 from masterone.db.session import create_database
 from masterone.mdm import models as mdm_models  # noqa: F401 - registers SQLAlchemy models
 from masterone.mdm.migrate import require_current
+from masterone.storage import repository as storage_repository  # noqa: F401 - registers storage models
 
 
 @asynccontextmanager
