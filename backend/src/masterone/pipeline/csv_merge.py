@@ -74,7 +74,7 @@ def _source_label(object_key: str) -> str:
 
 def merge_csv_objects(
     *, endpoint_url: str, access_key_id: str, secret_access_key: str, bucket: str,
-    object_keys: list[str], cleanup_sources: bool = True,
+    object_keys: list[str], cleanup_sources: bool = True, output_key: str | None = None,
 ) -> dict[str, object]:
     """Merge R2 CSV objects with dynamic columns and disk-backed streaming."""
     if not 1 <= len(object_keys) <= 3:
@@ -87,7 +87,9 @@ def merge_csv_objects(
     client = create_r2_client(endpoint_url, access_key_id, secret_access_key)
     source_columns = [get_csv_columns(client, bucket, key) for key in object_keys]
     merged_schema = build_merged_schema(source_columns)
-    output_key = f"merged/{uuid4()}.csv"
+    output_key = output_key or f"merged/{uuid4()}.csv"
+    if output_key.endswith("/") or output_key.startswith("incoming/"):
+        raise CsvMergeError("Output object key must be a file outside incoming/")
     rows_written = 0
     source_stats: list[dict[str, object]] = []
 

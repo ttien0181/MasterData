@@ -34,6 +34,7 @@ export function putToSignedUrl(
 
 export type R2Upload = { object_name: string; filename: string };
 export type R2MergeResult = {
+  job_id: string;
   output_object_key: string;
   rows_written: number;
   columns: string[];

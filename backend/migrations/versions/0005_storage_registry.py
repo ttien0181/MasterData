@@ -1,7 +1,7 @@
 """Add durable job and stage registry metadata.
 
 Revision ID: 0005_storage_registry
-Revises: 0004_import_owner
+Revises: 0004
 """
 
 from alembic import op
@@ -9,7 +9,7 @@ import sqlalchemy as sa
 
 
 revision = "0005_storage_registry"
-down_revision = "0004_import_owner"
+down_revision = "0004"
 branch_labels = None
 depends_on = None
 

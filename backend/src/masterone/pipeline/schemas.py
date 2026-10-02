@@ -24,9 +24,11 @@ class UploadCompleteResponse(BaseModel):
 class MergeCsvRequest(BaseModel):
     object_keys: list[str] = Field(min_length=1, max_length=3)
     cleanup_sources: bool = True
+    job_id: str | None = Field(default=None, min_length=1, max_length=36)
 
 
 class MergeCsvResponse(BaseModel):
+    job_id: str | None = None
     output_object_key: str
     rows_written: int
     columns: list[str]
