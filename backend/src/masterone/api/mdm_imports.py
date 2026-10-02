@@ -38,6 +38,7 @@ async def post_import(
     source_fingerprint = source_digest.hexdigest()
     job = StorageJob(
         job_id=job_id,
+        owner_user_id=auth.user.id,
         status="running",
         current_stage="normalize",
         files=batch.profile,

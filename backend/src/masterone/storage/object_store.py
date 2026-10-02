@@ -9,6 +9,7 @@ from typing import BinaryIO
 class R2ObjectStore:
     def __init__(self, endpoint_url: str, access_key_id: str, secret_access_key: str, bucket: str):
         import boto3
+        from botocore.config import Config
 
         self.bucket = bucket
         self.client = boto3.client(
@@ -17,6 +18,7 @@ class R2ObjectStore:
             aws_access_key_id=access_key_id,
             aws_secret_access_key=secret_access_key,
             region_name="auto",
+            config=Config(retries={"max_attempts": 5, "mode": "standard"}),
         )
 
     def exists(self, key: str) -> bool:

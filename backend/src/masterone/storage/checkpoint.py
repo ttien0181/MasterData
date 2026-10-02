@@ -57,4 +57,5 @@ def save_stage_checkpoint(
     )
     if output_uri.startswith("r2://"):
         store.write_manifest(paths.success(stage), manifest.to_dict())
+        local_path.unlink(missing_ok=True)
     return manifest

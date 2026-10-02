@@ -17,7 +17,7 @@ from masterone.pipeline.schemas import (
 from masterone.storage.manifest import StageManifest
 from masterone.storage.object_store import R2ObjectStore
 from masterone.storage.paths import JobPaths
-from masterone.storage.repository import StorageJob, upsert_stage
+from masterone.storage.repository import StorageJob, StorageJobStage, upsert_stage
 
 router = APIRouter(prefix="/large-imports", tags=["Large file pipeline"])
 
@@ -49,18 +49,42 @@ def merge_uploads(
     db: Session = Depends(get_session),
     auth: CurrentSession = Depends(require_mutation),
 ):
-    del auth
     settings = get_settings()
     if not all((settings.r2_endpoint_url, settings.r2_access_key_id,
                 settings.r2_secret_access_key, settings.r2_bucket)):
         raise HTTPException(503, "Cloudflare R2 is not configured")
     job_id = request.job_id or str(uuid4())
     paths = JobPaths(job_id)
-    source_fingerprint = sha256("\n".join(sorted(request.object_keys)).encode()).hexdigest()
+    store = R2ObjectStore(settings.r2_endpoint_url, settings.r2_access_key_id, settings.r2_secret_access_key, settings.r2_bucket)
     job = db.get(StorageJob, job_id)
+    if job is not None and job.owner_user_id not in (None, auth.user.id):
+        raise HTTPException(404, "Job not found")
+
+    if job is not None and job.status == "done":
+        manifest_key = paths.success("merge")
+        if store.exists(manifest_key) and store.exists(paths.merged()):
+            stage = db.query(StorageJobStage).filter_by(job_id=job_id, stage="merge").one_or_none()
+            if stage is not None:
+                return MergeCsvResponse(
+                    job_id=job_id,
+                    output_object_key=paths.merged(),
+                    rows_written=stage.row_count or 0,
+                    columns=list((stage.schema or {}).keys()),
+                    sources=(stage.metrics or {}).get("sources", []),
+                )
+
+    source_digest = sha256()
+    for object_key in sorted(request.object_keys):
+        try:
+            head = store.client.head_object(Bucket=settings.r2_bucket, Key=object_key)
+        except Exception as exc:
+            raise HTTPException(400, f"Input object is not available: {object_key}") from exc
+        source_digest.update(f"{object_key}|{head.get('ETag', '')}|{head.get('ContentLength', 0)}".encode())
+    source_fingerprint = source_digest.hexdigest()
     if job is None:
         job = StorageJob(
             job_id=job_id,
+            owner_user_id=auth.user.id,
             status="running",
             current_stage="merge",
             files=[{"object_key": key} for key in request.object_keys],
@@ -68,6 +92,7 @@ def merge_uploads(
         )
         db.add(job)
     else:
+        job.owner_user_id = auth.user.id
         job.status = "running"
         job.current_stage = "merge"
     upsert_stage(
@@ -105,7 +130,6 @@ def merge_uploads(
         raise HTTPException(502, "Unable to merge CSV objects in R2") from exc
 
     try:
-        store = R2ObjectStore(settings.r2_endpoint_url, settings.r2_access_key_id, settings.r2_secret_access_key, settings.r2_bucket)
         head = store.client.head_object(Bucket=settings.r2_bucket, Key=output_key)
         manifest = StageManifest(
             job_id=job_id,
@@ -142,3 +166,38 @@ def merge_uploads(
         raise HTTPException(502, "Merged object was created but its manifest could not be published") from exc
 
     return MergeCsvResponse(job_id=job_id, **result)
+
+
+@router.get("/jobs/{job_id}")
+def get_job_status(
+    job_id: str,
+    db: Session = Depends(get_session),
+    auth: CurrentSession = Depends(current_session),
+):
+    job = db.get(StorageJob, job_id)
+    if job is None or job.owner_user_id not in (None, auth.user.id):
+        raise HTTPException(404, "Job not found")
+    stages = db.query(StorageJobStage).filter_by(job_id=job_id).order_by(StorageJobStage.id).all()
+    return {
+        "job_id": job.job_id,
+        "status": job.status,
+        "current_stage": job.current_stage,
+        "row_count": job.row_count,
+        "error": job.error,
+        "stages": [
+            {
+                "stage": stage.stage,
+                "status": stage.status,
+                "input_uri": stage.input_uri,
+                "output_uri": stage.output_uri,
+                "row_count": stage.row_count,
+                "bytes": stage.bytes,
+                "schema": stage.schema,
+                "metrics": stage.metrics,
+                "input_fingerprint": stage.input_fingerprint,
+                "config_hash": stage.config_hash,
+                "code_version": stage.code_version,
+            }
+            for stage in stages
+        ],
+    }

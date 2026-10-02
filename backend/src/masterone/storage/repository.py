@@ -15,6 +15,7 @@ class StorageJob(Base):
     __tablename__ = "jobs"
 
     job_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32), index=True)
     current_stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
     files: Mapped[list] = mapped_column(JSON, default=list)

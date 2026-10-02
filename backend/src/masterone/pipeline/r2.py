@@ -7,10 +7,12 @@ class R2SignedUrlService:
 
     def __init__(self, endpoint_url: str, access_key_id: str, secret_access_key: str, bucket_name: str, ttl_seconds: int):
         import boto3
+        from botocore.config import Config
 
         self._client = boto3.client(
             "s3", endpoint_url=endpoint_url, aws_access_key_id=access_key_id,
             aws_secret_access_key=secret_access_key, region_name="auto",
+            config=Config(retries={"max_attempts": 5, "mode": "standard"}),
         )
         self._bucket_name = bucket_name
         self._ttl = ttl_seconds
@@ -28,8 +30,10 @@ class R2SignedUrlService:
 
 def create_r2_client(endpoint_url: str, access_key_id: str, secret_access_key: str):
     import boto3
+    from botocore.config import Config
 
     return boto3.client(
         "s3", endpoint_url=endpoint_url, aws_access_key_id=access_key_id,
         aws_secret_access_key=secret_access_key, region_name="auto",
+        config=Config(retries={"max_attempts": 5, "mode": "standard"}),
     )
