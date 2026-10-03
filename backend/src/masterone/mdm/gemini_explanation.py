@@ -1,4 +1,9 @@
-"""Privacy-minimized, on-demand Gemini explanations for review cohorts."""
+"""Privacy-minimized, on-demand Gemini explanations for review cohorts.
+
+Theo mục 25.1: LLM chỉ giải thích cho Steward, KHÔNG được dùng để bật Auto Merge.
+  - allow_llm_evidence=False  (mặc định) → provenance "LLM" không eligible auto merge
+  - Hàm explain_cohort() chỉ trả về explanation text, không trả về decision hay state CF/DF
+"""
 
 import json
 from urllib.error import HTTPError, URLError
@@ -9,6 +14,15 @@ from fastapi import HTTPException
 from masterone.config import Settings
 
 ALLOWED_FIELDS = {"name", "phone", "email", "address"}
+
+# Khi True: pair có LLM evidence vẫn eligible auto merge (phải benchmark trước khi bật)
+# Mặc định False theo nguyên tắc 11 kiến trúc v3.1
+ALLOW_LLM_EVIDENCE_DEFAULT: bool = False
+
+
+def is_llm_eligible_for_auto_merge(policy_allow_llm: bool = ALLOW_LLM_EVIDENCE_DEFAULT) -> bool:
+    """Trả về False nếu policy chưa cho phép dùng LLM làm evidence auto merge."""
+    return policy_allow_llm
 
 
 def explain_cohort(payload: dict, settings: Settings) -> dict:
@@ -29,7 +43,7 @@ def explain_cohort(payload: dict, settings: Settings) -> dict:
               + json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
     request = Request(endpoint, data=json.dumps({
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"responseFormat": {"text": {"mimeType": "application/json", "schema": schema}}},
+        "generationConfig": {"responseMimeType": "application/json", "responseSchema": schema},
     }).encode(), headers={"Content-Type": "application/json", "x-goog-api-key": settings.gemini_api_key}, method="POST")
     try:
         with urlopen(request, timeout=25) as response:
@@ -52,10 +66,14 @@ def explain_cohort(payload: dict, settings: Settings) -> dict:
         if not set(attention) <= ALLOWED_FIELDS or any(not isinstance(item, str) for item in limitations):
             raise ValueError
         usage = body.get("usageMetadata", {})
-        return {"explanation": {"summary_vi": summary, "attention_fields": attention,
-                                "limitations": limitations},
-                "model_version": body.get("modelVersion", settings.gemini_model),
-                "usage": {"prompt_tokens": usage.get("promptTokenCount", 0),
-                          "candidate_tokens": usage.get("candidatesTokenCount", 0)}}
+        return {
+            "explanation": {"summary_vi": summary, "attention_fields": attention,
+                            "limitations": limitations},
+            "model_version": body.get("modelVersion", settings.gemini_model),
+            # Mục 25.1: LLM không bật auto merge theo mặc định
+            "eligible_for_auto_merge": ALLOW_LLM_EVIDENCE_DEFAULT,
+            "usage": {"prompt_tokens": usage.get("promptTokenCount", 0),
+                      "candidate_tokens": usage.get("candidatesTokenCount", 0)},
+        }
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
         raise HTTPException(502, "GEMINI_SCHEMA_ERROR") from None

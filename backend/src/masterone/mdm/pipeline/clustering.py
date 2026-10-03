@@ -5,6 +5,22 @@ from masterone.mdm.pipeline.golden import build_golden
 MAX_CLUSTER_MEMBERS = 25
 
 
+def _has_source_unique_conflict(member_ids: set[str], by_id: dict) -> bool:
+    """Guard mục 21.3: nguồn single-unique không thể có 2 record trong cùng entity.
+
+    Mỗi nguồn (CRM/ERP/BILL) cam kết mỗi external_id là một thực thể riêng.
+    Nếu cluster gộp 2 record cùng source_system → báo conflict.
+    """
+    seen_sources: dict[str, str] = {}
+    for rid in member_ids:
+        src = by_id[rid].get("source_system", "")
+        if src and src in seen_sources:
+            return True
+        if src:
+            seen_sources[src] = rid
+    return False
+
+
 def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_version: str) -> dict:
     """Create disjoint safe components and separate overlapping review cases."""
     by_id = {record["id"]: record for record in records}
@@ -36,9 +52,16 @@ def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_
         combined = members[left_root] | members[right_root]
         has_conflict = any(tuple(sorted((left, right))) in hard_links
                            for left in members[left_root] for right in members[right_root])
-        if has_conflict or len(combined) > MAX_CLUSTER_MEMBERS:
+        has_source_dup = _has_source_unique_conflict(combined, by_id)
+        if has_conflict or has_source_dup or len(combined) > MAX_CLUSTER_MEMBERS:
+            if has_conflict:
+                triage_reason = "CLUSTER_RISK"
+            elif has_source_dup:
+                triage_reason = "SAME_SOURCE_UNIQUE_CONFLICT"
+            else:
+                triage_reason = "CLUSTER_NOT_CONFIRMED"
             pair["triage_status"] = "REVIEW"
-            pair["triage_reason"] = "CLUSTER_RISK" if has_conflict else "CLUSTER_NOT_CONFIRMED"
+            pair["triage_reason"] = triage_reason
             risky.append(pair)
             continue
         parent[right_root] = left_root

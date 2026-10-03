@@ -28,7 +28,7 @@ BASELINE_FOREIGN_KEYS = {
     "mdm_golden_record_drafts": {("candidate_id", "mdm_candidates")},
     "mdm_audit_events": {("candidate_id", "mdm_candidates")},
 }
-HEAD = "0011_merge_storage_resolution"
+HEAD = "0013_llm_audit_tables"
 
 
 def alembic_config(url: str, config_path: str | Path | None = None) -> Config:

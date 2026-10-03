@@ -5,7 +5,7 @@ import AppShell, { type Stage } from "@/components/AppShell";
 import { PageHeader } from "@/components/DashboardPrimitives";
 import ResolutionFlow from "@/components/ResolutionFlow";
 import { ApiError, getResolutionOverview, getResolutionRuns, setCsrfToken,
-  startResolutionRun, uploadResolutionFiles, type AuthUser } from "@/lib/api";
+  startResolutionRun, uploadResolutionFiles, uploadResolutionFilesViaR2, type AuthUser } from "@/lib/api";
 import type { ResolutionOverview, ResolutionRunHistory } from "@/lib/contracts";
 
 function activeRunKey(userId: string) { return `masterone.resolution-run.v1.${userId}`; }
@@ -99,7 +99,10 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
     if (!files.length) return;
     setBusy(true); setMessage("");
     try {
-      const created = await uploadResolutionFiles(files);
+      const r2Available = !!(process.env.NEXT_PUBLIC_R2_ENABLED === "true");
+      const created = r2Available
+        ? await uploadResolutionFilesViaR2(files)
+        : await uploadResolutionFiles(files);
       window.localStorage.setItem(activeRunKey(user.id), created.run_id);
       setRunId(created.run_id);
       await startResolutionRun(created.run_id);

@@ -65,6 +65,29 @@ def require_mutation(request: Request, auth: CurrentSession = Depends(current_se
     return auth
 
 
+# Thứ tự quyền tăng dần — role cao hơn bao gồm quyền của role thấp hơn
+_ROLE_RANK: dict[str, int] = {
+    "VIEWER": 0,
+    "STEWARD": 1,
+    "SENIOR_STEWARD": 2,
+    "POLICY_ADMIN": 3,
+    "AUDITOR": 3,
+}
+
+
+def require_role(minimum_role: str):
+    """FastAPI dependency factory.  Dùng: Depends(require_role("STEWARD"))."""
+    min_rank = _ROLE_RANK.get(minimum_role, 99)
+
+    def _check(auth: CurrentSession = Depends(current_session)) -> CurrentSession:
+        user_rank = _ROLE_RANK.get(getattr(auth.user, "role", "VIEWER"), 0)
+        if user_rank < min_rank:
+            raise HTTPException(403, f"Cần quyền {minimum_role} trở lên")
+        return auth
+
+    return _check
+
+
 def normalized_email(email: str) -> str:
     return email.strip().casefold()
 

@@ -219,6 +219,75 @@ class ResolutionExplanation(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
 
 
+# ── LLM Audit tables (Phase L4) ───────────────────────────────────────────────
+
+class LLMRequest(Base):
+    """Audit record cho mỗi OpenRouter call."""
+    __tablename__ = "llm_requests"
+    __table_args__ = (
+        Index("ix_llm_requests_request_type", "request_type"),
+        Index("ix_llm_requests_created_at", "created_at"),
+        Index("ix_llm_requests_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    request_type: Mapped[str] = mapped_column(String(50))
+    pair_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    model: Mapped[str] = mapped_column(String(100))
+    provider: Mapped[str] = mapped_column(String(50), default="openrouter")
+    prompt_version: Mapped[str] = mapped_column(String(50))
+    schema_version: Mapped[str] = mapped_column(String(50))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    response_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(30))
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class LLMSemanticEvidence(Base):
+    """LLM semantic fallback evidence — provenance record."""
+    __tablename__ = "llm_semantic_evidence"
+    __table_args__ = (Index("ix_llm_semantic_evidence_pair_id", "pair_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    pair_id: Mapped[str] = mapped_column(String(100))
+    field_name: Mapped[str] = mapped_column(String(50))
+    semantic_result: Mapped[str] = mapped_column(String(50))
+    mapped_state: Mapped[str] = mapped_column(String(10))
+    reason_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    short_reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    model: Mapped[str] = mapped_column(String(100))
+    prompt_version: Mapped[str] = mapped_column(String(50))
+    schema_version: Mapped[str] = mapped_column(String(50))
+    map_version: Mapped[str] = mapped_column(String(50))
+    request_id: Mapped[str] = mapped_column(String(36))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    response_hash: Mapped[str] = mapped_column(String(64))
+    eligible_for_auto_merge: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class LLMExplanationRecord(Base):
+    """Persisted explanation cache — pair hoặc group scope."""
+    __tablename__ = "llm_explanations"
+    __table_args__ = (
+        Index("ix_llm_explanations_scope", "scope_type", "scope_id"),
+        Index("ix_llm_explanations_signature", "signature_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    scope_type: Mapped[str] = mapped_column(String(30))   # "pair" | "group"
+    scope_id: Mapped[str] = mapped_column(String(100))
+    explanation_json: Mapped[dict] = mapped_column(JSON)
+    signature_hash: Mapped[str] = mapped_column(String(64))
+    model: Mapped[str] = mapped_column(String(100))
+    prompt_version: Mapped[str] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
 class ResolutionPreview(Base):
     __tablename__ = "mdm_resolution_previews"
 

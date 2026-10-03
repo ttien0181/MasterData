@@ -71,6 +71,45 @@ export async function uploadResolutionFiles(files: File[]) {
   return request<{ run_id: string; status: string; profile: { row_count: number; file_count: number; source_counts: Record<string, number> } }>(
     "/runs", { method: "POST", body: data });
 }
+
+export async function uploadResolutionFilesViaR2(
+  files: File[],
+  onProgress?: (file: File, percent: number) => void,
+): Promise<{ run_id: string; status: string; profile: { row_count: number; file_count: number; source_counts: Record<string, number> } }> {
+  const objectKeys: string[] = [];
+
+  for (const file of files) {
+    const contentType = file.type || "text/csv";
+
+    // 1. Lấy presigned PUT URL
+    const urlRes = await request<{ object_name: string; upload_url: string; expires_in: number }>(
+      "/runs/upload-url",
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: file.name, content_type: contentType }) },
+    );
+
+    // 2. PUT file thẳng lên R2
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", urlRes.upload_url);
+      xhr.setRequestHeader("Content-Type", contentType);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress?.(file, Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`R2 upload thất bại (${xhr.status})`)));
+      xhr.onerror = () => reject(new Error("Lỗi mạng khi upload lên R2"));
+      xhr.onabort = () => reject(new Error("Upload bị huỷ"));
+      xhr.send(file);
+    });
+
+    objectKeys.push(urlRes.object_name);
+  }
+
+  // 3. Báo backend tạo run từ các file đã upload trên R2
+  return request<{ run_id: string; status: string; profile: { row_count: number; file_count: number; source_counts: Record<string, number> } }>(
+    "/runs/from-r2",
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ object_keys: objectKeys, cleanup_sources: false }) },
+  );
+}
 export const getResolutionRun = (id: string) => request<ResolutionRun>(`/runs/${id}`);
 export const getResolutionRuns = () => request<ResolutionRunHistory>("/runs?limit=25&offset=0");
 export const startResolutionRun = (id: string) => request<{ task_id: string; run_id: string; status: string }>(`/runs/${id}/start`, { method: "POST" });

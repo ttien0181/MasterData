@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from masterone.api.auth import router as auth_router
 from masterone.api.large_imports import router as large_imports_router
+from masterone.api.mdm_explanations import router as mdm_explanations_router, metrics_router as mdm_llm_metrics_router
 from masterone.api.mdm_imports import router as mdm_imports_router
 from masterone.api.mdm_reviews import router as mdm_reviews_router
 from masterone.api.mdm_runs import router as mdm_runs_router
@@ -67,6 +68,8 @@ app.include_router(mdm_imports_router, prefix="/api/v1")
 app.include_router(mdm_reviews_router, prefix="/api/v1")
 app.include_router(mdm_runs_router, prefix="/api/v1")
 app.include_router(mdm_resolution_router, prefix="/api/v1")
+app.include_router(mdm_explanations_router, prefix="/api/v1")
+app.include_router(mdm_llm_metrics_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(large_imports_router, prefix="/api/v1")
 

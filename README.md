@@ -14,29 +14,37 @@ Technical Guidebook: <https://phoenix.note.transformerlabs.ai/technical-book>
 
 ## Yêu cầu
 
-- `uv` để quản lý Python 3.11+ và môi trường ảo; không cần cài Python toàn hệ thống
+- `uv` để cài Python 3.11+ và quản lý môi trường ảo
 - Node.js 22 trở lên và npm cho frontend (CI dùng Node.js 22)
 - Git
-- Docker — tuỳ chọn, chỉ cần nếu chạy `docker compose`
+- Docker Desktop — tuỳ chọn, chỉ cần nếu chạy bằng Docker Compose
 
 ## Bắt đầu
 
-### 1. Clone repo của đội
+### 1. Lấy mã nguồn
 
-Khi đội được chốt, hệ thống tự sinh repo cho đội từ template này, nằm trong org
-GitHub của khoá bạn đang học và đặt tên theo mã đội. Copy URL ở trang đội trên
-Phoenix rồi clone về:
+Nếu bạn đã mở project ở máy, chuyển đến thư mục gốc repo rồi tiếp tục bước 2.
+Nếu chưa, clone repo của đội từ URL trên GitHub:
 
 ```bash
 git clone https://github.com/<ORG-CỦA-KHOÁ>/<MÃ-ĐỘI>.git
 cd <MÃ-ĐỘI>
 ```
 
-Không cần `rm -rf .git`, `git init` hay `git remote add`: repo sinh từ template
-đã bắt đầu bằng lịch sử riêng của đội và remote trỏ sẵn đúng chỗ. Chưa thấy repo
-của đội thì báo BTC — repo tự tạo nằm ngoài org sẽ không được chấm.
+### 2. Cài dependencies
 
-### 2. Cài môi trường
+Chạy các lệnh sau từ thư mục gốc repo. `uv` sẽ tạo môi trường Python cục bộ
+trong `.venv`; không cần cài Python toàn hệ thống.
+
+Windows PowerShell:
+
+```powershell
+uv venv --python 3.11 .venv
+uv pip install --python .venv -r requirements.txt
+npm --prefix frontend ci
+```
+
+macOS/Linux:
 
 ```bash
 uv venv --python 3.11 .venv
@@ -44,41 +52,61 @@ uv pip install --python .venv -r requirements.txt
 npm --prefix frontend ci
 ```
 
-Chỉ cần cài lại frontend khi clone mới hoặc khi dependencies thay đổi. Xem [MDM_DEV.md](MDM_DEV.md) để thiết lập và chạy bằng PowerShell trên Windows.
+`npm ci` cài frontend theo `frontend/package-lock.json`. Chỉ cần chạy lại sau
+khi clone repo hoặc khi dependencies thay đổi. Xem [MDM_DEV.md](MDM_DEV.md) để
+biết thêm về luồng sử dụng và kiểm tra ứng dụng.
 
 ### 3. Cấu hình biến môi trường
+
+Tạo `.env` từ file mẫu nếu chưa có. Trên Windows PowerShell:
+
+```powershell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+```
+
+Trên macOS/Linux:
 
 ```bash
 test -f .env || cp .env.example .env
 ```
 
-Trên Windows PowerShell, dùng `if (-not (Test-Path .env)) { Copy-Item .env.example .env }`. Giữ `.env` hiện tại nếu file đã tồn tại.
+Giữ nguyên `.env` nếu file đã tồn tại. Để bật tính năng LLM, điền
+`OPENROUTER_API_KEY` trong `.env` (lấy key tại
+[OpenRouter](https://openrouter.ai/keys)). Nếu chưa có key, đặt
+`LLM_ENABLED=false` để chạy ứng dụng mà không gọi LLM. Không cần `OPENAI_API_KEY`
+cho luồng chạy mặc định của project.
 
-Mở `.env` và điền `OPENAI_API_KEY`. Riêng `AI_LOG_API_KEY`, mỗi thành viên tự
-tạo key riêng tại [dashboard Phoenix](https://phoenix.note.transformerlabs.ai/api-keys)
-rồi thay vào chỗ `<get-your-api-key-from-dashboard-phoenix>` — giá trị trong
-`.env.example` chỉ là placeholder, để nguyên thì log không vào được hệ thống chấm.
+### Tuỳ chọn: bật AI usage logging
 
-### 4. Cài hook ghi log AI
+Nếu cần gửi log phục vụ grading, mỗi thành viên tạo API key tại
+[dashboard Phoenix](https://phoenix.note.transformerlabs.ai/api-keys), điền vào
+`AI_LOG_API_KEY` trong `.env`, rồi cài hook một lần sau khi clone.
 
 ```bash
-bash scripts/setup_hooks.sh                                    # Linux / macOS / Git Bash
-powershell -ExecutionPolicy Bypass -File scripts\setup_hooks.ps1 # Windows PowerShell
+bash scripts/setup_hooks.sh
 ```
 
-Chạy một lần sau khi clone. Hook ghi lại prompt khi bạn dùng Claude Code, Cursor,
-Codex CLI, Gemini CLI, Antigravity hoặc GitHub Copilot, và cài pre-push hook để
-đẩy log lên server.
-
-### 5. Chạy backend và frontend
-
-Từ thư mục gốc repo, chạy migration lần đầu hoặc sau khi có revision mới, rồi mở hai terminal:
+Trên Windows PowerShell:
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_hooks.ps1
+```
+
+### 4. Khởi tạo database
+
+```bash
 uv run --python .venv python -m masterone.mdm.migrate
 ```
 
-Terminal 1 — backend:
+Chạy lại lệnh này khi project có migration database mới. Thực hiện từ thư mục
+gốc repo để ứng dụng tìm thấy `.env`, cấu hình Alembic và database SQLite trong
+`data/`.
+
+### 5. Chạy ứng dụng
+
+Mở hai terminal tại thư mục gốc repo.
+
+Terminal 1 — backend API:
 
 ```powershell
 uv run --python .venv python -m uvicorn masterone.main:app --reload --port 8001
@@ -90,9 +118,27 @@ Terminal 2 — frontend:
 npm --prefix frontend run dev
 ```
 
-Mở ứng dụng tại <http://localhost:3000> và Swagger UI tại <http://localhost:8001/docs>. Backend cũng có thể chạy bằng `make run`; `make test` và `make lint` dùng để kiểm tra — xem `Makefile`.
+Mở ứng dụng tại <http://localhost:3000> và tài liệu API tại
+<http://localhost:8001/docs>. Backend cũng có thể chạy bằng `make run`;
+`make test` và `make lint` dùng để kiểm tra — xem `Makefile`.
 
-Chạy các lệnh backend từ thư mục gốc repo để `.env`, `backend/alembic.ini` và `data/masterone.db` được tìm đúng vị trí. Xem [MDM_DEV.md](MDM_DEV.md) để chạy frontend, tạo tài khoản và thử luồng MDM.
+Đăng ký tài khoản trong ứng dụng rồi đăng nhập để bắt đầu. Xem
+[MDM_DEV.md](MDM_DEV.md) để biết luồng MDM và hướng dẫn kiểm thử chi tiết.
+
+### Chạy bằng Docker (tuỳ chọn)
+
+Sau khi tạo `.env` và cấu hình `OPENROUTER_API_KEY` hoặc đặt `LLM_ENABLED=false`,
+chạy từ thư mục gốc repo:
+
+```bash
+docker compose up --build
+```
+
+Compose khởi chạy backend, frontend và PostgreSQL; migration database được chạy
+khi backend khởi động. Mở ứng dụng tại <http://localhost:3000> và API tại
+<http://localhost:8000/docs>. Dừng các dịch vụ bằng `Ctrl+C`; thêm `-d` vào lệnh
+`docker compose up --build -d` để chạy nền, rồi dùng `docker compose down` để
+dừng.
 
 
 ## Cấu trúc thư mục
@@ -205,5 +251,3 @@ Báo lỗ hổng bảo mật theo [SECURITY.md](SECURITY.md), đừng mở publi
 ## License
 
 [MIT](LICENSE) — dùng tự do cho mục đích giáo dục.
-
-123456
