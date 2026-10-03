@@ -196,7 +196,7 @@ def get_overview(run_id: str, db: Session = Depends(get_session),
             ResolutionPair.run_id == run_id,
             or_(ResolutionPair.pair_decision == "NON_MATCH", ResolutionPair.user_decision == "REJECTED"),
         ).count(),
-        "review_cases": len(_review_groups(db, run_id)),
+        "review_cases": db.query(ResolutionReviewCase).filter_by(run_id=run_id, status="OPEN").count(),
         "manual": db.query(ResolutionProposal).filter_by(run_id=run_id, status="REVIEW_REQUIRED").count(),
     }
     counts["review"] = counts["review_cases"] + counts["manual"]

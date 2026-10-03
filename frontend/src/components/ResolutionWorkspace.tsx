@@ -69,10 +69,29 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
   useEffect(() => {
     if (!runId || !overview || ["COMPLETED", "FAILED", "RETRYABLE_FAILED", "UPLOADED"].includes(overview.status)) return;
     setPolling(true);
-    const timer = window.setInterval(() => { void refreshOverview(runId).then((result) => {
-      if (["COMPLETED", "FAILED", "RETRYABLE_FAILED"].includes(result.status)) setPolling(false);
-    }).catch(() => setPolling(false)); }, 900);
-    return () => window.clearInterval(timer);
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const result = await refreshOverview(runId);
+        if (cancelled) return;
+        if (["COMPLETED", "FAILED", "RETRYABLE_FAILED", "UPLOADED"].includes(result.status)) {
+          setPolling(false);
+          return;
+        }
+        timer = window.setTimeout(() => void poll(), 2000);
+      } catch {
+        if (!cancelled) setPolling(false);
+      }
+    };
+
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
   }, [overview?.status, refreshOverview, runId]);
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {

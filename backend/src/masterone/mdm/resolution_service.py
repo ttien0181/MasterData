@@ -3,6 +3,7 @@
 from hashlib import sha256
 from uuid import uuid4
 
+from sqlalchemy import insert as sa_insert
 from sqlalchemy.orm import sessionmaker
 
 from masterone.db.base import now_utc
@@ -59,25 +60,37 @@ def run_pipeline(run_id: str, factory: sessionmaker, progress) -> None:
     with factory.begin() as db:
         run = db.get(ResolutionRun, run_id)
         task = db.query(ResolutionTask).filter_by(run_id=run_id).one()
-        for pair in computed["pairs"]:
-            db.add(ResolutionPair(
-                id=pair["id"], run_id=run_id, left_record_id=pair["left_id"],
-                right_record_id=pair["right_id"], blocking_reasons=pair["blocking_reasons"],
-                field_evidence=pair["field_evidence"], score=pair["score"],
-                pair_decision=pair["decision"], decision_reason=pair["reason"],
-                triage_status=pair["triage_status"], triage_reason=pair["triage_reason"],
-            ))
-        for proposal in computed["proposals"]:
-            db.add(ResolutionProposal(id=proposal["id"], run_id=run_id,
-                                      member_record_ids=proposal["member_record_ids"],
-                                      golden_fields=proposal["golden_fields"], status=proposal["status"],
-                                      revision=proposal["revision"]))
-        for case in computed["review_cases"]:
-            db.add(ResolutionReviewCase(id=case["id"], run_id=run_id, pair_ids=case["pair_ids"],
-                                        member_record_ids=case["member_record_ids"],
-                                        primary_group=case["primary_group"], subgroup=case["subgroup"],
-                                        signature_hash=case["signature_hash"],
-                                        triage_reason=case["triage_reason"]))
+
+        if computed["pairs"]:
+            db.execute(sa_insert(ResolutionPair), [
+                {"id": p["id"], "run_id": run_id, "left_record_id": p["left_id"],
+                 "right_record_id": p["right_id"], "blocking_reasons": p["blocking_reasons"],
+                 "field_evidence": p["field_evidence"], "score": p["score"],
+                 "pair_decision": p["decision"], "decision_reason": p["reason"],
+                 "triage_status": p["triage_status"], "triage_reason": p["triage_reason"],
+                 "user_decision": "UNDECIDED", "revision": 1}
+                for p in computed["pairs"]
+            ])
+
+        if computed["proposals"]:
+            db.execute(sa_insert(ResolutionProposal), [
+                {"id": prop["id"], "run_id": run_id,
+                 "member_record_ids": prop["member_record_ids"],
+                 "golden_fields": prop["golden_fields"], "status": prop["status"],
+                 "origin": "AUTO", "revision": prop["revision"]}
+                for prop in computed["proposals"]
+            ])
+
+        if computed["review_cases"]:
+            db.execute(sa_insert(ResolutionReviewCase), [
+                {"id": case["id"], "run_id": run_id, "pair_ids": case["pair_ids"],
+                 "member_record_ids": case["member_record_ids"],
+                 "primary_group": case["primary_group"], "subgroup": case["subgroup"],
+                 "signature_hash": case["signature_hash"],
+                 "triage_reason": case["triage_reason"], "status": "OPEN", "revision": 1}
+                for case in computed["review_cases"]
+            ])
+
         task.status = "COMPLETED"
         task.phase = "completed"
         task.processed_count = len(records)
