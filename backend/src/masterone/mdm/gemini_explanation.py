@@ -36,7 +36,12 @@ def explain_cohort(payload: dict, settings: Settings) -> dict:
         with urlopen(request, timeout=25) as response:
             body = json.loads(response.read())
     except HTTPError as exc:
-        code = "GEMINI_RATE_LIMIT" if exc.code == 429 else "GEMINI_HTTP_ERROR"
+        if exc.code == 429:
+            code = "GEMINI_RATE_LIMIT"
+        elif exc.code == 503:
+            code = "GEMINI_UNAVAILABLE"
+        else:
+            code = f"GEMINI_HTTP_ERROR_{exc.code}"
         raise HTTPException(502, code) from None
     except (URLError, TimeoutError):
         raise HTTPException(502, "GEMINI_UNAVAILABLE") from None

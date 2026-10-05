@@ -385,6 +385,7 @@ def transition_review(db: Session, run_id: str, item_ids: list[str], decision: s
             db.add(ResolutionProposal(id=staged_id, run_id=run_id,
                 member_record_ids=sorted(members), golden_fields=golden,
                 status=STAGED_CONFLICT, origin="REVIEW", decision_reason="CONFLICT_REQUIRES_SPLIT"))
+            db.flush()
             for case in cases:
                 case.status = "STAGED"
                 case.revision += 1
@@ -415,6 +416,7 @@ def transition_review(db: Session, run_id: str, item_ids: list[str], decision: s
         db.add(ResolutionProposal(id=proposal_id, run_id=run_id,
             member_record_ids=sorted(members), golden_fields=build_golden(sorted(members), payload),
             status="REVIEW_APPROVED", origin="REVIEW", decision_reason="USER_REVIEW_APPROVED"))
+        db.flush()
         db.add(ResolutionAuditEvent(run_id=run_id, actor_user_id=actor_user_id,
             proposal_id=proposal_id, action="REVIEW_TO_MERGE", details={"item_id": item_id}))
         changed.append(proposal_id)
