@@ -39,6 +39,23 @@ class R2ObjectStore:
     def download_file(self, key: str, path: str | Path) -> None:
         self.client.download_file(self.bucket, key, str(path))
 
+    def upload_bytes(self, data: bytes, key: str, content_type: str = "application/octet-stream") -> None:
+        self.client.put_object(Bucket=self.bucket, Key=key, Body=data, ContentType=content_type)
+
+    def download_bytes(self, key: str) -> bytes:
+        response = self.client.get_object(Bucket=self.bucket, Key=key)
+        return response["Body"].read()
+
+    def presigned_url(self, key: str, expires_in: int = 3600) -> str:
+        return self.client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self.bucket, "Key": key},
+            ExpiresIn=expires_in,
+        )
+
+    def delete(self, key: str) -> None:
+        self.client.delete_object(Bucket=self.bucket, Key=key)
+
     def write_manifest(self, key: str, payload: dict) -> None:
         import json
 

@@ -24,7 +24,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
       const user = await login(email, password);
       setCsrfToken(user.csrf_token);
       setActiveImportUser(user.id);
-      router.replace("/");
+      router.replace("/app");
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : "Không thể kết nối máy chủ. Hãy thử lại.");
     } finally {

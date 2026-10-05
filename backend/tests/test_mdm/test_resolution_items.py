@@ -56,15 +56,16 @@ def test_review_choice_survives_move_to_merge_and_final_csv(client):
     review = client.get(f"{prefix}/items/review").json()
     assert review["total"] == 1
     assert review["items"][0]["member_count"] == 3
-    saved = client.put(f"{prefix}/items/review/case-bc/choices", json={"choices": {"phone": "c"}})
-    assert saved.status_code == 200
     moved = client.post(f"{prefix}/review-items/transition", json={"item_ids": ["case-bc"], "decision": "merge"})
     assert moved.status_code == 200, moved.text
     proposal_id = moved.json()["changed_ids"][0]
     detail = client.get(f"{prefix}/items/merge/{proposal_id}").json()
-    assert detail["choices"] == {"phone": "c"}
-    assert client.get(f"{prefix}/export-readiness").json()["can_export"] is True
-    response = client.post(f"{prefix}/exports", json={})
+    assert detail["choices"] == {}
+    assert client.post(f"{prefix}/export-readiness", json={}).json()["can_export"] is False
+    assert client.post(f"{prefix}/exports", json={}).status_code == 409
+    assert client.post(f"{prefix}/exports", json={"choices": {proposal_id: {"phone": "outside"}}}).status_code == 422
+    assert client.post(f"{prefix}/export-readiness", json={"choices": {proposal_id: {"phone": "c"}}}).json()["can_export"] is True
+    response = client.post(f"{prefix}/exports", json={"choices": {proposal_id: {"phone": "c"}}})
     assert response.status_code == 200, response.text
     rows = read_csv(response)
     assert len(rows) == 1
@@ -81,6 +82,20 @@ def test_review_choice_survives_move_to_merge_and_final_csv(client):
     assert len(source_rows) == 3
 
 
+def test_automatic_non_match_rebuilds_field_evidence_without_changing_decision(client):
+    run_id = seed_run(client)
+    with client.session_factory() as db:
+        db.add(ResolutionPair(id="auto-no", run_id=run_id, left_record_id="a", right_record_id="c",
+                              blocking_reasons=["name"], field_evidence=[], score=0.1,
+                              pair_decision="NON_MATCH", decision_reason="WEAK_FIELD_EVIDENCE",
+                              triage_status="NON_MATCH_PROPOSAL", triage_reason="WEAK_FIELD_EVIDENCE"))
+        db.commit()
+    detail = client.get(f"/api/v1/mdm/runs/{run_id}/items/no_merge/auto-no").json()
+    assert detail["score"] == 0.1
+    assert detail["field_evidence"][0]["field"] == "name"
+    assert len(detail["field_evidence"]) == 6  # name, phone, email, dob, address, government_id
+
+
 def test_rejecting_uncertain_link_keeps_safe_group_and_exports_singleton(client):
     run_id = seed_run(client)
     prefix = f"/api/v1/mdm/runs/{run_id}"
@@ -91,6 +106,40 @@ def test_rejecting_uncertain_link_keeps_safe_group_and_exports_singleton(client)
     assert client.get(f"{prefix}/items/review").json()["total"] == 0
     rows = read_csv(client.post(f"{prefix}/exports", json={}))
     assert sorted(row["source_record_ids"] for row in rows) == ["A|B", "C"]
+
+
+def test_separate_records_are_actual_unmerged_rows_not_every_rejected_pair_member(client):
+    run_id = seed_run(client)
+    prefix = f"/api/v1/mdm/runs/{run_id}"
+    before = client.get(f"{prefix}/separate-records").json()
+    assert before["total"] == 1
+    assert [item["external_id"] for item in before["items"]] == ["C"]
+    assert before["items"][0]["review_pending"] is True
+    assert client.get(f"{prefix}/overview").json()["counts"]["separate"] == 1
+
+    client.post(f"{prefix}/review-items/transition",
+                json={"item_ids": ["case-bc"], "decision": "no_merge"})
+    after = client.get(f"{prefix}/separate-records", params={"q": "C"}).json()
+    assert after["total"] == 1
+    assert after["items"][0]["review_pending"] is False
+    assert client.get(f"{prefix}/separate-records", params={"q": "CRM"}).json()["total"] == 0
+
+
+def test_readiness_names_the_item_with_a_negative_link(client):
+    run_id = seed_run(client)
+    with client.session_factory() as db:
+        db.add(ResolutionPair(id="blocked-ab", run_id=run_id, left_record_id="a", right_record_id="b",
+                              blocking_reasons=[], field_evidence=[], score=0.1,
+                              pair_decision="NON_MATCH", decision_reason="CONFLICT",
+                              triage_status="NON_MATCH_PROPOSAL", triage_reason="CONFLICT"))
+        db.commit()
+    prefix = f"/api/v1/mdm/runs/{run_id}"
+    readiness = client.post(f"{prefix}/export-readiness", json={}).json()
+    assert readiness["can_export"] is False
+    assert readiness["blockers"][0]["item_id"] == "safe-ab"
+    assert readiness["blockers"][0]["kind"] == "NEGATIVE_LINK"
+    assert readiness["blockers"][0]["label"] == "An"
+    assert client.post(f"{prefix}/previews", json={"acknowledge_unreviewed": True}).status_code == 409
 
 
 def test_export_requires_warning_acknowledgement_for_open_review(client):
@@ -104,7 +153,7 @@ def test_export_requires_warning_acknowledgement_for_open_review(client):
     assert next(row for row in rows if row["source_record_ids"] == "C")["review_pending"] == "true"
 
 
-def test_conflicting_review_group_cannot_override_non_match(client):
+def test_conflicting_review_group_stages_then_splits_without_overriding_non_match(client):
     run_id = seed_run(client)
     with client.session_factory() as db:
         db.add(ResolutionPair(id="nonmatch-ac", run_id=run_id, left_record_id="a", right_record_id="c",
@@ -114,9 +163,44 @@ def test_conflicting_review_group_cannot_override_non_match(client):
     prefix = f"/api/v1/mdm/runs/{run_id}"
     detail = client.get(f"{prefix}/items/review/case-bc").json()
     assert detail["merge_blocked_reason"]
-    assert client.post(f"{prefix}/review-items/transition", json={"item_ids": ["case-bc"], "decision": "merge"}).status_code == 409
-    assert client.post(f"{prefix}/review-items/transition", json={"item_ids": ["case-bc"], "decision": "no_merge"}).status_code == 200
+    moved = client.post(f"{prefix}/review-items/transition", json={"item_ids": ["case-bc"], "decision": "merge"})
+    assert moved.status_code == 200, moved.text
+    staged_id = moved.json()["changed_ids"][0]
+    assert client.get(f"{prefix}/items/merge/{staged_id}").json()["status"] == "REVIEW_STAGED_CONFLICT"
+    assert client.get(f"{prefix}/items/review").json()["total"] == 0
+    assert client.post(f"{prefix}/export-readiness", json={}).json()["can_export"] is False
+    assert client.post(f"{prefix}/exports", json={"acknowledge_unreviewed": True}).status_code == 409
+    resolved = client.post(f"{prefix}/merge-items/{staged_id}/resolve-conflict")
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json()["rejected_pair_count"] == 1
+    assert client.post(f"{prefix}/merge-items/{staged_id}/resolve-conflict").status_code == 404
     assert client.get(f"{prefix}/items/merge").json()["total"] == 1
+    rows = read_csv(client.post(f"{prefix}/exports", json={}))
+    assert sorted(row["source_record_ids"] for row in rows) == ["A|B", "C"]
+
+
+def test_splitting_deferred_conflict_does_not_duplicate_an_existing_safe_group(client):
+    run_id = seed_run(client)
+    with client.session_factory() as db:
+        records = db.query(ResolutionRecord).filter_by(run_id=run_id).all()
+        payload = {row.id: {"id": row.id, "external_id": row.external_id,
+                            "source_system": row.source_system, "raw_fields": row.raw_fields} for row in records}
+        db.add(ResolutionProposal(id="deferred-abc", run_id=run_id, member_record_ids=["a", "b", "c"],
+                                  golden_fields=build_golden(["a", "b", "c"], payload),
+                                  status="REVIEW_REQUIRED", origin="AUTO"))
+        db.add(ResolutionPair(id="nonmatch-ac", run_id=run_id, left_record_id="a", right_record_id="c",
+                              blocking_reasons=[], field_evidence=[], score=0.1, pair_decision="NON_MATCH",
+                              decision_reason="CONFLICT", triage_status="NON_MATCH_PROPOSAL", triage_reason="CONFLICT"))
+        db.add(ResolutionPair(id="safe-pair-ab", run_id=run_id, left_record_id="a", right_record_id="b",
+                              blocking_reasons=[], field_evidence=[], score=0.99, pair_decision="MATCH_CANDIDATE",
+                              decision_reason="EXACT", triage_status="HIGH_CONFIDENCE_PROPOSAL", triage_reason="EXACT"))
+        db.commit()
+    prefix = f"/api/v1/mdm/runs/{run_id}"
+    moved = client.post(f"{prefix}/review-items/transition", json={"item_ids": ["deferred-abc"], "decision": "merge"})
+    assert moved.status_code == 200, moved.text
+    assert client.post(f"{prefix}/merge-items/deferred-abc/resolve-conflict").status_code == 200
+    proposals = client.get(f"{prefix}/items/merge").json()["items"]
+    assert [item["member_record_ids"] for item in proposals] == [["a", "b"]]
 
 
 def test_rejecting_link_inside_proposal_retains_safe_component(client):

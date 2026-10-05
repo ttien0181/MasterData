@@ -7,20 +7,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from masterone.api.auth import router as auth_router
-from masterone.api.large_imports import router as large_imports_router
-from masterone.api.mdm_explanations import router as mdm_explanations_router, metrics_router as mdm_llm_metrics_router
-from masterone.api.mdm_imports import router as mdm_imports_router
-from masterone.api.mdm_reviews import router as mdm_reviews_router
-from masterone.api.mdm_runs import router as mdm_runs_router
 from masterone.api.mdm_resolution import router as mdm_resolution_router
+from masterone.api.mdm_runs import router as mdm_runs_router
 from masterone.api.routes import router
 from masterone.auth import models as auth_models  # noqa: F401 - registers auth tables
-from masterone.config import get_settings
+from masterone.config import LOCAL_DEV_ORIGIN_REGEX, get_settings
 from masterone.db.session import create_database
 from masterone.mdm import models as mdm_models  # noqa: F401 - registers SQLAlchemy models
 from masterone.mdm.migrate import require_current
 from masterone.mdm.resolution_worker import ResolutionWorker
-from masterone.storage import repository as storage_repository  # noqa: F401 - registers storage models
 
 
 @asynccontextmanager
@@ -58,20 +53,16 @@ settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip().rstrip("/") for origin in settings.cors_origins.split(",") if origin.strip()],
+    allow_origin_regex=LOCAL_DEV_ORIGIN_REGEX if settings.app_env == "development" else None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(router, prefix="/api/v1")
-app.include_router(mdm_imports_router, prefix="/api/v1")
-app.include_router(mdm_reviews_router, prefix="/api/v1")
 app.include_router(mdm_runs_router, prefix="/api/v1")
 app.include_router(mdm_resolution_router, prefix="/api/v1")
-app.include_router(mdm_explanations_router, prefix="/api/v1")
-app.include_router(mdm_llm_metrics_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
-app.include_router(large_imports_router, prefix="/api/v1")
 
 
 @app.get("/health")

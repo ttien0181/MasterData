@@ -1,27 +1,13 @@
 from hashlib import sha256
 
+from masterone.mdm.pipeline.cluster_guards import has_blocking_violation, run_cluster_guards
 from masterone.mdm.pipeline.golden import build_golden
 
 MAX_CLUSTER_MEMBERS = 25
 
 
-def _has_source_unique_conflict(member_ids: set[str], by_id: dict) -> bool:
-    """Guard mục 21.3: nguồn single-unique không thể có 2 record trong cùng entity.
-
-    Mỗi nguồn (CRM/ERP/BILL) cam kết mỗi external_id là một thực thể riêng.
-    Nếu cluster gộp 2 record cùng source_system → báo conflict.
-    """
-    seen_sources: dict[str, str] = {}
-    for rid in member_ids:
-        src = by_id[rid].get("source_system", "")
-        if src and src in seen_sources:
-            return True
-        if src:
-            seen_sources[src] = rid
-    return False
-
-
-def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_version: str) -> dict:
+def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_version: str,
+                    negative_pairs: frozenset | None = None) -> dict:
     """Create disjoint safe components and separate overlapping review cases."""
     by_id = {record["id"]: record for record in records}
     parent = {record_id: record_id for record_id in by_id}
@@ -33,13 +19,19 @@ def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_
             record_id = parent[record_id]
         return record_id
 
-    hard_links = set()
+    blocked_links = set()
     for pair in pairs:
-        if pair["decision"] == "NON_MATCH":
-            hard_links.add(tuple(sorted((pair["left_id"], pair["right_id"]))))
+        # A Group D name conflict pauses automatic closure; a steward may still
+        # approve that review pair. Only explicit negative decisions block export.
+        if pair["decision"] in {"NOT_MERGEABLE", "NON_MATCH"} or pair.get("primary_group") == "D":
+            blocked_links.add(tuple(sorted((pair["left_id"], pair["right_id"]))))
 
     accepted = []
     risky = []
+    # edge_order tracks the deterministic sequence of accepted merges (§23 audit)
+    edge_order: list[dict] = []
+    edge_seq: int = 0
+
     match_edges = sorted((pair for pair in pairs if pair["decision"] == "MATCH_CANDIDATE"),
                          key=lambda item: (-item["score"], item["left_id"], item["right_id"]))
     for pair in match_edges:
@@ -50,20 +42,35 @@ def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_
             pair["triage_reason"] = "SAFE_COMPONENT_EDGE"
             continue
         combined = members[left_root] | members[right_root]
-        has_conflict = any(tuple(sorted((left, right))) in hard_links
+        has_conflict = any(tuple(sorted((left, right))) in blocked_links
                            for left in members[left_root] for right in members[right_root])
-        has_source_dup = _has_source_unique_conflict(combined, by_id)
-        if has_conflict or has_source_dup or len(combined) > MAX_CLUSTER_MEMBERS:
-            if has_conflict:
-                triage_reason = "CLUSTER_RISK"
-            elif has_source_dup:
-                triage_reason = "SAME_SOURCE_UNIQUE_CONFLICT"
-            else:
-                triage_reason = "CLUSTER_NOT_CONFIRMED"
+        # Run cluster guards (§21) on the proposed union
+        guard_violations = run_cluster_guards(
+            frozenset(members[left_root]), frozenset(members[right_root]),
+            by_id, negative_pairs=negative_pairs, pairs=pairs,
+        )
+        guard_blocked = has_blocking_violation(guard_violations)
+        if has_conflict or guard_blocked or len(combined) > MAX_CLUSTER_MEMBERS:
+            reason = "CLUSTER_RISK" if has_conflict else (
+                guard_violations[0].reason if guard_blocked else "CLUSTER_NOT_CONFIRMED"
+            )
             pair["triage_status"] = "REVIEW"
-            pair["triage_reason"] = triage_reason
+            pair["triage_reason"] = reason
+            pair["guard_violations"] = [{"guard": v.guard, "reason": v.reason, "severity": v.severity}
+                                         for v in guard_violations]
             risky.append(pair)
             continue
+        # Accept the merge — record in edge_order for audit (§23)
+        edge_order.append({
+            "seq": edge_seq,
+            "pair_id": pair["id"],
+            "left_id": pair["left_id"],
+            "right_id": pair["right_id"],
+            "score": pair["score"],
+            "policy_id": pair.get("policy_id"),
+            "decision_subgroup": pair.get("decision_subgroup"),
+        })
+        edge_seq += 1
         parent[right_root] = left_root
         members[left_root] = combined
         del members[right_root]
@@ -75,8 +82,8 @@ def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_
         if pair["decision"] == "REVIEW":
             pair["triage_status"] = "REVIEW"
             pair["triage_reason"] = pair["reason"]
-        elif pair["decision"] == "NON_MATCH":
-            pair["triage_status"] = "NON_MATCH_PROPOSAL"
+        elif pair["decision"] in {"NOT_MERGEABLE", "NON_MATCH", "INSUFFICIENT_EVIDENCE"}:
+            pair["triage_status"] = pair["decision"]
             pair["triage_reason"] = pair["reason"]
 
     proposals = []
@@ -85,8 +92,14 @@ def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_
             continue
         member_ids = sorted(group)
         proposal_id = sha256(f"{run_id}:{policy_version}:{','.join(member_ids)}".encode()).hexdigest()
-        proposals.append({"id": proposal_id, "status": "AUTO_READY", "member_record_ids": member_ids,
-                          "golden_fields": build_golden(member_ids, by_id), "revision": 1})
+        # Collect edge_order entries and guard_violations relevant to this proposal
+        proposal_edges = [e for e in edge_order
+                          if e["left_id"] in member_ids and e["right_id"] in member_ids]
+        proposals.append({
+            "id": proposal_id, "status": "AUTO_READY", "member_record_ids": member_ids,
+            "golden_fields": build_golden(member_ids, by_id), "revision": 1,
+            "edge_order": proposal_edges,
+        })
 
     cases = []
     for pair in [item for item in pairs if item["triage_status"] == "REVIEW"]:

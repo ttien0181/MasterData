@@ -1,19 +1,10 @@
-"""Standardization pipeline cho Customer Master Data.
-
-Theo kiến trúc v3.1, mục 5 (dữ liệu Việt Nam) và mục 6 (Data Quality).
-Giữ nguyên signature (normalized_fields, flags) để tương thích với
-resolution_import.py, nhưng bổ sung _field_quality vào normalized_fields.
-"""
-
 import re
 import unicodedata
 
-from masterone.mdm.pipeline.address_mapping import resolve_ward, ward_overlap  # noqa: F401
+FIELDS = ("name", "phone", "email", "address")
+OPTIONAL_FIELDS = ("dob", "government_id")
 
-
-# ─── Legacy 11-digit mobile mapping (old prefix → new prefix) ────────────────
-# Nguồn: VNPT/Viettel/MobiFone mapping chính thức
-_LEGACY_PHONE_MAP: dict[str, str] = {
+_LEGACY_PHONE_MAP = {
     "0162": "032", "0163": "033", "0164": "034", "0165": "035",
     "0166": "036", "0167": "037", "0168": "038", "0169": "039",
     "0123": "083", "0124": "084", "0125": "085", "0127": "081",
@@ -21,557 +12,353 @@ _LEGACY_PHONE_MAP: dict[str, str] = {
     "0126": "076", "0128": "078", "0186": "056", "0188": "058",
     "0199": "059",
 }
-
-_PLACEHOLDER_PHONES: frozenset[str] = frozenset({
+_PLACEHOLDER_PHONES = frozenset({
     "0000000000", "0123456789", "0999999999", "1111111111",
     "9999999999", "0111111111", "0000000", "1234567890",
 })
-
-_PLACEHOLDER_EMAILS: frozenset[str] = frozenset({
-    "test@test.com", "noemail@noemail.com", "a@a.com",
-    "none@none.com", "test@example.com", "user@example.com",
-    "abc@abc.com", "no@email.com",
+_PLACEHOLDER_EMAILS = frozenset({
+    "test@test.com", "noemail@noemail.com", "a@a.com", "none@none.com",
+    "test@example.com", "user@example.com", "abc@abc.com", "no@email.com",
+    "noemail@", "email@email.com", "nomail@nomail.com", "fake@fake.com",
+    "xxx@xxx.com", "aaa@aaa.com", "email@domain.com",
+})
+# §5.3: role / shared email prefixes — not a personal anchor
+_ROLE_EMAIL_PREFIXES = frozenset({
+    "info", "admin", "ketoan", "sales", "support", "contact",
+    "office", "hr", "help", "noreply", "no-reply", "noreply",
+    "marketing", "billing", "invoice", "accounting", "finance",
+    "service", "cs", "cskh", "cham-soc-khach-hang",
+    "reception", "hotline", "letan", "webmaster", "postmaster",
 })
 
-# Tiền tố email tổ chức / dùng chung — không dùng làm anchor mạnh (mục 5.3)
-_ROLE_EMAIL_PREFIXES: frozenset[str] = frozenset({
-    "info", "admin", "ketoan", "sales", "support",
-    "contact", "office", "hr", "help", "noreply", "no-reply",
-})
-
-# Ngày sinh placeholder của các hệ thống nguồn (mục 5.5)
-_PLACEHOLDER_DOBS: frozenset[str] = frozenset({
-    "1900-01-01", "1970-01-01", "01-01-1900", "0001-01-01",
-    "01/01/1900", "01/01/1970", "1900/01/01", "1970/01/01",
-})
-
-FIELDS = ("name", "phone", "email", "address")
+# Canonical date separators for DOB normalization
+_DATE_SEP = re.compile(r"[/\-\.]")
+# CCCD/CMND/passport-style: digits only, 9 or 12 digits, or alphanumeric passport
+_GOV_ID_DIGITS = re.compile(r"^\d{9}$|^\d{12}$")
+_GOV_ID_PASSPORT = re.compile(r"^[A-Z]\d{7,8}$", re.IGNORECASE)
 
 
-# ─── Address helpers (mục 5.4) ───────────────────────────────────────────────
-
-# Viết tắt tỉnh/thành phố → tên chuẩn hóa (lowercase ascii)
-_PROVINCE_ABBREV: dict[str, str] = {
-    "hn": "ha noi", "hni": "ha noi",
-    "hcm": "ho chi minh", "tphcm": "ho chi minh", "hcmc": "ho chi minh",
-    "dn": "da nang",
-    "ct": "can tho",
-    "hp": "hai phong",
-    "bd": "binh duong",
-    "brvt": "ba ria vung tau", "vt": "ba ria vung tau",
-    "la": "long an",
-    "qn": "quang ninh",
-    "nt": "nha trang", "kh": "khanh hoa",
-    "pt": "phu yen", "py": "phu yen",
-    "bp": "binh phuoc",
-    "bt": "binh thuan",
-    "gl": "gia lai",
-    "dl": "dak lak", "daklak": "dak lak",
-    "lc": "lao cai",
-    "tb": "thai binh",
-    "na": "nghe an",
-    "hb": "hoa binh",
-    "nb": "ninh binh",
-    "nd": "nam dinh",
-    "tt": "thua thien hue", "hue": "thua thien hue",
-    "qb": "quang binh",
-    "qt": "quang tri",
-    "qng": "quang ngai",
-    "qnm": "quang nam",
-    "bn": "bac ninh",
-    "bg": "bac giang",
-    "pth": "phu tho",
-    "vp": "vinh phuc",
-    "hd": "hai duong",
-    "hy": "hung yen",
-    "tnh": "thai nguyen",
-    "ls": "lang son",
-    "cb": "cao bang",
-    "bk": "bac kan",
-    "tq": "tuyen quang",
-    "yb": "yen bai",
-    "sla": "son la",
-    "db": "dien bien",
-    "lb": "lai chau",
-    "hg": "ha giang",
-}
-
-# Mapping hành chính cũ → mới sau các lần sáp nhập (mục 5.4)
-# Nhiều-1: nhiều tên cũ có thể map về cùng một tên mới
-_PROVINCE_ADMIN_MAP: dict[str, str] = {
-    # Hà Tây sáp nhập vào Hà Nội 2008
-    "ha tay": "ha noi",
-    # TP.HCM các cách viết
-    "thanh pho ho chi minh": "ho chi minh",
-    "sai gon": "ho chi minh",
-    # Các tỉnh dự kiến sáp nhập (2025 reform — cập nhật theo quyết định chính thức)
-    "ha nam": "ninh binh",  # theo phương án sáp nhập 2025
-    "nam dinh": "ninh binh",
-    "ninh binh": "ninh binh",
-    "thai binh": "nam dinh moi",   # placeholder — cập nhật khi có quyết định chính thức
-    # Thêm các mapping khi có quyết định hành chính mới
-}
-
-_ADMIN_MAPPING_VERSION = "vn-admin-2025-draft"
+def fold_text(value: str) -> str:
+    text = unicodedata.normalize("NFC", " ".join(value.split()).casefold())
+    decomposed = unicodedata.normalize("NFD", text.replace("đ", "d"))
+    return "".join(char for char in decomposed if unicodedata.category(char) != "Mn")
 
 
-def _normalize_province_token(token: str) -> str:
-    """Chuẩn hóa một token tỉnh/thành: thử tra viết tắt rồi admin map."""
-    t = _ascii_fold(token)
-    # Thử viết tắt trước
-    if t in _PROVINCE_ABBREV:
-        return _PROVINCE_ABBREV[t]
-    # Thử admin map
-    if t in _PROVINCE_ADMIN_MAP:
-        return _PROVINCE_ADMIN_MAP[t]
-    return t
+def normalize_phone(value: str) -> str:
+    digits = re.sub(r"\D", "", value)
+    # Strip international prefix: +84 / 0084
+    if digits.startswith("0084") and len(digits) > 10:
+        digits = "0" + digits[4:]
+    if digits.startswith("84") and len(digits) == 11:
+        digits = "0" + digits[2:]
+    # §T9: legacy 11-digit Vietnam mobile numbers → 10-digit (2018 renumbering)
+    # First try explicit map (covers Viettel 016x→03x, Mobi 012x→07x etc.)
+    if len(digits) == 11 and digits[0] == "0" and digits[:4] in _LEGACY_PHONE_MAP:
+        digits = _LEGACY_PHONE_MAP[digits[:4]] + digits[4:]
+    # Generic fallback: 11-digit 01x prefix that starts with 01[2-9]
+    # The 2018 plan removed all 01x prefixes; any remaining → drop leading "1"
+    elif len(digits) == 11 and digits.startswith("01") and digits[2] in "23456789":
+        digits = "0" + digits[2:]
+    return digits
 
 
-# Regex nhận dạng các từ khóa phân cấp hành chính VN
-_ADMIN_KEYWORDS = re.compile(
-    r"\b(tinh|thanh pho|quan|huyen|thi xa|thi tran|phuong|xa|to|khu|lo|"
-    r"duong|ngo|hem|kiot|tang|phong|so|can ho)\b",
-    re.IGNORECASE,
-)
+def normalize_dob(value: str) -> tuple[str, str]:
+    """Return (normalized_dob, quality_flag).
 
-# Tên tỉnh/thành đầy đủ (ascii) — để nhận dạng ở cuối địa chỉ
-_KNOWN_PROVINCES_ASC: frozenset[str] = frozenset(set(_PROVINCE_ABBREV.values()) | set(_PROVINCE_ADMIN_MAP.values()))
-
-
-def _extract_ward_token(parts: list[str]) -> str:
-    """Trích token phường/xã từ danh sách parts (sau khi tách bằng dấu phẩy).
-
-    Tìm part có chứa từ khóa phường/xã/thị trấn.
-    Trả về chuỗi nguyên bản (chưa ascii-fold) để resolve_ward xử lý.
+    Normalized form: YYYY-MM-DD when full date, YYYY-MM when partial, YYYY when year-only.
+    quality_flag: VALID | PARTIAL | INVALID | MISSING
     """
-    _ward_prefix = re.compile(
-        r"^(phuong|p\.|xa|thi tran|tt\.?)\s+", re.IGNORECASE
-    )
-    for part in reversed(parts):  # thường phường/xã gần cuối địa chỉ
-        if _ward_prefix.match(part.strip()):
-            return part.strip()
+    raw = " ".join(value.split())
+    if not raw:
+        return "", "MISSING"
+    parts = _DATE_SEP.split(raw)
+    # Detect DD/MM/YYYY vs YYYY/MM/DD by part length
+    if len(parts) == 3:
+        a, b, c = parts
+        if len(a) == 4:  # YYYY-MM-DD
+            year, month, day = a, b, c
+        else:  # DD-MM-YYYY
+            day, month, year = a, b, c
+        try:
+            y, m, d = int(year), int(month), int(day)
+            if 1900 <= y <= 2100 and 1 <= m <= 12 and 1 <= d <= 31:
+                return f"{y:04d}-{m:02d}-{d:02d}", "VALID"
+        except ValueError:
+            pass
+        return raw, "INVALID"
+    if len(parts) == 2:
+        a, b = parts
+        if len(a) == 4:
+            year, month = a, b
+        else:
+            month, year = a, b
+        try:
+            y, m = int(year), int(month)
+            if 1900 <= y <= 2100 and 1 <= m <= 12:
+                return f"{y:04d}-{m:02d}", "PARTIAL"
+        except ValueError:
+            pass
+        return raw, "INVALID"
+    if len(parts) == 1 and re.fullmatch(r"\d{4}", raw):
+        y = int(raw)
+        if 1900 <= y <= 2100:
+            return raw, "PARTIAL"
+    return raw, "INVALID"
+
+
+def normalize_government_id(value: str) -> tuple[str, str]:
+    """Return (normalized_gov_id, quality_flag).
+
+    quality_flag: VALID | INVALID | MISSING
+    """
+    raw = re.sub(r"\s+", "", value).upper()
+    if not raw:
+        return "", "MISSING"
+    if _GOV_ID_DIGITS.match(raw) or _GOV_ID_PASSPORT.match(raw):
+        return raw, "VALID"
+    return raw, "INVALID"
+
+
+def _infer_gov_id_type(gov_id: str) -> str:
+    """Infer Vietnamese government ID type from the normalized value.
+
+    Returns: CMND_9 | CCCD_12 | PASSPORT | TAX_ID | UNKNOWN
+    """
+    v = re.sub(r"\s+", "", gov_id).upper()
+    if re.fullmatch(r"\d{9}", v):
+        return "CMND_9"
+    if re.fullmatch(r"\d{12}", v):
+        return "CCCD_12"
+    if re.fullmatch(r"[A-Z]\d{7,8}", v):
+        return "PASSPORT"
+    if re.fullmatch(r"\d{10}", v):
+        return "TAX_ID"
+    return "UNKNOWN"
+
+
+def parse_dob(value: str) -> dict:
+    """Parse a date-of-birth string into a structured dict.
+
+    Returns:
+        canonical (str): YYYY-MM-DD, YYYY-MM, or YYYY
+        year/month/day (str): individual parts ("" if unavailable)
+        quality: VALID | PARTIAL | PLACEHOLDER | INVALID | MISSING
+        is_year_only (bool)
+        is_ambiguous (bool): True when day/month are both ≤12 and order is unclear
+    """
+    _PLACEHOLDER_DOBS = frozenset({"01/01/1900", "1900-01-01", "00/00/0000", "0000-00-00"})
+
+    raw = " ".join(value.split()) if value else ""
+    if not raw:
+        return {"canonical": "", "year": "", "month": "", "day": "",
+                "quality": "MISSING", "is_year_only": False, "is_ambiguous": False}
+
+    if raw in _PLACEHOLDER_DOBS:
+        return {"canonical": raw, "year": "", "month": "", "day": "",
+                "quality": "PLACEHOLDER", "is_year_only": False, "is_ambiguous": False}
+
+    parts = _DATE_SEP.split(raw)
+    if len(parts) == 3:
+        a, b, c = parts
+        if len(a) == 4:
+            year, month, day = a, b, c
+            is_ambiguous = False
+        else:
+            # DD/MM/YYYY — VN convention; flag ambiguous when both day and month ≤ 12
+            day, month, year = a, b, c
+            try:
+                is_ambiguous = int(a) <= 12 and int(b) <= 12
+            except ValueError:
+                is_ambiguous = False
+        try:
+            y, m, d = int(year), int(month), int(day)
+            if 1900 <= y <= 2100 and 1 <= m <= 12 and 1 <= d <= 31:
+                canonical = f"{y:04d}-{m:02d}-{d:02d}"
+                return {"canonical": canonical, "year": f"{y:04d}", "month": f"{m:02d}", "day": f"{d:02d}",
+                        "quality": "VALID", "is_year_only": False, "is_ambiguous": is_ambiguous}
+        except ValueError:
+            pass
+        return {"canonical": raw, "year": "", "month": "", "day": "",
+                "quality": "INVALID", "is_year_only": False, "is_ambiguous": False}
+
+    if len(parts) == 2:
+        a, b = parts
+        year, month = (a, b) if len(a) == 4 else (b, a)
+        try:
+            y, m = int(year), int(month)
+            if 1900 <= y <= 2100 and 1 <= m <= 12:
+                return {"canonical": f"{y:04d}-{m:02d}", "year": f"{y:04d}", "month": f"{m:02d}", "day": "",
+                        "quality": "VALID", "is_year_only": False, "is_ambiguous": False}
+        except ValueError:
+            pass
+        return {"canonical": raw, "year": "", "month": "", "day": "",
+                "quality": "INVALID", "is_year_only": False, "is_ambiguous": False}
+
+    if len(parts) == 1 and re.fullmatch(r"\d{4}", raw):
+        y = int(raw)
+        if 1900 <= y <= 2100:
+            return {"canonical": raw, "year": raw, "month": "", "day": "",
+                    "quality": "VALID", "is_year_only": True, "is_ambiguous": False}
+
+    return {"canonical": raw, "year": "", "month": "", "day": "",
+            "quality": "INVALID", "is_year_only": False, "is_ambiguous": False}
+
+
+# ── Province abbreviation map (fold_text-normalized keys) ────────────────────
+_PROVINCE_ABBREV: dict[str, str] = {
+    "hcm": "ho chi minh", "tphcm": "ho chi minh", "tp hcm": "ho chi minh",
+    "hn": "ha noi", "tp hn": "ha noi",
+    "dn": "da nang", "tp dn": "da nang",
+    "hp": "hai phong", "tp hp": "hai phong",
+    "ct": "can tho", "tp ct": "can tho",
+}
+
+_PROVINCE_FULL: frozenset[str] = frozenset({
+    "ha noi", "ho chi minh", "da nang", "hai phong", "can tho",
+    "an giang", "ba ria vung tau", "bac giang", "bac kan", "bac lieu",
+    "bac ninh", "ben tre", "binh dinh", "binh duong", "binh phuoc",
+    "binh thuan", "ca mau", "cao bang", "dak lak", "dak nong",
+    "dien bien", "dong nai", "dong thap", "gia lai", "ha giang",
+    "ha nam", "ha tinh", "hai duong", "hau giang", "hoa binh",
+    "hung yen", "khanh hoa", "kien giang", "kon tum", "lai chau",
+    "lam dong", "lang son", "lao cai", "long an", "nam dinh",
+    "nghe an", "ninh binh", "ninh thuan", "phu tho", "phu yen",
+    "quang binh", "quang nam", "quang ngai", "quang ninh", "quang tri",
+    "soc trang", "son la", "tay ninh", "thai binh", "thai nguyen",
+    "thanh hoa", "thua thien hue", "tien giang", "tra vinh",
+    "tuyen quang", "vinh long", "vinh phuc", "yen bai",
+})
+
+
+def _extract_ward_token(folded_address: str) -> str:
+    """Extract the ward token from a fold_text-normalized address string.
+
+    Returns the first token that starts with 'phuong ' or 'xa ' or 'thi tran ',
+    or "" if none found.
+    """
+    for token in (t.strip() for t in re.split(r",|;", folded_address) if t.strip()):
+        if re.match(r"^(phuong|xa|thi tran)\s+", token):
+            return token
     return ""
 
 
-def parse_address(raw: str) -> dict:
-    """Parse địa chỉ VN thành các thành phần (mục 5.4).
+def parse_address(address: str) -> dict:
+    """Parse an address string into structured parts.
 
-    Bước thực hiện:
-      1. ASCII-fold + casefold toàn bộ
-      2. Nhận dạng tỉnh/TP từ phần cuối (abbrev + admin map)
-      3. Nhận dạng phường/xã → resolve_ward() → ward_ids
-         - status="resolved"  → 1 phường mới, dùng trực tiếp
-         - status="ambiguous" → nhiều phường mới → cần HITL
-         - status="unknown"   → không nhận ra → bỏ qua, dùng fuzzy
-      4. Phần còn lại = street_fragment
-
-    Trả về dict:
-      province          — tên tỉnh/thành chuẩn hóa (ascii) hoặc ""
-      province_raw      — token tỉnh gốc
-      ward_ids          — frozenset[str] unit_id(s) sau sáp nhập (rỗng nếu unknown)
-      ward_status       — "resolved" | "ambiguous" | "unknown"
-      ward_raw          — token phường gốc
-      street_fragment   — phần địa chỉ còn lại (không có tỉnh)
-      normalized        — toàn bộ địa chỉ ascii-fold (dùng fuzzy)
-      needs_hitl        — True nếu ward_status == "ambiguous"
-      admin_map_version — phiên bản mapping đã áp dụng
+    Returns:
+        province (str): normalized province name (fold_text), "" if not found
+        street_fragment (str): remainder after removing province token
     """
-    _empty = {
-        "province": "", "province_raw": "", "ward_ids": frozenset(),
-        "ward_status": "unknown", "ward_raw": "", "street_fragment": "",
-        "normalized": "", "needs_hitl": False,
-        "admin_map_version": _ADMIN_MAPPING_VERSION,
-    }
-    if not raw or not raw.strip():
-        return _empty
+    if not address:
+        return {"province": "", "street_fragment": "", "needs_hitl": False}
 
-    normalized = _ascii_fold(raw)
+    folded = fold_text(address)
+    tokens = [t.strip() for t in re.split(r",|;", folded) if t.strip()]
 
-    # Tách bằng dấu phẩy — phần cuối thường là tỉnh/TP
-    parts = [p.strip() for p in normalized.split(",") if p.strip()]
-    if not parts:
-        return {**_empty, "normalized": normalized, "street_fragment": normalized}
+    # Try each token (right-to-left, province usually last)
+    province = ""
+    province_token_idx = -1
+    for idx in range(len(tokens) - 1, -1, -1):
+        tok = tokens[idx]
+        # Remove leading "tinh ", "tp ", "thanh pho ", "huyen ", "quan " prefixes
+        stripped = re.sub(r"^(tinh|tp|thanh pho|huyen|quan|phuong|xa|thi xa|thi tran)\s+", "", tok).strip()
+        if stripped in _PROVINCE_ABBREV:
+            province = _PROVINCE_ABBREV[stripped]
+            province_token_idx = idx
+            break
+        if stripped in _PROVINCE_FULL:
+            province = stripped
+            province_token_idx = idx
+            break
+        if tok in _PROVINCE_ABBREV:
+            province = _PROVINCE_ABBREV[tok]
+            province_token_idx = idx
+            break
+        if tok in _PROVINCE_FULL:
+            province = tok
+            province_token_idx = idx
+            break
 
-    # ── Nhận dạng tỉnh từ phần cuối ─────────────────────────────────────────
-    candidate = parts[-1]
-    clean = re.sub(r"^(tinh|thanh pho|tp\.?)\s*", "", candidate, flags=re.IGNORECASE).strip()
-    province = _normalize_province_token(clean)
+    street_parts = [t for i, t in enumerate(tokens) if i != province_token_idx]
+    street_fragment = ", ".join(street_parts)
 
-    if province not in _KNOWN_PROVINCES_ASC:
-        tokens = normalized.split()
-        if tokens:
-            last = tokens[-1]
-            mapped = _normalize_province_token(last)
-            if mapped in _KNOWN_PROVINCES_ASC:
-                province = mapped
-                candidate = last
-            else:
-                province = ""
-                candidate = ""
-
-    inner_parts = parts[:-1] if province and len(parts) > 1 else parts
-    street_fragment = ", ".join(inner_parts)
-
-    # ── Resolve phường/xã → ward_ids ─────────────────────────────────────────
-    ward_token = _extract_ward_token(inner_parts)
-    if ward_token:
-        resolution = resolve_ward(ward_token)
-    else:
-        # Thử từng part từ cuối lên — đôi khi không có prefix "Phường"
-        resolution_found = None
-        for part in reversed(inner_parts):
-            r = resolve_ward(part)
-            if r.status != "unknown":
-                resolution_found = r
-                ward_token = part
-                break
-        resolution = resolution_found or resolve_ward("")
-
-    ward_ids = resolution.unit_ids
-    ward_status = resolution.status
-    needs_hitl = ward_status == "ambiguous"
-
-    return {
-        "province": province,
-        "province_raw": candidate,
-        "ward_ids": ward_ids,
-        "ward_status": ward_status,
-        "ward_raw": ward_token,
-        "street_fragment": street_fragment,
-        "normalized": normalized,
-        "needs_hitl": needs_hitl,
-        "admin_map_version": _ADMIN_MAPPING_VERSION,
-    }
+    return {"province": province, "street_fragment": street_fragment, "needs_hitl": False}
 
 
-# ─── Government ID helpers ────────────────────────────────────────────────────
-
-def _infer_gov_id_type(value: str) -> str:
-    """Suy loại giấy tờ từ độ dài / cấu trúc (mục 5.6).
-
-    Quy tắc VN hiện hành:
-      9 chữ số         → CMND_9  (CMND cũ 9 số)
-      12 chữ số        → CCCD_12 (CCCD gắn chip / CMND 12 số cũ)
-      Bắt đầu chữ cái + 6-8 chữ số → PASSPORT
-      Khác             → UNKNOWN_ID
-    """
-    digits_only = re.fullmatch(r"\d+", value)
-    if digits_only:
-        n = len(value)
-        if n == 9:
-            return "CMND_9"
-        if n == 12:
-            return "CCCD_12"
-        if n == 10:
-            return "TAX_ID"
-    if re.fullmatch(r"[A-Z]\d{6,8}", value.upper()):
-        return "PASSPORT"
-    return "UNKNOWN_ID"
-
-
-# ─── Text helpers ─────────────────────────────────────────────────────────────
-
-def _unicode_fold(value: str) -> str:
-    """NFC + casefold, giữ nguyên dấu tiếng Việt."""
-    return unicodedata.normalize("NFC", " ".join(value.split()).casefold())
-
-
-def _ascii_fold(value: str) -> str:
-    """Bỏ dấu hoàn toàn, trả về ASCII lowercase.
-
-    Chỉ dùng cho so sánh phụ trợ (NA state), KHÔNG dùng làm
-    giá trị identity chính (xem mục 5.1 — An vs Ân).
-    """
-    text = _unicode_fold(value).replace("đ", "d")
-    decomposed = unicodedata.normalize("NFD", text)
-    return "".join(c for c in decomposed if unicodedata.category(c) != "Mn")
-
-
-def _parse_name_parts(raw: str) -> dict:
-    """Tách surname / given_name / tokens từ tên Việt Nam."""
-    tokens = raw.strip().split()
-    if not tokens:
-        return {"surname": "", "given_name": "", "tokens": []}
-    return {
-        "surname": tokens[0],
-        "given_name": tokens[-1] if len(tokens) > 1 else "",
-        "tokens": tokens,
-    }
-
-
-# ─── Field normalizers ────────────────────────────────────────────────────────
-
-def normalize_phone(raw: str) -> tuple[str, str]:
-    """Trả về (normalized, quality) — quality ∈ {VALID, INVALID, MISSING, PLACEHOLDER, SHARED}."""
-    if not raw or not raw.strip():
-        return "", "MISSING"
-    digits = re.sub(r"\D", "", raw)
-    if not digits:
-        return "", "INVALID"
-
-    # Bỏ tiền tố quốc gia
-    if digits.startswith("0084") and len(digits) >= 13:
-        digits = "0" + digits[4:]
-    elif digits.startswith("84") and len(digits) == 11:
-        digits = "0" + digits[2:]
-
-    # Legacy 11-digit → 10-digit (mục 5.2)
-    if len(digits) == 11 and digits.startswith("0"):
-        prefix4 = digits[:4]
-        if prefix4 in _LEGACY_PHONE_MAP:
-            digits = _LEGACY_PHONE_MAP[prefix4] + digits[4:]
-
-    if digits in _PLACEHOLDER_PHONES:
-        return digits, "PLACEHOLDER"
-    if len(digits) not in range(9, 12):
-        return digits, "INVALID"
-    return digits, "VALID"
-
-
-def normalize_email(raw: str) -> tuple[str, str]:
-    """Trả về (normalized, quality) — quality ∈ {VALID, INVALID, MISSING, PLACEHOLDER, SHARED}."""
-    if not raw or not raw.strip():
-        return "", "MISSING"
-    normalized = " ".join(raw.split()).casefold()
-    if normalized in _PLACEHOLDER_EMAILS:
-        return normalized, "PLACEHOLDER"
-    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", normalized):
-        return normalized, "INVALID"
-    local_part = normalized.split("@")[0]
-    # Bỏ Gmail +tag và dots trước khi kiểm tra role prefix
-    clean_local = local_part.split("+")[0].replace(".", "")
-    if clean_local in _ROLE_EMAIL_PREFIXES:
-        return normalized, "SHARED"
-    return normalized, "VALID"
-
-
-def parse_dob(raw: str) -> dict:
-    """Parse DOB thành canonical form và metadata (mục 5.5).
-
-    Hỗ trợ các định dạng:
-      YYYY-MM-DD  /  YYYY/MM/DD  /  YYYY.MM.DD
-      DD-MM-YYYY  /  DD/MM/YYYY  /  DD.MM.YYYY
-      MM-DD-YYYY  /  MM/DD/YYYY  (chỉ dùng khi dd > 12 rõ ràng)
-      YYYY                        (year-only)
-
-    Trả về dict với các key:
-      canonical     — "YYYY-MM-DD" hoặc "YYYY" nếu year-only, hoặc raw nếu parse fail
-      year          — str 4 chữ số hoặc ""
-      month         — str 2 chữ số hoặc ""
-      day           — str 2 chữ số hoặc ""
-      is_year_only  — bool
-      is_ambiguous  — bool (cả day lẫn month đều ≤ 12, không biết thứ tự)
-      quality       — VALID / INVALID / MISSING / PLACEHOLDER
-    """
-    empty = {"canonical": "", "year": "", "month": "", "day": "",
-             "is_year_only": False, "is_ambiguous": False, "quality": "MISSING"}
-    if not raw or not raw.strip():
-        return empty
-
-    raw = raw.strip()
-    if raw in _PLACEHOLDER_DOBS:
-        return {**empty, "canonical": raw, "quality": "PLACEHOLDER"}
-
-    # ── Year-only: 4 chữ số
-    if re.fullmatch(r"\d{4}", raw):
-        yr = int(raw)
-        if 1900 <= yr <= 2100:
-            return {"canonical": raw, "year": raw, "month": "", "day": "",
-                    "is_year_only": True, "is_ambiguous": False, "quality": "VALID"}
-        return {**empty, "canonical": raw, "quality": "INVALID"}
-
-    # ── Patterns 3 nhóm số
-    sep = r"[-/.]"
-    # YYYY-?-?
-    m = re.fullmatch(rf"(\d{{4}}){sep}(\d{{1,2}}){sep}(\d{{1,2}})", raw)
-    if m:
-        yr, p2, p3 = m.group(1), m.group(2).zfill(2), m.group(3).zfill(2)
-        return _build_dob_result(yr, p2, p3, raw, fmt="YMD")
-
-    # ?-?-YYYY
-    m = re.fullmatch(rf"(\d{{1,2}}){sep}(\d{{1,2}}){sep}(\d{{4}})", raw)
-    if m:
-        p1, p2, yr = m.group(1).zfill(2), m.group(2).zfill(2), m.group(3)
-        return _build_dob_result(yr, p1, p2, raw, fmt="DMY")
-
-    # Không parse được
-    if re.search(r"\d{4}", raw):
-        return {**empty, "canonical": raw, "year": re.search(r"\d{4}", raw).group(),
-                "month": "", "day": "", "quality": "VALID"}
-    return {**empty, "canonical": raw, "quality": "INVALID"}
-
-
-def _build_dob_result(yr: str, a: str, b: str, raw: str, fmt: str) -> dict:
-    """Xây kết quả DOB từ (year, field_a, field_b).
-
-    fmt="YMD": a=month, b=day
-    fmt="DMY": a=day_or_month, b=month_or_day — cần xét ambiguity.
-    """
-    def _valid_date(y: str, mo: str, d: str) -> bool:
-        try:
-            import datetime
-            datetime.date(int(y), int(mo), int(d))
-            return True
-        except (ValueError, OverflowError):
-            return False
-
-    yr_int = int(yr)
-    if not (1900 <= yr_int <= 2100):
-        return {"canonical": raw, "year": yr, "month": "", "day": "",
-                "is_year_only": False, "is_ambiguous": False, "quality": "INVALID"}
-
-    if fmt == "YMD":
-        mo, d = a, b
-        if _valid_date(yr, mo, d):
-            return {"canonical": f"{yr}-{mo}-{d}", "year": yr, "month": mo, "day": d,
-                    "is_year_only": False, "is_ambiguous": False, "quality": "VALID"}
-        return {"canonical": raw, "year": yr, "month": mo, "day": d,
-                "is_year_only": False, "is_ambiguous": False, "quality": "INVALID"}
-
-    # fmt == "DMY": a,b có thể là DD,MM hoặc MM,DD
-    a_int, b_int = int(a), int(b)
-    can_be_dm = _valid_date(yr, b, a)   # a=day, b=month
-    can_be_md = _valid_date(yr, a, b)   # a=month, b=day
-
-    if can_be_dm and not can_be_md:
-        # Rõ ràng a=day, b=month (DD/MM)
-        return {"canonical": f"{yr}-{b}-{a}", "year": yr, "month": b, "day": a,
-                "is_year_only": False, "is_ambiguous": False, "quality": "VALID"}
-    if can_be_md and not can_be_dm:
-        # Rõ ràng a=month, b=day (MM/DD)
-        return {"canonical": f"{yr}-{a}-{b}", "year": yr, "month": a, "day": b,
-                "is_year_only": False, "is_ambiguous": False, "quality": "VALID"}
-    if can_be_dm and can_be_md:
-        # Ambiguous: cả hai đều hợp lệ (a≤12 và b≤12)
-        # VN convention: DD/MM/YYYY → canonical dùng DD/MM
-        return {"canonical": f"{yr}-{b}-{a}", "year": yr, "month": b, "day": a,
-                "is_year_only": False, "is_ambiguous": True, "quality": "VALID"}
-    return {"canonical": raw, "year": yr, "month": "", "day": "",
-            "is_year_only": False, "is_ambiguous": False, "quality": "INVALID"}
-
-
-def normalize_dob(raw: str) -> tuple[str, str]:
-    """Trả về (canonical, quality).
-
-    canonical = "YYYY-MM-DD" hoặc "YYYY" (year-only) hoặc raw nếu không parse được.
-    quality   ∈ {VALID, INVALID, MISSING, PLACEHOLDER}.
-
-    Dùng parse_dob() nếu cần metadata đầy đủ (is_year_only, is_ambiguous...).
-    """
-    parts = parse_dob(raw)
-    return parts["canonical"], parts["quality"]
-
-
-# ─── Public API ───────────────────────────────────────────────────────────────
-
-def standardize(raw_fields: dict[str, str]) -> tuple[dict, list[str]]:
-    """Chuẩn hóa raw fields, trả về (normalized_fields, quality_flags).
-
-    normalized_fields gồm:
-      name          — unicode NFC casefold (giữ dấu)
-      name_ascii    — bỏ dấu hoàn toàn (chỉ dùng so sánh phụ)
-      name_parts    — {"surname", "given_name", "tokens"}
-      phone         — digits chuẩn hóa
-      email         — lowercase
-      address       — ascii fold (địa chỉ thường không có dấu quan trọng)
-      dob           — raw strip
-      government_id — digits/text stripped
-      government_id_type — uppercase
-      entity_type   — uppercase (PERSON / ORGANIZATION / UNKNOWN)
-      _field_quality — dict per-field quality flag (dùng nội bộ pipeline)
-
-    quality_flags — list các flag batch-level (backward compat DB).
-    """
-    raw_name = raw_fields.get("name", "") or ""
-    raw_phone = raw_fields.get("phone", "") or ""
-    raw_email = raw_fields.get("email", "") or ""
-    raw_address = raw_fields.get("address", "") or ""
+def standardize(raw_fields: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+    raw = {field: raw_fields.get(field, "") or "" for field in FIELDS}
     raw_dob = raw_fields.get("dob", "") or ""
     raw_gov_id = raw_fields.get("government_id", "") or ""
-    raw_gov_id_type = raw_fields.get("government_id_type", "") or ""
-    raw_entity_type = (raw_fields.get("entity_type", "") or "PERSON").strip().upper()
-    if raw_entity_type not in ("PERSON", "ORGANIZATION"):
-        raw_entity_type = "UNKNOWN"
 
-    # Name
-    if not raw_name.strip():
-        name_unicode, name_ascii = "", ""
-        name_parts = {"surname": "", "given_name": "", "tokens": []}
-        name_quality = "MISSING"
+    normalized: dict[str, str] = {
+        "name": fold_text(raw["name"]),
+        "name_unicode": unicodedata.normalize("NFC", " ".join(raw["name"].split()).casefold()),
+        "phone": normalize_phone(raw["phone"]),
+        "email": " ".join(raw["email"].split()).casefold(),
+        "address": fold_text(raw["address"]),
+    }
+
+    dob_norm, dob_quality = normalize_dob(raw_dob)
+    gov_id_norm, gov_id_quality = normalize_government_id(raw_gov_id)
+    if raw_dob:
+        normalized["dob"] = dob_norm
+    if raw_gov_id:
+        normalized["government_id"] = gov_id_norm
+
+    # Pass-through government_id_type if provided (used by scoring)
+    gov_id_type = raw_fields.get("government_id_type", "") or ""
+    if gov_id_type:
+        normalized["government_id_type"] = gov_id_type
+    elif gov_id_norm:
+        normalized["government_id_type"] = _infer_gov_id_type(gov_id_norm)
+
+    # Structured address parts with ward resolution
+    addr_parts = parse_address(raw["address"])
+    from masterone.mdm.pipeline.address_mapping import resolve_ward  # local import avoids circular
+    ward_match = _extract_ward_token(normalized["address"])
+    if ward_match:
+        wr = resolve_ward(ward_match)
+        addr_parts["ward_status"] = wr.status
+        addr_parts["ward_ids"] = list(wr.unit_ids)
+        addr_parts["needs_hitl"] = wr.status == "ambiguous"
     else:
-        name_unicode = _unicode_fold(raw_name)
-        name_ascii = _ascii_fold(raw_name)
-        name_parts = _parse_name_parts(raw_name)
-        name_quality = "VALID"
+        addr_parts["ward_status"] = "unresolved"
+        addr_parts["ward_ids"] = []
+        addr_parts["needs_hitl"] = False
+    normalized["address_parts"] = addr_parts
 
-    # Phone
-    phone_norm, phone_quality = normalize_phone(raw_phone)
-
-    # Email
-    email_norm, email_quality = normalize_email(raw_email)
-
-    # Address — parse province + ascii-fold (mục 5.4)
-    if raw_address.strip():
-        address_parts = parse_address(raw_address)
-        address_norm = address_parts["normalized"]
-        address_quality = "VALID"
-    else:
-        address_parts = parse_address("")
-        address_norm = ""
-        address_quality = "MISSING"
-    # frozenset is not JSON-serializable — convert before storing
-    address_parts = {**address_parts, "ward_ids": sorted(address_parts["ward_ids"])}
-
-    # DOB — dùng parse_dob để lấy canonical + metadata (mục 5.5)
-    dob_parts = parse_dob(raw_dob)
-    dob_norm = dob_parts["canonical"]
-    dob_quality = dob_parts["quality"]
-
-    # Government ID — tự suy loại nếu không có (mục 5.6)
-    gov_id_norm = re.sub(r"\s+", "", raw_gov_id).strip()
-    gov_id_type = raw_gov_id_type.upper().strip()
-    if gov_id_norm and not gov_id_type:
-        gov_id_type = _infer_gov_id_type(gov_id_norm)
-    gov_id_quality = "VALID" if gov_id_norm else "MISSING"
-
-    field_quality = {
-        "name": name_quality,
-        "phone": phone_quality,
-        "email": email_quality,
-        "address": address_quality,
+    email_valid = bool(re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", normalized["email"]))
+    quality: dict[str, str] = {
+        "name": "VALID" if normalized["name"] else "MISSING",
+        "phone": ("MISSING" if not normalized["phone"] else
+                  "PLACEHOLDER" if normalized["phone"] in _PLACEHOLDER_PHONES else
+                  "INVALID" if len(normalized["phone"]) not in range(9, 13) else "VALID"),
+        "email": ("MISSING" if not normalized["email"] else
+                  "INVALID" if not email_valid else
+                  "PLACEHOLDER" if normalized["email"] in _PLACEHOLDER_EMAILS else
+                  "SHARED" if normalized["email"].split("@", 1)[0].split("+", 1)[0].replace(".", "")
+                  in _ROLE_EMAIL_PREFIXES else "VALID"),
+        "address": "VALID" if normalized["address"] else "MISSING",
         "dob": dob_quality,
         "government_id": gov_id_quality,
     }
+    normalized["_field_quality"] = quality
 
-    normalized_fields = {
-        "name": name_unicode,
-        "name_ascii": name_ascii,
-        "name_parts": name_parts,
-        "phone": phone_norm,
-        "email": email_norm,
-        "address": address_norm,
-        "address_parts": address_parts,
-        "dob": dob_norm,
-        "dob_parts": dob_parts,
-        "government_id": gov_id_norm,
-        "government_id_type": gov_id_type,
-        "entity_type": raw_entity_type,
-        "_field_quality": field_quality,
-    }
-
-    # Batch-level flags (backward compat — lưu vào quality_flags column)
-    run_flags: list[str] = []
-    if name_quality == "MISSING":
-        run_flags.append("MISSING_NAME")
-    if phone_quality == "MISSING" and email_quality == "MISSING":
-        run_flags.append("NO_CONTACT_POINT")
-    if email_quality == "INVALID":
-        run_flags.append("INVALID_EMAIL_FORMAT")
-    if phone_quality == "INVALID":
-        run_flags.append("UNUSUAL_PHONE_LENGTH")
-    if phone_quality == "PLACEHOLDER":
-        run_flags.append("PLACEHOLDER_PHONE")
-    if email_quality == "PLACEHOLDER":
-        run_flags.append("PLACEHOLDER_EMAIL")
-
-    return normalized_fields, run_flags
+    flags = []
+    if not normalized["name"]:
+        flags.append("MISSING_NAME")
+    if not normalized["phone"] and not normalized["email"]:
+        flags.append("NO_CONTACT_POINT")
+    if quality["email"] == "INVALID":
+        flags.append("INVALID_EMAIL_FORMAT")
+    if quality["phone"] == "INVALID":
+        flags.append("UNUSUAL_PHONE_LENGTH")
+    if quality["phone"] == "PLACEHOLDER":
+        flags.append("PLACEHOLDER_PHONE")
+    if quality["email"] in {"PLACEHOLDER", "SHARED"}:
+        flags.append("SHARED_OR_PLACEHOLDER_EMAIL")
+    if raw_dob and dob_quality == "INVALID":
+        flags.append("INVALID_DOB_FORMAT")
+    if raw_gov_id and gov_id_quality == "INVALID":
+        flags.append("INVALID_GOV_ID_FORMAT")
+    return normalized, flags

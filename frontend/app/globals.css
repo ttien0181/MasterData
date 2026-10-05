@@ -246,12 +246,6 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   border: 1px solid var(--amber-border);
 }
 
-.source-tag.bill, .src-badge.bill {
-  background: var(--blue-bg);
-  color: var(--blue);
-  border: 1px solid var(--blue-border, var(--blue));
-}
-
 /* Generic Badges */
 .badge {
   display: inline-flex;

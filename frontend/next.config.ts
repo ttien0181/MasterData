@@ -1,5 +1,5 @@
 import type { NextConfig } from "next";
 
-const config: NextConfig = { output: "standalone" };
+const config: NextConfig = { devIndicators: false, output: "standalone" };
 
 export default config;

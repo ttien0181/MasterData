@@ -10,15 +10,13 @@ from masterone.db.base import Base, now_utc
 class User(Base):
     __tablename__ = "users"
 
-    # Roles theo mục 26: VIEWER / STEWARD / SENIOR_STEWARD / POLICY_ADMIN / AUDITOR
-    ROLES = ("VIEWER", "STEWARD", "SENIOR_STEWARD", "POLICY_ADMIN", "AUDITOR")
-
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     email: Mapped[str] = mapped_column(String(320))
     email_normalized: Mapped[str] = mapped_column(String(320), unique=True)
     password_hash: Mapped[str] = mapped_column(String(512))
-    role: Mapped[str] = mapped_column(String(20), default="STEWARD")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # §26.1 RBAC roles: VIEWER | STEWARD | SENIOR_STEWARD | POLICY_ADMIN | AUDITOR
+    role: Mapped[str] = mapped_column(String(32), default="VIEWER", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 

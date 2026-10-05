@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import re
 import time
 from dataclasses import dataclass
 
@@ -11,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from masterone.auth.models import AuthSession, LoginAttempt, User
-from masterone.config import get_settings
+from masterone.config import LOCAL_DEV_ORIGIN_REGEX, get_settings
 from masterone.db.session import get_session
 
 password_hash = PasswordHash.recommended()
@@ -32,8 +33,12 @@ def allowed_origins() -> set[str]:
 
 
 def require_origin(request: Request) -> None:
-    if request.headers.get("origin") not in allowed_origins():
-        raise HTTPException(403, "Origin is not allowed")
+    origin = request.headers.get("origin", "")
+    if origin in allowed_origins():
+        return
+    if get_settings().app_env == "development" and re.fullmatch(LOCAL_DEV_ORIGIN_REGEX, origin):
+        return
+    raise HTTPException(403, "Origin is not allowed")
 
 
 def csrf_token(raw_token: str) -> str:
@@ -65,27 +70,39 @@ def require_mutation(request: Request, auth: CurrentSession = Depends(current_se
     return auth
 
 
-# Thứ tự quyền tăng dần — role cao hơn bao gồm quyền của role thấp hơn
-_ROLE_RANK: dict[str, int] = {
-    "VIEWER": 0,
-    "STEWARD": 1,
-    "SENIOR_STEWARD": 2,
-    "POLICY_ADMIN": 3,
-    "AUDITOR": 3,
+# ── RBAC (§26.1) ─────────────────────────────────────────────────────────────
+
+ROLES = ("VIEWER", "STEWARD", "SENIOR_STEWARD", "POLICY_ADMIN", "AUDITOR")
+_ROLE_RANK: dict[str, int] = {r: i for i, r in enumerate(ROLES)}
+
+# Minimum role required for each capability
+_CAPABILITY_MIN_ROLE: dict[str, str] = {
+    "read":              "VIEWER",
+    "approve_pair":      "STEWARD",
+    "reject_pair":       "STEWARD",
+    "approve_d_subgroup":"SENIOR_STEWARD",
+    "selective_unmerge": "SENIOR_STEWARD",
+    "edit_policy":       "POLICY_ADMIN",
+    "simulate_policy":   "POLICY_ADMIN",
+    "read_audit":        "AUDITOR",
 }
 
 
-def require_role(minimum_role: str):
-    """FastAPI dependency factory.  Dùng: Depends(require_role("STEWARD"))."""
-    min_rank = _ROLE_RANK.get(minimum_role, 99)
-
-    def _check(auth: CurrentSession = Depends(current_session)) -> CurrentSession:
-        user_rank = _ROLE_RANK.get(getattr(auth.user, "role", "VIEWER"), 0)
+def require_role(min_role: str):
+    """FastAPI dependency factory — raises 403 if the current user's role is below min_role."""
+    def _dep(auth: CurrentSession = Depends(current_session)) -> CurrentSession:
+        user_rank = _ROLE_RANK.get(auth.user.role, -1)
+        min_rank  = _ROLE_RANK.get(min_role, 0)
         if user_rank < min_rank:
-            raise HTTPException(403, f"Cần quyền {minimum_role} trở lên")
+            raise HTTPException(403, f"Role '{min_role}' or higher required")
         return auth
+    return _dep
 
-    return _check
+
+def require_capability(capability: str):
+    """FastAPI dependency factory — checks that the user has a capability."""
+    min_role = _CAPABILITY_MIN_ROLE.get(capability, "SENIOR_STEWARD")
+    return require_role(min_role)
 
 
 def normalized_email(email: str) -> str:

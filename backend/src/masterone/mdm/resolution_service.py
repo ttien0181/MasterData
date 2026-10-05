@@ -3,31 +3,46 @@
 from hashlib import sha256
 from uuid import uuid4
 
-from sqlalchemy import insert as sa_insert
 from sqlalchemy.orm import sessionmaker
 
 from masterone.db.base import now_utc
-from masterone.mdm.models import (ResolutionPair, ResolutionProposal, ResolutionRecord,
-                                  ResolutionReviewCase, ResolutionRun, ResolutionTask)
+from masterone.mdm.models import (
+    ResolutionPair,
+    ResolutionProposal,
+    ResolutionRecord,
+    ResolutionReviewCase,
+    ResolutionRun,
+    ResolutionTask,
+)
 from masterone.mdm.pipeline.blocking import generate_candidates
 from masterone.mdm.pipeline.clustering import build_proposals
-from masterone.mdm.pipeline.matching import score_pair
+from masterone.mdm.pipeline.matching import score_pair, value_frequencies
 from masterone.mdm.pipeline.review_grouping import classify_pair
+from masterone.mdm.pipeline.semantic_address import enrich_pairs_with_semantic
 
 
-def _compute(records: list[dict], run_id: str, policy_version: str) -> dict:
+def _compute(records: list[dict], run_id: str, policy_version: str,
+             negative_pairs: frozenset | None = None) -> dict:
     candidate_blocks = generate_candidates(records)
     by_id = {record["id"]: record for record in records}
+    frequencies = value_frequencies(records)
     pairs = []
-    for (left_id, right_id), reasons in candidate_blocks.items():
-        result = score_pair(by_id[left_id], by_id[right_id], reasons)
+    insufficient_count = 0
+    for (left_id, right_id), reasons in sorted(candidate_blocks.items()):
+        result = score_pair(by_id[left_id], by_id[right_id], reasons, frequencies,
+                            negative_pairs=negative_pairs)
+        if result["decision"] == "INSUFFICIENT_EVIDENCE":
+            insufficient_count += 1
+            continue
         pair_id = sha256(f"{run_id}:{left_id}:{right_id}:{policy_version}".encode()).hexdigest()
         pairs.append({"id": pair_id, "left_id": left_id, "right_id": right_id,
                       "blocking_reasons": sorted(reasons), **result})
-    clusters = build_proposals(records, pairs, run_id, policy_version)
+    llm_stats = enrich_pairs_with_semantic(pairs, by_id)
+    clusters = build_proposals(records, pairs, run_id, policy_version, negative_pairs=negative_pairs)
     review_cases = []
+    pairs_by_id = {item["id"]: item for item in pairs}
     for case in clusters["review_cases"]:
-        pair = next((item for item in pairs if item["id"] in case["pair_ids"]), None)
+        pair = pairs_by_id.get(case["pair_ids"][0])
         if pair is None:
             continue
         classification = classify_pair(pair, by_id)
@@ -35,7 +50,8 @@ def _compute(records: list[dict], run_id: str, policy_version: str) -> dict:
             continue
         review_cases.append({**case, **classification})
     return {"pairs": pairs, "proposals": clusters["proposals"], "review_cases": review_cases,
-            "candidate_count": len(candidate_blocks)}
+            "candidate_count": len(candidate_blocks), "insufficient_count": insufficient_count,
+            "llm_stats": llm_stats}
 
 
 def run_pipeline(run_id: str, factory: sessionmaker, progress) -> None:
@@ -48,49 +64,48 @@ def run_pipeline(run_id: str, factory: sessionmaker, progress) -> None:
         task.phase = "loading"
         task.updated_at = now_utc()
         records = [{"id": item.id, "external_id": item.external_id, "source_system": item.source_system,
-                    "raw_fields": item.raw_fields, "normalized_fields": item.normalized_fields}
-                   for item in db.query(ResolutionRecord).filter_by(run_id=run_id).all()]
+                    "entity_type": item.entity_type,
+                    "raw_fields": item.raw_fields, "normalized_fields": item.normalized_fields,
+                    "quality_flags": item.quality_flags}
+                   for item in db.query(ResolutionRecord).filter_by(run_id=run_id).order_by(ResolutionRecord.id).all()]
+        # Load steward negative edges (§11.3) for this run
+        negative_pairs: frozenset = frozenset(
+            tuple(sorted((p.left_record_id, p.right_record_id)))
+            for p in db.query(ResolutionPair).filter_by(run_id=run_id, user_decision="NON_MATCH").all()
+        )
         run.status = "RUNNING"
         run.phase = "loading"
         db.commit()
 
     progress("blocking", 0, len(records))
-    computed = _compute(records, run_id, run.policy_version)
+    computed = _compute(records, run_id, run.policy_version, negative_pairs=negative_pairs)
     progress("persisting", len(records), len(records))
     with factory.begin() as db:
         run = db.get(ResolutionRun, run_id)
         task = db.query(ResolutionTask).filter_by(run_id=run_id).one()
-
-        if computed["pairs"]:
-            db.execute(sa_insert(ResolutionPair), [
-                {"id": p["id"], "run_id": run_id, "left_record_id": p["left_id"],
-                 "right_record_id": p["right_id"], "blocking_reasons": p["blocking_reasons"],
-                 "field_evidence": p["field_evidence"], "score": p["score"],
-                 "pair_decision": p["decision"], "decision_reason": p["reason"],
-                 "triage_status": p["triage_status"], "triage_reason": p["triage_reason"],
-                 "user_decision": "UNDECIDED", "revision": 1}
-                for p in computed["pairs"]
-            ])
-
-        if computed["proposals"]:
-            db.execute(sa_insert(ResolutionProposal), [
-                {"id": prop["id"], "run_id": run_id,
-                 "member_record_ids": prop["member_record_ids"],
-                 "golden_fields": prop["golden_fields"], "status": prop["status"],
-                 "origin": "AUTO", "revision": prop["revision"]}
-                for prop in computed["proposals"]
-            ])
-
-        if computed["review_cases"]:
-            db.execute(sa_insert(ResolutionReviewCase), [
-                {"id": case["id"], "run_id": run_id, "pair_ids": case["pair_ids"],
-                 "member_record_ids": case["member_record_ids"],
-                 "primary_group": case["primary_group"], "subgroup": case["subgroup"],
-                 "signature_hash": case["signature_hash"],
-                 "triage_reason": case["triage_reason"], "status": "OPEN", "revision": 1}
-                for case in computed["review_cases"]
-            ])
-
+        for pair in computed["pairs"]:
+            db.add(ResolutionPair(
+                id=pair["id"], run_id=run_id, left_record_id=pair["left_id"],
+                right_record_id=pair["right_id"], blocking_reasons=pair["blocking_reasons"],
+                field_evidence=[] if pair["decision"] == "NON_MATCH" else pair["field_evidence"],
+                score=pair["score"],
+                pair_decision=pair["decision"], decision_reason=pair["reason"],
+                triage_status=pair["triage_status"], triage_reason=pair["triage_reason"],
+                primary_group=pair["primary_group"], subgroup=pair["subgroup"],
+                signature=pair["signature"], normalization_tags=pair["normalization_tags"],
+                policy_id=pair["policy_id"], policy_version=pair["policy_version"],
+            ))
+        for proposal in computed["proposals"]:
+            db.add(ResolutionProposal(id=proposal["id"], run_id=run_id,
+                                      member_record_ids=proposal["member_record_ids"],
+                                      golden_fields=proposal["golden_fields"], status=proposal["status"],
+                                      revision=proposal["revision"]))
+        for case in computed["review_cases"]:
+            db.add(ResolutionReviewCase(id=case["id"], run_id=run_id, pair_ids=case["pair_ids"],
+                                        member_record_ids=case["member_record_ids"],
+                                        primary_group=case["primary_group"], subgroup=case["subgroup"],
+                                        signature_hash=case["signature_hash"],
+                                        triage_reason=case["triage_reason"]))
         task.status = "COMPLETED"
         task.phase = "completed"
         task.processed_count = len(records)
@@ -98,6 +113,8 @@ def run_pipeline(run_id: str, factory: sessionmaker, progress) -> None:
         task.updated_at = now_utc()
         run.status = "COMPLETED"
         run.phase = "completed"
+        run.candidate_count = computed["candidate_count"]
+        run.insufficient_count = computed["insufficient_count"]
         run.completed_at = now_utc()
 
 

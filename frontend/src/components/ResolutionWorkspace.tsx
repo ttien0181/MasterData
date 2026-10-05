@@ -5,8 +5,9 @@ import AppShell, { type Stage } from "@/components/AppShell";
 import { PageHeader } from "@/components/DashboardPrimitives";
 import ResolutionFlow from "@/components/ResolutionFlow";
 import { ApiError, getResolutionOverview, getResolutionRuns, setCsrfToken,
-  startResolutionRun, uploadResolutionFiles, uploadResolutionFilesViaR2, type AuthUser } from "@/lib/api";
+  startResolutionRun, uploadResolutionFiles, type AuthUser } from "@/lib/api";
 import type { ResolutionOverview, ResolutionRunHistory } from "@/lib/contracts";
+import SeparateRecordsDialog from "./SeparateRecordsDialog";
 
 function activeRunKey(userId: string) { return `masterone.resolution-run.v1.${userId}`; }
 
@@ -21,6 +22,18 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
   const [message, setMessageState] = useState("");
   const [messageVersion, setMessageVersion] = useState(0);
   const [polling, setPolling] = useState(false);
+  const [separateOpen, setSeparateOpen] = useState(false);
+
+  function openDonutSegment(event: React.MouseEvent<HTMLButtonElement>) {
+    if (!overview) return;
+    if (event.detail === 0) { setStage("auto"); return; }
+    const { left, top, width, height } = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX - left - width / 2;
+    const y = event.clientY - top - height / 2;
+    const angle = (Math.atan2(x, -y) + Math.PI * 2) % (Math.PI * 2);
+    const total = overview.counts.auto + overview.counts.review;
+    setStage(total > 0 && angle / (Math.PI * 2) >= overview.counts.auto / total ? "review" : "auto");
+  }
 
   const setMessage = useCallback((next: string) => {
     setMessageState(next);
@@ -69,29 +82,10 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
   useEffect(() => {
     if (!runId || !overview || ["COMPLETED", "FAILED", "RETRYABLE_FAILED", "UPLOADED"].includes(overview.status)) return;
     setPolling(true);
-    let cancelled = false;
-    let timer: number | undefined;
-
-    const poll = async () => {
-      if (cancelled) return;
-      try {
-        const result = await refreshOverview(runId);
-        if (cancelled) return;
-        if (["COMPLETED", "FAILED", "RETRYABLE_FAILED", "UPLOADED"].includes(result.status)) {
-          setPolling(false);
-          return;
-        }
-        timer = window.setTimeout(() => void poll(), 2000);
-      } catch {
-        if (!cancelled) setPolling(false);
-      }
-    };
-
-    void poll();
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
+    const timer = window.setInterval(() => { void refreshOverview(runId).then((result) => {
+      if (["COMPLETED", "FAILED", "RETRYABLE_FAILED"].includes(result.status)) setPolling(false);
+    }).catch(() => setPolling(false)); }, 900);
+    return () => window.clearInterval(timer);
   }, [overview?.status, refreshOverview, runId]);
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
@@ -99,10 +93,7 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
     if (!files.length) return;
     setBusy(true); setMessage("");
     try {
-      const r2Available = !!(process.env.NEXT_PUBLIC_R2_ENABLED === "true");
-      const created = r2Available
-        ? await uploadResolutionFilesViaR2(files)
-        : await uploadResolutionFiles(files);
+      const created = await uploadResolutionFiles(files);
       window.localStorage.setItem(activeRunKey(user.id), created.run_id);
       setRunId(created.run_id);
       await startResolutionRun(created.run_id);
@@ -130,7 +121,7 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
   }
 
   return <AppShell stage={stage} pendingCount={overview?.counts.review ?? 0}
-    mergeCount={overview?.counts.auto ?? 0} rejectedCount={overview?.counts.rejected ?? 0}
+    mergeCount={overview?.counts.auto ?? 0}
     processedCount={overview?.processed_count ?? 0} totalCount={overview?.total_count ?? 0}
     user={user} onNavigate={setStage}
     onLogout={() => void onLogout().catch(() => setMessage("Không thể đăng xuất lúc này."))}>
@@ -149,12 +140,21 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
             <small>{overview.processed_count.toLocaleString("vi-VN")} / {overview.total_count.toLocaleString("vi-VN")} bản ghi</small>
             {(overview.status === "RETRYABLE_FAILED" || overview.status === "FAILED") && <button className="button outline" type="button" disabled={busy} onClick={() => void retryRun()}>Chạy lại</button>}
           </div>}
-          <div className="stat-grid resolution-stats">
-            <button className="card stat-card resolution-stat" type="button" onClick={() => setStage("auto")}><span className="stat-value">{overview.counts.auto.toLocaleString("vi-VN")}</span><span className="stat-label">Item sẽ gộp</span><span className="stat-change">Xem danh sách Gộp →</span></button>
-            <button className="card stat-card resolution-stat" type="button" onClick={() => setStage("rejected")}><span className="stat-value">{overview.counts.rejected.toLocaleString("vi-VN")}</span><span className="stat-label">Cặp không gộp</span><span className="stat-change">Xem danh sách Không gộp →</span></button>
-            <button className="card stat-card resolution-stat" type="button" onClick={() => setStage("review")}><span className="stat-value">{overview.counts.review.toLocaleString("vi-VN")}</span><span className="stat-label">Trường hợp cần xử lý</span><span className="stat-change">Mở hàng đợi review →</span></button>
+          {overview.status === "COMPLETED" && <div className="resolution-overview-distribution card">
+            <div><p className="section-kicker">KẾT QUẢ PHÂN GIẢI</p><h3>Phân bố cụm</h3><p>Bấm vào một phần của biểu đồ để mở danh sách tương ứng.</p>
+              <div className="resolution-donut-legend"><button type="button" onClick={() => setStage("auto")}><i className="waiting" />Chờ gộp <b>{overview.counts.auto.toLocaleString("vi-VN")}</b></button><button type="button" onClick={() => setStage("review")}><i className="review" />Cần review <b>{overview.counts.review.toLocaleString("vi-VN")}</b></button></div>
+            </div>
+            <div className="resolution-donut" style={{ "--waiting-share": `${overview.counts.auto + overview.counts.review ? overview.counts.auto / (overview.counts.auto + overview.counts.review) * 100 : 0}%` } as React.CSSProperties}>
+              <button type="button" className="resolution-donut-chart" aria-label={`Biểu đồ: Chờ gộp ${overview.counts.auto} cụm, Cần review ${overview.counts.review} cụm; bấm phần màu để mở danh sách`} onClick={openDonutSegment}><span><strong>{(overview.counts.auto + overview.counts.review).toLocaleString("vi-VN")}</strong><small>cụm</small></span></button>
+            </div>
+          </div>}
+          {overview.status === "COMPLETED" && <div className="stat-grid resolution-stats">
+            <button className="card stat-card resolution-stat" type="button" onClick={() => setSeparateOpen(true)}><span className="stat-value">{(overview.counts.separate ?? 0).toLocaleString("vi-VN")}</span><span className="stat-label">Dự kiến giữ riêng</span><span className="stat-change">Xem bản ghi →</span></button>
             <button className="card stat-card resolution-stat" type="button" onClick={() => setStage("history")}><span className="stat-value">{overview.history_count.toLocaleString("vi-VN")}</span><span className="stat-label">Bản CSV đã xuất</span><span className="stat-change">Xem lịch sử →</span></button>
-          </div>
+          </div>}
+          {overview.status === "COMPLETED" && <section className="card source-summary resolution-signal-summary" aria-label="Kết quả đối chiếu dữ liệu"><div><p className="section-kicker">ĐỐI CHIẾU DỮ LIỆU</p><h3>Các dấu hiệu tìm thấy</h3><small>{overview.candidate_count.toLocaleString("vi-VN")} cặp được đối chiếu · {overview.counts.insufficient.toLocaleString("vi-VN")} cặp chưa đủ thông tin để xác nhận</small></div><div className="source-summary-values">
+            {([ ["A", overview.counts.group_a, "Thông tin khớp rõ", "Tên và thông tin liên hệ giống nhau"], ["C", overview.counts.group_c, "Cần thêm thông tin", "Tên chưa đủ rõ để xác nhận"], ["D", overview.counts.group_d, "Thông tin mâu thuẫn", "Tên khác nhau rõ rệt"] ] as const).map(([group, count, label, description]) => <span className="source-count" key={group}><b>{label}</b><strong>{count.toLocaleString("vi-VN")}</strong><small>{description}</small></span>)}
+          </div></section>}
           {runHistory.length > 1 && <section className="card recent-runs"><div className="recent-runs-title"><div><p className="section-kicker">Lần nạp dữ liệu</p><h3>Các lần nạp gần đây</h3></div><span className="muted-copy">Chọn một lần nạp để xem dữ liệu của nó</span></div>
             {runHistory.slice(0, 5).map((run) => <button type="button" className={`recent-run-row ${run.run_id === runId ? "current" : ""}`} key={run.run_id} onClick={() => void switchRun(run.run_id)}>
               <span><b>{run.files.join(", ") || "Lần nạp dữ liệu"}</b><small>{new Date(run.created_at).toLocaleString("vi-VN")}</small></span><span>{run.record_count.toLocaleString("vi-VN")} bản ghi</span><span>{run.status === "COMPLETED" ? "Đã xử lý" : run.status === "FAILED" ? "Thất bại" : "Đang xử lý"}</span>
@@ -167,7 +167,7 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
       </section>}
 
       {stage === "import" && <section className="card card-body resolution-intake">
-        <div className="intake-copy"><div><p className="section-kicker">Dữ liệu đầu vào</p><h2>Phân giải mọi bản ghi trong một lần nạp</h2><p>Chọn một hoặc nhiều CSV cùng schema. Hệ thống đọc cột <code>source_system</code> trên từng dòng và dò trùng trên tất cả nguồn.</p></div></div>
+        <div className="intake-copy"><div><p className="section-kicker">Dữ liệu đầu vào</p><h2>Phân giải mọi bản ghi trong một lần nạp</h2><p>Chọn một hoặc nhiều CSV của Linh. Hệ thống đọc cột <code>source</code> trên từng dòng và dò trùng cả trong cùng nguồn lẫn giữa các nguồn.</p></div></div>
         <form onSubmit={(event) => void handleUpload(event)}>
           <label className={`resolution-dropzone ${dragging ? "dragging" : ""}`}
             onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
@@ -176,13 +176,14 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
             <span className="drop-icon">＋</span><strong>{files.length ? `${files.length} file đã chọn` : "Thả file CSV vào đây hoặc chọn từ máy"}</strong><small>Chọn nhiều file; có thể bổ sung file trước khi nạp.</small>
             <input type="file" accept=".csv,text/csv" multiple onChange={(event) => { addFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
           </label>
-          <div className="intake-schema" aria-label="Các cột CSV"><span>Các cột CSV</span>{["id", "source_system", "full_name", "phone_number", "email_address", "raw_address"].map((column) => <code key={column}>{column}</code>)}</div>
+          <div className="intake-schema" aria-label="Các cột CSV"><span>Các cột CSV</span>{["record_id", "source", "name", "phone", "email", "address"].map((column) => <code key={column}>{column}</code>)}</div>
           {files.length > 0 && <ul className="file-list">{files.map((file) => <li key={`${file.name}-${file.size}-${file.lastModified}`}><span>{file.name}</span><small>{(file.size / 1024).toFixed(0)} KB</small><button type="button" aria-label={`Bỏ file ${file.name}`} onClick={() => setFiles((current) => current.filter((selected) => selected !== file))}>Bỏ file ×</button></li>)}</ul>}
-          <div className="intake-footer"><span>Tối đa 10 file mỗi lần nạp · 5 MiB và 5.000 dòng mỗi file.</span><button className="button primary btn btn-primary" type="submit" disabled={!files.length || busy}>{busy ? "Đang nạp…" : "Nạp và phân giải →"}</button></div>
+          <div className="intake-footer"><span>Tối đa 10 file mỗi lần nạp · 5 MiB và 10.000 dòng mỗi file.</span><button className="button primary btn btn-primary" type="submit" disabled={!files.length || busy}>{busy ? "Đang nạp…" : "Nạp và phân giải →"}</button></div>
         </form>
       </section>}
 
-      {["auto", "rejected", "review", "history"].includes(stage) && <ResolutionFlow runId={runId} stage={stage} onChanged={() => refreshOverview(runId)} notify={setMessage} />}
+      {["auto", "review", "history"].includes(stage) && <ResolutionFlow runId={runId} stage={stage} onChanged={() => refreshOverview(runId)} notify={setMessage} />}
+      {separateOpen && runId && <SeparateRecordsDialog runId={runId} onClose={() => setSeparateOpen(false)} />}
     </main>
   </AppShell>;
 }
