@@ -19,6 +19,8 @@ from masterone.auth.security import (
     require_capability,
     require_mutation_capability,
 )
+from masterone.mdm.benchmark import run_benchmark
+from masterone.mdm.pipeline.blocking import generate_candidates
 from masterone.config import get_settings
 from masterone.db.session import get_session
 from masterone.mdm.gemini_explanation import explain_cohort
@@ -590,3 +592,81 @@ def put_golden_record(run_id: str, proposal_id: str, request: GoldenRecordOverri
     db.commit()
     return {'proposal_id': proposal_id, 'steward_override': request.fields}
 
+
+# ── §SVC-07 Benchmark endpoint ────────────────────────────────────────────────
+
+@router.post("/{run_id}/benchmark")
+def run_benchmark_endpoint(
+    run_id: str,
+    ground_truth_field: str = Query(default="benchmark_entity_id", description="CSV column used as ground truth label"),
+    db: Session = Depends(get_session),
+    auth: CurrentSession = Depends(require_capability("read")),
+):
+    """Compute benchmark metrics for a completed run.
+
+    Requires that records were imported with a `benchmark_entity_id` column (or equivalent).
+    Role required: any role with `read` capability.
+    """
+    run = owned_run(db, run_id, auth.user.id)
+    if run.status != "COMPLETED":
+        raise HTTPException(409, "Benchmark chỉ khả dụng sau khi phiên hoàn thành (status=COMPLETED)")
+
+    records = [
+        {
+            "id": r.id,
+            "external_id": r.external_id,
+            "source_system": r.source_system,
+            "entity_type": r.entity_type,
+            "normalized_fields": r.normalized_fields,
+            "raw_fields": r.raw_fields,
+            "quality_flags": r.quality_flags,
+            "benchmark_entity_id": r.benchmark_entity_id,
+        }
+        for r in db.query(ResolutionRecord).filter_by(run_id=run_id).order_by(ResolutionRecord.id).all()
+    ]
+
+    if not any(r.get("benchmark_entity_id") for r in records):
+        raise HTTPException(
+            422,
+            f"Không có record nào có field '{ground_truth_field}'. "
+            "Import CSV cần cột benchmark_entity_id để chạy benchmark."
+        )
+
+    pairs = [
+        {
+            "left_id": p.left_record_id,
+            "right_id": p.right_record_id,
+            "decision": p.decision,
+            "subgroup": p.subgroup,
+            "primary_group": p.primary_group,
+            "match_weight": float(p.match_weight) if p.match_weight else 0.0,
+        }
+        for p in db.query(ResolutionPair).filter_by(run_id=run_id).all()
+    ]
+
+    proposals = [
+        {
+            "member_ids": p.member_ids,
+            "golden_fields": p.golden_fields,
+        }
+        for p in db.query(ResolutionProposal).filter_by(run_id=run_id).all()
+    ]
+
+    candidate_blocks = generate_candidates(records)
+    result = run_benchmark(records, candidate_blocks, pairs, proposals)
+
+    def _metrics(obj) -> dict | None:
+        if obj is None:
+            return None
+        return {k: v for k, v in obj.__dict__.items()}
+
+    return {
+        "run_id": run_id,
+        "record_count": result.record_count,
+        "pair_count": result.pair_count,
+        "candidate": _metrics(result.candidate),
+        "pair": _metrics(result.pair),
+        "auto_merge": _metrics(result.auto_merge),
+        "cluster": _metrics(result.cluster),
+        "per_subgroup": {sg: _metrics(m) for sg, m in result.per_subgroup.items()},
+    }

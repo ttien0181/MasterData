@@ -88,6 +88,7 @@ def _normalized_row(filename: str, line: int, source_row: dict, is_linh_file: bo
     external_id = (source_row.get("record_id" if is_linh_file else "id") or "").strip()
     source = (source_row.get("source" if is_linh_file else "source_system") or "").strip().upper()
     name = (source_row.get("name" if is_linh_file else "full_name") or "").strip()
+    entity_type = (source_row.get("entity_type") or "PERSON").strip().upper()
     if not external_id or not name or source not in ALLOWED_SOURCES:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
                             f"{filename} có dữ liệu bắt buộc sai ở dòng {line}")
@@ -103,6 +104,7 @@ def _normalized_row(filename: str, line: int, source_row: dict, is_linh_file: bo
     return {
         "external_id": external_id,
         "source_system": source,
+        "entity_type": entity_type,
         "raw_fields": raw,
         "benchmark_entity_id": (source_row.get("entity_id") or "").strip() or None,
         "extra_fields": {column: (source_row.get(column) or "").strip() for column in extra_columns},
@@ -191,10 +193,11 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
             batch = []
             for row in _iter_normalized(stream, filename):
                 raw = row["raw_fields"]
-                normalized, quality_flags = standardize(raw)
+                normalized, quality_flags = standardize(raw, entity_type=row["entity_type"])
                 batch.append({
                     "run_id": run.id, "file_id": file_row.id, "external_id": row["external_id"],
-                    "source_system": row["source_system"], "benchmark_entity_id": row["benchmark_entity_id"],
+                    "source_system": row["source_system"], "entity_type": row["entity_type"],
+                    "benchmark_entity_id": row["benchmark_entity_id"],
                     "raw_fields": raw, "normalized_fields": normalized, "quality_flags": quality_flags,
                     "extra_fields": row["extra_fields"],
                 })

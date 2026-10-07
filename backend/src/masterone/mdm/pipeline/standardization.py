@@ -44,6 +44,29 @@ def fold_text(value: str) -> str:
     return "".join(char for char in decomposed if unicodedata.category(char) != "Mn")
 
 
+def tokenize_vietnamese_name(name: str) -> dict:
+    """Tokenize a Vietnamese name into surname, middle_name, and given_name.
+    
+    Args:
+        name: A full name string (expected to be NFC + lowercase/casefold).
+        
+    Returns:
+        A dict with 'surname', 'middle_name', 'given_name'.
+    """
+    tokens = [t for t in name.split() if t]
+    if not tokens:
+        return {"surname": "", "middle_name": "", "given_name": ""}
+    if len(tokens) == 1:
+        return {"surname": tokens[0], "middle_name": "", "given_name": tokens[0]}
+    if len(tokens) == 2:
+        return {"surname": tokens[0], "middle_name": "", "given_name": tokens[1]}
+    return {
+        "surname": tokens[0],
+        "middle_name": " ".join(tokens[1:-1]),
+        "given_name": tokens[-1]
+    }
+
+
 def normalize_phone(value: str) -> str:
     digits = re.sub(r"\D", "", value)
     # Strip international prefix: +84 / 0084
@@ -285,18 +308,106 @@ def parse_address(address: str) -> dict:
     return {"province": province, "street_fragment": street_fragment, "needs_hitl": False}
 
 
-def standardize(raw_fields: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+def normalize_org_name(name: str) -> dict:
+    """Normalize organization name and extract legal form.
+    
+    Returns:
+        {"org_name_core": "...", "legal_form": "..."}
+    """
+    legal_forms = [
+        "tnhh mtv", "tnhh", "co phan", "cp", "co., ltd", "jsc", "llc", "inc", "tap doan", "tong cong ty"
+    ]
+    core = fold_text(name)
+    found_form = ""
+    
+    core = re.sub(r"^(cong ty|cty)\s+", "", core).strip()
+    
+    # Combine into a single regex to match the first occurrence from left to right
+    pattern = r"(^|\s)(" + "|".join(re.escape(f) for f in legal_forms) + r")($|\s)"
+    match = re.search(pattern, core)
+    if match:
+        form = match.group(2)
+        if form == "cp":
+            found_form = "CO PHAN"
+        else:
+            found_form = form.upper()
+        core = core[:match.start()] + " " + core[match.end():]
+            
+    core = " ".join(core.split())
+    return {"org_name_core": core, "legal_form": found_form}
+
+
+def standardize(raw_fields: dict[str, str], entity_type: str = "PERSON") -> tuple[dict, list[str]]:
     raw = {field: raw_fields.get(field, "") or "" for field in FIELDS}
     raw_dob = raw_fields.get("dob", "") or ""
     raw_gov_id = raw_fields.get("government_id", "") or ""
 
-    normalized: dict[str, str] = {
+    normalized: dict = {
         "name": fold_text(raw["name"]),
         "name_unicode": unicodedata.normalize("NFC", " ".join(raw["name"].split()).casefold()),
-        "phone": normalize_phone(raw["phone"]),
-        "email": " ".join(raw["email"].split()).casefold(),
         "address": fold_text(raw["address"]),
     }
+    
+    if entity_type == "ORGANIZATION":
+        normalized["_org_parts"] = normalize_org_name(raw["name"])
+    else:
+        normalized["_name_parts"] = tokenize_vietnamese_name(normalized["name_unicode"])
+
+    raw_phones = [p.strip() for p in re.split(r"[,;]", raw["phone"]) if p.strip()]
+    phones = []
+    for p in raw_phones:
+        norm_p = normalize_phone(p)
+        if not norm_p:
+            q = "MISSING"
+        elif norm_p in _PLACEHOLDER_PHONES:
+            q = "PLACEHOLDER"
+        elif len(norm_p) not in range(9, 13):
+            q = "INVALID"
+        else:
+            q = "VALID"
+        phones.append({"value": norm_p, "quality": q, "is_primary": False})
+        
+    if phones:
+        primary_idx = next((i for i, p in enumerate(phones) if p["quality"] == "VALID"), 0)
+        phones[primary_idx]["is_primary"] = True
+        normalized["phone"] = phones[primary_idx]["value"]
+        phone_quality = phones[primary_idx]["quality"]
+    else:
+        normalized["phone"] = ""
+        phone_quality = "MISSING"
+        
+    normalized["phones"] = phones
+
+    raw_emails = [e.strip() for e in re.split(r"[,;]", raw["email"]) if e.strip()]
+    emails = []
+    for e in raw_emails:
+        norm_e = " ".join(e.split()).casefold()
+        is_valid_format = bool(re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", norm_e))
+        if not norm_e:
+            q = "MISSING"
+        elif not is_valid_format:
+            q = "INVALID"
+        elif norm_e in _PLACEHOLDER_EMAILS:
+            q = "PLACEHOLDER"
+        elif norm_e.split("@", 1)[0].split("+", 1)[0].replace(".", "") in _ROLE_EMAIL_PREFIXES:
+            q = "SHARED"
+        else:
+            q = "VALID"
+        emails.append({"value": norm_e, "quality": q, "is_primary": False})
+        
+    if emails:
+        primary_idx = next((i for i, e in enumerate(emails) if e["quality"] == "VALID"), 0)
+        emails[primary_idx]["is_primary"] = True
+        normalized["email"] = emails[primary_idx]["value"]
+        email_quality = emails[primary_idx]["quality"]
+    else:
+        normalized["email"] = ""
+        email_quality = "MISSING"
+        
+    normalized["emails"] = emails
+    # _name_parts already set for PERSON at line 354; ensure ORGANIZATION also gets it for cross-entity safety
+    if "_name_parts" not in normalized:
+        normalized["_name_parts"] = tokenize_vietnamese_name(normalized["name_unicode"])
 
     dob_norm, dob_quality = normalize_dob(raw_dob)
     gov_id_norm, gov_id_quality = normalize_government_id(raw_gov_id)
@@ -314,7 +425,7 @@ def standardize(raw_fields: dict[str, str]) -> tuple[dict[str, str], list[str]]:
 
     # Structured address parts with ward resolution
     addr_parts = parse_address(raw["address"])
-    from masterone.mdm.pipeline.address_mapping import resolve_ward  # local import avoids circular
+    from masterone.mdm.pipeline.address_mapping import resolve_ward, MAPPING_VERSION  # local import avoids circular
     ward_match = _extract_ward_token(normalized["address"])
     if ward_match:
         wr = resolve_ward(ward_match)
@@ -325,19 +436,14 @@ def standardize(raw_fields: dict[str, str]) -> tuple[dict[str, str], list[str]]:
         addr_parts["ward_status"] = "unresolved"
         addr_parts["ward_ids"] = []
         addr_parts["needs_hitl"] = False
+        
+    addr_parts["mapping_version"] = MAPPING_VERSION
     normalized["address_parts"] = addr_parts
 
-    email_valid = bool(re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", normalized["email"]))
     quality: dict[str, str] = {
         "name": "VALID" if normalized["name"] else "MISSING",
-        "phone": ("MISSING" if not normalized["phone"] else
-                  "PLACEHOLDER" if normalized["phone"] in _PLACEHOLDER_PHONES else
-                  "INVALID" if len(normalized["phone"]) not in range(9, 13) else "VALID"),
-        "email": ("MISSING" if not normalized["email"] else
-                  "INVALID" if not email_valid else
-                  "PLACEHOLDER" if normalized["email"] in _PLACEHOLDER_EMAILS else
-                  "SHARED" if normalized["email"].split("@", 1)[0].split("+", 1)[0].replace(".", "")
-                  in _ROLE_EMAIL_PREFIXES else "VALID"),
+        "phone": phone_quality,
+        "email": email_quality,
         "address": "VALID" if normalized["address"] else "MISSING",
         "dob": dob_quality,
         "government_id": gov_id_quality,

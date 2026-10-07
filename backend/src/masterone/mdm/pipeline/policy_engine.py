@@ -23,6 +23,7 @@ class FieldRequirement:
     states: frozenset[str]
     quality: frozenset[str] = field(default_factory=lambda: frozenset())
     allow_shared: bool = False
+    required_tags: frozenset[str] = field(default_factory=lambda: frozenset())
 
 
 @dataclass
@@ -37,11 +38,13 @@ class SubgroupPolicy:
 
 
 def _req(states: list[str], quality: list[str] | None = None,
-         allow_shared: bool = False) -> FieldRequirement:
+         allow_shared: bool = False,
+         required_tags: list[str] | None = None) -> FieldRequirement:
     return FieldRequirement(
         states=frozenset(states),
         quality=frozenset(quality or []),
         allow_shared=allow_shared,
+        required_tags=frozenset(required_tags or []),
     )
 
 
@@ -74,7 +77,7 @@ POLICIES: dict[str, SubgroupPolicy] = {
         required={
             "phone": _req(["EX", "NX"], quality=["VALID"], allow_shared=False),
             "dob":   _req(["EX"]),
-            "name":  _req(["EX", "NX", "NA", "HS", "MS"]),
+            "name":  _req(["EX", "NX", "NA", "HS", "MS"], required_tags=["GIVEN_NAME_COMPATIBLE"]),
         },
         forbidden={
             "government_id": frozenset(["CF"]),
@@ -159,6 +162,10 @@ def _field_passes_requirement(
         if qa not in req.quality and qa not in {"UNKNOWN"}:
             return False
         if qb not in req.quality and qb not in {"UNKNOWN"}:
+            return False
+    if req.required_tags:
+        tags = set(comparisons.get(field_name, {}).get("normalization_tags", []))
+        if not req.required_tags.issubset(tags):
             return False
     return True
 

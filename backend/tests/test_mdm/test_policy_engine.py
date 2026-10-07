@@ -240,6 +240,32 @@ def test_decision_subgroup_is_most_conservative():
         assert result.decision_subgroup == result.matched_subgroups[0]
 
 
+def test_policy_a3_requires_given_name_compatible_tag():
+    """A3 requires name to have GIVEN_NAME_COMPATIBLE tag."""
+    comps_without_tag = {
+        "phone": {"state": "EX", "provenance": "RULE"},
+        "dob":   {"state": "EX", "provenance": "RULE"},
+        "name":  {"state": "HS", "provenance": "RULE", "normalization_tags": []},
+        "email": {"state": "MI", "provenance": "RULE"},
+        "government_id": {"state": "MI", "provenance": "RULE"},
+        "address": {"state": "MI", "provenance": "RULE"},
+    }
+    result_blocked = apply_policy("A", comps_without_tag, 13.0, {}, {})
+    # A3 should be blocked because name missing GIVEN_NAME_COMPATIBLE
+    assert "A3" not in result_blocked.matched_subgroups
+
+    comps_with_tag = {
+        "phone": {"state": "EX", "provenance": "RULE"},
+        "dob":   {"state": "EX", "provenance": "RULE"},
+        "name":  {"state": "HS", "provenance": "RULE", "normalization_tags": ["GIVEN_NAME_COMPATIBLE"]},
+        "email": {"state": "MI", "provenance": "RULE"},
+        "government_id": {"state": "MI", "provenance": "RULE"},
+        "address": {"state": "MI", "provenance": "RULE"},
+    }
+    result_eligible = apply_policy("A", comps_with_tag, 13.0, {}, {})
+    assert "A3" in result_eligible.matched_subgroups
+
+
 # ── triage_status field ───────────────────────────────────────────────────────
 
 def test_triage_status_auto_merge_on_match_candidate():

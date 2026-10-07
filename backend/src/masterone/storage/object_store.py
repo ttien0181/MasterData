@@ -1,9 +1,103 @@
-"""S3-compatible object storage adapter for Cloudflare R2."""
+"""Object storage abstractions and adapters.
+
+ObjectStore (ABC) — interface all adapters must implement.
+R2ObjectStore   — Cloudflare R2 via boto3 S3-compatible API.
+LocalObjectStore — local filesystem, used in dev/test when R2 is not configured.
+"""
 
 from __future__ import annotations
 
+import json
+import shutil
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import BinaryIO
+
+
+class ObjectStore(ABC):
+    """Abstract interface for object storage backends."""
+
+    @abstractmethod
+    def exists(self, key: str) -> bool: ...
+
+    @abstractmethod
+    def upload_file(self, path: str | Path, key: str,
+                    content_type: str = "application/octet-stream") -> None: ...
+
+    @abstractmethod
+    def upload_stream(self, stream: BinaryIO, key: str,
+                      content_type: str = "application/octet-stream") -> None: ...
+
+    @abstractmethod
+    def download_file(self, key: str, path: str | Path) -> None: ...
+
+    @abstractmethod
+    def upload_bytes(self, data: bytes, key: str,
+                     content_type: str = "application/octet-stream") -> None: ...
+
+    @abstractmethod
+    def download_bytes(self, key: str) -> bytes: ...
+
+    @abstractmethod
+    def presigned_url(self, key: str, expires_in: int = 3600) -> str: ...
+
+    @abstractmethod
+    def delete(self, key: str) -> None: ...
+
+    def write_manifest(self, key: str, payload: dict) -> None:
+        """Serialize payload as JSON and upload. Concrete classes may override."""
+        data = (json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+        self.upload_bytes(data, key, content_type="application/json")
+
+
+class LocalObjectStore(ObjectStore):
+    """Filesystem-backed store — for development and tests without R2 credentials."""
+
+    def __init__(self, root: str | Path):
+        self._root = Path(root)
+        self._root.mkdir(parents=True, exist_ok=True)
+
+    def _path(self, key: str) -> Path:
+        p = (self._root / key).resolve()
+        if not str(p).startswith(str(self._root.resolve())):
+            raise ValueError(f"Key escapes store root: {key!r}")
+        return p
+
+    def exists(self, key: str) -> bool:
+        return self._path(key).exists()
+
+    def upload_file(self, path: str | Path, key: str,
+                    content_type: str = "application/octet-stream") -> None:
+        dest = self._path(key)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(path), str(dest))
+
+    def upload_stream(self, stream: BinaryIO, key: str,
+                      content_type: str = "application/octet-stream") -> None:
+        dest = self._path(key)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(stream.read())
+
+    def download_file(self, key: str, path: str | Path) -> None:
+        shutil.copy2(str(self._path(key)), str(path))
+
+    def upload_bytes(self, data: bytes, key: str,
+                     content_type: str = "application/octet-stream") -> None:
+        dest = self._path(key)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+
+    def download_bytes(self, key: str) -> bytes:
+        return self._path(key).read_bytes()
+
+    def presigned_url(self, key: str, expires_in: int = 3600) -> str:
+        # Local store: return a file:// URI — only meaningful for same-machine callers
+        return self._path(key).as_uri()
+
+    def delete(self, key: str) -> None:
+        p = self._path(key)
+        if p.exists():
+            p.unlink()
 
 
 class _BorrowedStream:
@@ -20,7 +114,7 @@ class _BorrowedStream:
         pass
 
 
-class R2ObjectStore:
+class R2ObjectStore(ObjectStore):
     def __init__(self, endpoint_url: str, access_key_id: str, secret_access_key: str, bucket: str):
         import boto3
         from botocore.config import Config

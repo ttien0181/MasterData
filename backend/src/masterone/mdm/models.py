@@ -302,3 +302,23 @@ class ResolutionSplitEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
+
+
+class LLMRequest(Base):
+    __tablename__ = "llm_requests"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    request_type: Mapped[str] = mapped_column(String(50))
+    model: Mapped[str] = mapped_column(String(50))
+    provider: Mapped[str] = mapped_column(String(50))
+    prompt_version: Mapped[str] = mapped_column(String(50))
+    schema_version: Mapped[str] = mapped_column(String(50))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(24))
+    pair_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    response_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)

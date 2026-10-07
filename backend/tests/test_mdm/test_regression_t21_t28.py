@@ -366,7 +366,7 @@ def test_T31_address_same_ward_resolved_score_at_least_MS():
     # Chỉ test nếu cả hai đều resolve được ward
     if (ap1.get("ward_status") == "resolved" and ap2.get("ward_status") == "resolved"
             and ap1.get("ward_ids") and ap2.get("ward_ids")):
-        overlap = ap1["ward_ids"] & ap2["ward_ids"]
+        overlap = set(ap1["ward_ids"]) & set(ap2["ward_ids"])
         if overlap:
             r1 = {"id": "w1", "external_id": "w1", "source_system": "CRM",
                   "raw_fields": {}, "normalized_fields": nf1}

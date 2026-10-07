@@ -6,7 +6,10 @@ Hard constraints cannot be overridden by score or policy.
 §11.1  PERSON vs ORGANIZATION         → HARD_CONFLICT
 §11.2  Same-type gov_id VALID conflict → SAME_TYPE_GOV_ID_CONFLICT
 §11.3  Steward negative_edge           → STEWARD_NEGATIVE_DECISION
-§11.4  Verified identity conflict      → VERIFIED_IDENTITY_CONFLICT (future; OTP_VERIFIED_PHONE etc.)
+§11.4  Verified identity conflict      → VERIFIED_IDENTITY_CONFLICT
+       Fires when both sides have a *verified* phone or email AND they differ.
+       Verified flag: normalized_fields["_phone_verified"] or "_email_verified" = True.
+       Only CSV sources with explicit verified flags will trigger this; absence = not verified.
 """
 
 from __future__ import annotations
@@ -59,6 +62,24 @@ def check_negative_edge(left_id: str, right_id: str,
     return None
 
 
+def check_verified_identity(left_nf: dict, right_nf: dict) -> HardConstraintViolation | None:
+    """§11.4 — Verified phone or email conflict.
+
+    Fires only when BOTH sides have an independently verified contact of the same type
+    and those verified contacts differ. Absence of a verified flag = not verified → no fire.
+    """
+    for field, flag_key in (("phone", "_phone_verified"), ("email", "_email_verified")):
+        if left_nf.get(flag_key) and right_nf.get(flag_key):
+            val_l = left_nf.get(field, "")
+            val_r = right_nf.get(field, "")
+            if val_l and val_r and val_l != val_r:
+                return HardConstraintViolation(
+                    "VERIFIED_IDENTITY_CONFLICT",
+                    f"HARD_VERIFIED_{field.upper()}",
+                )
+    return None
+
+
 def check_all(left: dict, right: dict,
               negative_pairs: frozenset[tuple[str, str]] | None = None,
               ) -> HardConstraintViolation | None:
@@ -74,6 +95,10 @@ def check_all(left: dict, right: dict,
         return v
     # §11.2 gov_id
     v = check_gov_id(left.get("normalized_fields", {}), right.get("normalized_fields", {}))
+    if v:
+        return v
+    # §11.4 verified identity
+    v = check_verified_identity(left.get("normalized_fields", {}), right.get("normalized_fields", {}))
     if v:
         return v
     return None

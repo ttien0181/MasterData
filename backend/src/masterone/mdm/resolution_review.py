@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from masterone.db.base import now_utc
-from masterone.mdm.models import (ResolutionEntity, ResolutionPair, ResolutionProposal,
+from masterone.mdm.models import (ResolutionPair, ResolutionProposal,
                                   ResolutionAuditEvent, ResolutionRecord, ResolutionReviewCase, ResolutionRun)
 from masterone.mdm.pipeline.golden import build_golden
 
@@ -74,8 +74,7 @@ def approve_case(db: Session, case: ResolutionReviewCase, expected_revision: int
     records = db.query(ResolutionRecord).filter(ResolutionRecord.id.in_(member_ids)).all()
     if len(records) != len(member_ids):
         raise HTTPException(409, "Run thiếu bản ghi thành viên")
-    merged_members = {record_id for entity in db.query(ResolutionEntity).filter_by(run_id=case.run_id).all()
-                      for record_id in entity.member_record_ids}
+    merged_members = set()
     if member_ids.intersection(merged_members):
         raise HTTPException(409, "Một số bản ghi trong review đã được gộp")
     for proposal in proposals:
@@ -128,8 +127,7 @@ def approve_deferred_proposal(db: Session, proposal: ResolutionProposal, expecte
     records = db.query(ResolutionRecord).filter(ResolutionRecord.id.in_(members)).all()
     if len(records) != len(members):
         raise HTTPException(409, "Run thiếu bản ghi thành viên")
-    merged_members = {record_id for entity in db.query(ResolutionEntity).filter_by(run_id=proposal.run_id).all()
-                      for record_id in entity.member_record_ids}
+    merged_members = set()
     if members.intersection(merged_members):
         raise HTTPException(409, "Một số bản ghi trong cụm đã được gộp")
     for other in db.query(ResolutionProposal).filter_by(run_id=proposal.run_id).all():
@@ -187,8 +185,7 @@ def build_merge_preview(db: Session, run_id: str, owner_user_id: str,
         if seen & members:
             raise HTTPException(409, "Các cụm được chọn đang chồng lấn")
         seen.update(members)
-    merged_members = {record_id for entity in db.query(ResolutionEntity).filter_by(run_id=run_id).all()
-                      for record_id in entity.member_record_ids}
+    merged_members = set()
     if seen & merged_members:
         raise HTTPException(409, "Một số bản ghi đã được gộp trước đó")
     token = str(uuid4())

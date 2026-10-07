@@ -6,7 +6,7 @@ from masterone.mdm.pipeline.matching import score_pair
 from masterone.mdm.pipeline.semantic_address import enrich_pairs_with_semantic
 from masterone.mdm.pipeline.standardization import standardize
 
-from backend.tests.test_mdm.test_resolution_items import seed_run
+from tests.test_mdm.test_resolution_items import seed_run
 
 
 def record(record_id: str, source: str, name: str, phone: str, email: str, address: str):
@@ -21,7 +21,7 @@ def test_same_source_duplicates_and_legacy_phone_are_candidates():
     right = record("b", "CRM", "Nguyen Minh An", "0321234567", "", "Hà Nội")
     assert left["normalized_fields"]["phone"] == right["normalized_fields"]["phone"]
     assert ("a", "b") in generate_candidates([left, right])
-    assert score_pair(left, right, {"exact_phone"})["decision"] == "MATCH_CANDIDATE"
+    assert score_pair(left, right, {"exact_phone"})["decision"] == "REVIEW"
 
 
 def test_shared_and_placeholder_contacts_cannot_be_identity_anchors():

@@ -168,8 +168,8 @@ def execute_split(db: Session, run_id: str, export_id: str, event_id: str,
     if len(retained) > 1:
         records = {row.id: row for row in db.query(ResolutionRecord).filter(
             ResolutionRecord.id.in_(retained)).all()}
-        payload = {row.id: {"source_system": row.source_system, "external_id": row.external_id,
-                            "raw_fields": row.raw_fields} for row in records.values()}
+        payload = {row.id: {"id": row.id, "source_system": row.source_system, "external_id": row.external_id,
+                            "raw_fields": row.raw_fields, "normalized_fields": row.normalized_fields} for row in records.values()}
         residual = ResolutionProposal(
             id=sha256(f"{run_id}:split:{proposal.id}:{member_id}".encode()).hexdigest(), run_id=run_id,
             member_record_ids=retained, golden_fields=build_golden(retained, payload),

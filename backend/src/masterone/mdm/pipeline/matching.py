@@ -11,7 +11,6 @@ Policy engine (§17): per-subgroup config gates auto-merge
 """
 
 from collections import Counter
-from difflib import SequenceMatcher
 from math import log2
 from unicodedata import normalize
 
@@ -19,20 +18,27 @@ from masterone.mdm.pipeline.evidence_floor import evaluate as _floor_evaluate
 from masterone.mdm.pipeline.hard_constraints import check_all as _hard_check
 from masterone.mdm.pipeline.policy_engine import apply_policy
 from masterone.mdm.pipeline.standardization import parse_dob
+from rapidfuzz.distance import JaroWinkler, Levenshtein
 
 FIELDS = ("name", "phone", "email", "address")
 OPTIONAL_FIELDS = ("dob", "government_id")
 POLICY_VERSION = "person-linh-v2-selective"
+CONFLICT_RULE_VERSION = "v3.1.0"
 
 # Signature field abbreviations (architecture §15.2)
 _SIG_ABBREV = {"name": "N", "phone": "P", "email": "E",
                "dob": "DOB", "address": "A", "government_id": "G"}
 
 
-def _similarity(left: str, right: str) -> float:
+def _name_similarity(left: str, right: str) -> float:
     if not left or not right:
         return 0.0
-    return SequenceMatcher(None, left, right, autojunk=False).ratio()
+    return JaroWinkler.similarity(left, right)
+
+def _address_similarity(left: str, right: str) -> float:
+    if not left or not right:
+        return 0.0
+    return Levenshtein.normalized_similarity(left, right)
 
 
 def _dob_state(nf_left: dict, nf_right: dict) -> tuple[str, float, str]:
@@ -113,47 +119,70 @@ def _gov_id_state(nf_left: dict, nf_right: dict) -> tuple[str, float, str]:
     return "_HARD_CONFLICT", 0.0, "RULE"
 
 
+def given_name_compatible(parts_a: dict, parts_b: dict) -> bool:
+    g_a = parts_a.get("given_name", "").strip()
+    g_b = parts_b.get("given_name", "").strip()
+    if not g_a or not g_b:
+        return False
+    if g_a == g_b:
+        return True
+    if len(g_a) == 1 and g_b.startswith(g_a):
+        return True
+    if len(g_b) == 1 and g_a.startswith(g_b):
+        return True
+    return False
+
 def _name_state(left: dict, right: dict) -> tuple[str, float, list[str]]:
-    a = left["normalized_fields"].get("name", "")
-    b = right["normalized_fields"].get("name", "")
-    raw_a = (left.get("raw_fields", {}).get("name") or "").strip()
-    raw_b = (right.get("raw_fields", {}).get("name") or "").strip()
+    def _compute():
+        a = left["normalized_fields"].get("name", "")
+        b = right["normalized_fields"].get("name", "")
+        raw_a = (left.get("raw_fields", {}).get("name") or "").strip()
+        raw_b = (right.get("raw_fields", {}).get("name") or "").strip()
 
-    if not a or not b:
-        return "MI", 0.0, []
-    if a == b:
-        if normalize("NFC", raw_a) == normalize("NFC", raw_b):
-            return "EX", 1.0, []
-        unicode_a = left["normalized_fields"].get("name_unicode")
-        unicode_b = right["normalized_fields"].get("name_unicode")
-        if unicode_a == unicode_b:
-            return "NX", 1.0, ["NAME_FORMAT_EQUIVALENT"]
-        if unicode_a and unicode_b and any(ord(c) > 127 for c in raw_a) and any(ord(c) > 127 for c in raw_b):
-            return "MS", _similarity(unicode_a, unicode_b), ["NAME_DIACRITIC_CONFLICT"]
-        return "NA", 1.0, ["NAME_ASCII_EQUIVALENT"]
-    if sorted(a.split()) == sorted(b.split()):
-        return "NX", 1.0, ["TOKEN_ORDER_VARIATION"]
+        if not a or not b:
+            return "MI", 0.0, []
+        if a == b:
+            if normalize("NFC", raw_a) == normalize("NFC", raw_b):
+                return "EX", 1.0, []
+            unicode_a = left["normalized_fields"].get("name_unicode")
+            unicode_b = right["normalized_fields"].get("name_unicode")
+            if unicode_a == unicode_b:
+                return "NX", 1.0, ["NAME_FORMAT_EQUIVALENT"]
+            if unicode_a and unicode_b and any(ord(c) > 127 for c in raw_a) and any(ord(c) > 127 for c in raw_b):
+                return "MS", _name_similarity(unicode_a, unicode_b), ["NAME_DIACRITIC_CONFLICT"]
+            return "NA", 1.0, ["NAME_ASCII_EQUIVALENT"]
+        if sorted(a.split()) == sorted(b.split()):
+            return "NX", 1.0, ["TOKEN_ORDER_VARIATION"]
 
-    similarity = _similarity(a, b)
-    if similarity >= 0.88:
-        return "HS", similarity, []
-    if similarity >= 0.68:
-        return "MS", similarity, []
-    if similarity >= 0.48:
-        return "WS", similarity, []
-    # Low similarity name: CF only if both non-empty and very different (exclusion evidence)
-    return "CF", similarity, []
+        similarity = _name_similarity(a, b)
+        if similarity >= 0.88:
+            return "HS", similarity, []
+        if similarity >= 0.68:
+            return "MS", similarity, []
+        if similarity >= 0.48:
+            return "WS", similarity, []
+        return "CF", similarity, []
+
+    state, sim, tags = _compute()
+    parts_l = left.get("normalized_fields", {}).get("_name_parts", {})
+    parts_r = right.get("normalized_fields", {}).get("_name_parts", {})
+    if given_name_compatible(parts_l, parts_r):
+        tags.append("GIVEN_NAME_COMPATIBLE")
+    return state, sim, tags
 
 
 def _contact_state(field: str, left: dict, right: dict, frequencies: dict) -> tuple[str, float, list[str]]:
-    """Phone or email comparison state.
+    """Phone or email comparison state."""
+    collection_key = "phones" if field == "phone" else "emails"
+    list_a = left["normalized_fields"].get(collection_key, [])
+    list_b = right["normalized_fields"].get(collection_key, [])
+    
+    if not list_a and left["normalized_fields"].get(field):
+        list_a = [{"value": left["normalized_fields"][field], "quality": left["normalized_fields"].get("_field_quality", {}).get(field, "VALID")}]
+    if not list_b and right["normalized_fields"].get(field):
+        list_b = [{"value": right["normalized_fields"][field], "quality": right["normalized_fields"].get("_field_quality", {}).get(field, "VALID")}]
 
-    Per §8.1: phone/email are CF only when BOTH sides have primary/current flags AND
-    the source is single_valued_reliable. CSV data never has these flags → always DF.
-    """
-    a = left["normalized_fields"].get(field, "")
-    b = right["normalized_fields"].get(field, "")
-    if not a or not b:
+    if not list_a or not list_b:
         return "MI", 0.0, []
 
     quality_a = left["normalized_fields"].get("_field_quality", {}).get(field)
@@ -170,21 +199,46 @@ def _contact_state(field: str, left: dict, right: dict, frequencies: dict) -> tu
     if field == "phone" and "UNUSUAL_PHONE_LENGTH" in flags:
         return "IV", 0.0, []
 
-    # High-frequency shared value
-    if a == b and frequencies[field][a] > 12:
-        return "SH", 1.0, []
+    best_state = "DF"
+    best_sim = 0.0
+    best_tags = []
+    
+    for item_a in list_a:
+        for item_b in list_b:
+            a, qa = item_a["value"], item_a.get("quality", "VALID")
+            b, qb = item_b["value"], item_b.get("quality", "VALID")
+            
+            if "INVALID" in {qa, qb}:
+                state, sim, tags = "IV", 0.0, []
+            elif {qa, qb} & {"SHARED", "PLACEHOLDER"}:
+                state, sim, tags = "SH", 0.0, []
+            elif a == b:
+                if frequencies[field].get(a, 0) > 12:
+                    state, sim, tags = "SH", 1.0, []
+                else:
+                    raw_a = (left.get("raw_fields", {}).get(field) or "").strip()
+                    raw_b = (right.get("raw_fields", {}).get(field) or "").strip()
+                    if normalize("NFC", raw_a) == normalize("NFC", raw_b):
+                        state, sim, tags = "EX", 1.0, []
+                    else:
+                        tag = {"phone": "PHONE_FORMAT_EQUIVALENT", "email": "EMAIL_CASE_EQUIVALENT"}[field]
+                        state, sim, tags = "NX", 1.0, [tag]
+            else:
+                # Phone/email are discrete: different values → DF with sim=0.0
+                # Using edit distance here is misleading (0384... vs 0385... look close but are different numbers)
+                state, sim, tags = "DF", 0.0, []
 
-    if a == b:
-        raw_a = (left.get("raw_fields", {}).get(field) or "").strip()
-        raw_b = (right.get("raw_fields", {}).get(field) or "").strip()
-        if normalize("NFC", raw_a) == normalize("NFC", raw_b):
-            return "EX", 1.0, []
-        tag = {"phone": "PHONE_FORMAT_EQUIVALENT", "email": "EMAIL_CASE_EQUIVALENT"}[field]
-        return "NX", 1.0, [tag]
-
-    # Different values: per §8.1 CSV never has primary/current flags → DF (never CF)
-    similarity = _similarity(a, b)
-    return "DF", similarity, []
+            if state in ("EX", "NX"):
+                return state, sim, tags
+            if state == "SH" and best_state == "DF":
+                best_state = "SH"
+                best_sim = sim
+            elif state == "DF" and best_state == "DF" and sim > best_sim:
+                best_sim = sim
+            elif state == "IV" and best_state not in ("EX", "NX", "SH", "DF"):
+                best_state = "IV"
+                
+    return best_state, best_sim, best_tags
 
 
 def _address_state(left: dict, right: dict) -> tuple[str, float, list[str]]:
@@ -204,14 +258,14 @@ def _address_state(left: dict, right: dict) -> tuple[str, float, list[str]]:
 
     # Different resolved provinces → cap at WS / DF (never HS/MS)
     if prov_l and prov_r and prov_l != prov_r:
-        similarity = _similarity(a, b)
+        similarity = _address_similarity(a, b)
         return ("WS" if similarity >= 0.35 else "DF"), similarity, []
 
     # Ward overlap → boost
     if ward_l and ward_r:
-        if ward_l & ward_r:
+        if set(ward_l) & set(ward_r):
             # Same ward — compare full string for granularity
-            similarity = _similarity(a, b)
+            similarity = _address_similarity(a, b)
             if similarity >= 0.88:
                 return "HS", similarity, ["ADDRESS_ADMIN_MAPPING"]
             return "MS", max(similarity, 0.65), ["ADDRESS_ADMIN_MAPPING"]
@@ -223,7 +277,7 @@ def _address_state(left: dict, right: dict) -> tuple[str, float, list[str]]:
             return "EX", 1.0, []
         return "NX", 1.0, ["ADDRESS_ABBREVIATION"]
 
-    similarity = _similarity(a, b)
+    similarity = _address_similarity(a, b)
     if similarity >= 0.88:
         return "HS", similarity, []
     if similarity >= 0.68:
@@ -385,7 +439,7 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
     states = {item["field"]: item["state"] for item in evidence}
 
     # comparisons dict (architecture §15.2 — compact view used by policy engine)
-    comparisons = {item["field"]: {"state": item["state"], "provenance": item["provenance"]}
+    comparisons = {item["field"]: {"state": item["state"], "provenance": item["provenance"], "normalization_tags": item.get("normalization_tags", [])}
                    for item in evidence}
 
     # Signature (§15.2): N:HS|P:CF|E:EX|DOB:EX|A:HS|G:NC
@@ -433,6 +487,7 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
             "signature": signature,
             "policy_id": None,
             "policy_version": POLICY_VERSION,
+            "conflict_rule_version": CONFLICT_RULE_VERSION,
             "blocking_reasons": sorted(blocking_reasons),
             "triage_status": "INSUFFICIENT_EVIDENCE",
             "triage_reason": floor.reason,
@@ -461,6 +516,7 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
             "decision_subgroup": None,
             "normalization_tags": norm_tags, "signature": signature,
             "policy_id": None, "policy_version": POLICY_VERSION,
+            "conflict_rule_version": CONFLICT_RULE_VERSION,
             "blocking_reasons": sorted(blocking_reasons),
             "triage_status": "INSUFFICIENT_EVIDENCE", "triage_reason": "NO_VALID_IDENTITY_ANCHOR",
         }
@@ -501,6 +557,7 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
         "signature": signature,
         "policy_id": policy_id,
         "policy_version": POLICY_VERSION,
+        "conflict_rule_version": CONFLICT_RULE_VERSION,
         "blocking_reasons": sorted(blocking_reasons),
         "triage_status": triage_status,
         "triage_reason": triage_reason,
@@ -524,6 +581,7 @@ def _non_match(decision_type: str, reason: str, blocking_reasons: set[str]) -> d
         "signature": "",
         "policy_id": None,
         "policy_version": POLICY_VERSION,
+        "conflict_rule_version": CONFLICT_RULE_VERSION,
         "blocking_reasons": sorted(blocking_reasons),
         "triage_status": "NON_MATCH",
         "triage_reason": reason,
