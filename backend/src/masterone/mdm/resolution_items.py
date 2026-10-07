@@ -10,8 +10,6 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from masterone.config import get_settings
-from masterone.storage.r2 import export_key, get_store
-
 from masterone.mdm.models import (
     ResolutionAuditEvent,
     ResolutionExport,
@@ -23,6 +21,7 @@ from masterone.mdm.models import (
 )
 from masterone.mdm.pipeline.golden import build_golden
 from masterone.mdm.pipeline.matching import score_pair
+from masterone.storage.r2 import export_key, get_store
 
 FIELDS = ("name", "phone", "email", "address")
 ELIGIBLE = ("AUTO_READY", "REVIEW_APPROVED")
@@ -162,6 +161,21 @@ def list_items(db: Session, run_id: str, bucket: str, offset: int, limit: int,
                     "label": row.golden_fields.get("fields", {}).get("name", {}).get("value", ""),
                     "status": row.status}
                    for row in rows]
+    elif bucket == "review_pairs":
+        from masterone.mdm.resolution_pairs import pending_pairs
+        query = pending_pairs(db, run_id)
+        if primary_group:
+            query = query.filter(ResolutionPair.primary_group.is_(None) if primary_group == "OTHER"
+                                 else ResolutionPair.primary_group == primary_group)
+        if subgroup:
+            query = query.filter(ResolutionPair.subgroup.is_(None) if subgroup == "OTHER"
+                                 else ResolutionPair.subgroup == subgroup)
+        total = query.count()
+        rows = query.order_by(ResolutionPair.id).offset(offset).limit(limit).all()
+        entries = [{"id": row.id, "bucket": bucket, "kind": "pair", "origin": "REVIEW",
+                    "member_record_ids": [row.left_record_id, row.right_record_id], "pair_count": 1,
+                    "reason": row.triage_reason, "primary_group": row.primary_group,
+                    "subgroup": row.subgroup, "revision": row.revision} for row in rows]
     elif bucket == "no_merge":
         query = db.query(ResolutionPair).filter(ResolutionPair.run_id == run_id,
             or_(ResolutionPair.pair_decision.in_(["NON_MATCH", "NOT_MERGEABLE"]),
@@ -195,6 +209,8 @@ def list_items(db: Session, run_id: str, bucket: str, offset: int, limit: int,
     for entry in entries:
         entry["label"] = entry.get("label") or names.get(entry["member_record_ids"][0], "Khách hàng")
         entry["member_count"] = len(entry["member_record_ids"])
+        if bucket in {"review_pairs", "no_merge"}:
+            entry["record_labels"] = [names.get(record_id, "") for record_id in entry["member_record_ids"]]
         if bucket == "review":
             pairs = _internal_pairs(db, run_id, entry["member_record_ids"])
             entry["can_merge"] = not any(pair.pair_decision in {"NON_MATCH", "NOT_MERGEABLE"}
@@ -205,7 +221,23 @@ def list_items(db: Session, run_id: str, bucket: str, offset: int, limit: int,
 
 def get_item(db: Session, run_id: str, bucket: str, item_id: str, signature_hash: str | None = None,
              primary_group: str | None = None, subgroup: str | None = None):
-    if bucket == "merge":
+    if bucket == "review_pairs":
+        from masterone.mdm.resolution_pairs import pending_pairs
+        row = pending_pairs(db, run_id).filter(ResolutionPair.id == item_id).one_or_none()
+        if row is None:
+            raise HTTPException(404, "Cặp không còn chờ xem xét")
+        members, kind, origin = [row.left_record_id, row.right_record_id], "pair", "REVIEW"
+        related = set(members)
+        for proposal in db.query(ResolutionProposal).filter(
+                ResolutionProposal.run_id == run_id, ResolutionProposal.status.in_(ELIGIBLE)):
+            if related & set(proposal.member_record_ids):
+                related.update(proposal.member_record_ids)
+        meta = {"reason": row.triage_reason, "revision": row.revision,
+                "primary_group": row.primary_group, "subgroup": row.subgroup,
+                "affected_record_count": len(related),
+                "merge_blocked_reason": "Nhóm liên quan có cặp Không gộp."
+                if any(_is_blocked(pair) for pair in _internal_pairs(db, run_id, related)) else None}
+    elif bucket == "merge":
         row = db.get(ResolutionProposal, item_id)
         if row is None or row.run_id != run_id or row.status not in (*ELIGIBLE, STAGED_CONFLICT):
             raise HTTPException(404, "Item không còn ở tab Gộp")
@@ -293,7 +325,7 @@ def _split_blocked_proposal(db, proposal, rejected_pairs, actor_user_id, exclude
                    if _is_blocked(pair)}
     components = [{member} for member in members]
     for pair in sorted(pairs, key=lambda item: item.score, reverse=True):
-        if pair.triage_status != "HIGH_CONFIDENCE_PROPOSAL" or pair.user_decision == "REJECTED":
+        if (pair.triage_status != "HIGH_CONFIDENCE_PROPOSAL" and pair.user_decision != "ACCEPTED") or _is_blocked(pair):
             continue
         left = next(group for group in components if pair.left_record_id in group)
         right = next(group for group in components if pair.right_record_id in group)
@@ -598,6 +630,12 @@ def create_export(db: Session, run_id: str, actor_user_id: str, acknowledge_unre
         merged_group_count=len(proposals),
         pending_review_count=readiness["pending_review_count"])
     db.add(snapshot)
+    db.flush()
+    db.add(ResolutionAuditEvent(
+        run_id=run_id, actor_user_id=actor_user_id, action="CSV_EXPORTED",
+        details={"export_id": snapshot.id, "row_count": len(rows),
+                 "merged_group_count": len(proposals)},
+    ))
     if commit:
         db.commit()
     else:

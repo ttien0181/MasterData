@@ -34,8 +34,17 @@ class Settings(BaseSettings):
     semantic_address_timeout_seconds: int = Field(default=15, ge=1, le=60)
 
     # Database
+    mdm_database_profile: Literal["neon", "local"] = "neon"
     database_url: str = "postgresql+psycopg://masterone:masterone@localhost:5432/masterone"
     mdm_database_url: str = "postgresql+psycopg://masterone:masterone@localhost:5432/masterone"
+    mdm_database_url_local: str = "postgresql+psycopg://masterone:masterone@localhost:5432/masterone"
+
+    @property
+    def active_mdm_database_url(self) -> str:
+        """Select local PostgreSQL or the configured hosted PostgreSQL URL."""
+        if self.mdm_database_profile == "local":
+            return self.mdm_database_url_local
+        return self.mdm_database_url
 
     # Vector Store
     chroma_persist_dir: str = "./data/chroma"
@@ -45,6 +54,9 @@ class Settings(BaseSettings):
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""
     r2_bucket: str = ""
+
+    # Resumable CSV parts use this directory when object storage is disabled.
+    upload_staging_dir: str = "./data/upload-staging"
 
     @property
     def r2_enabled(self) -> bool:

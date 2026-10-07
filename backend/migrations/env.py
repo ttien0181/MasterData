@@ -14,7 +14,7 @@ def run_migrations_online():
     url = os.environ.get("MDM_DATABASE_URL") or config.get_main_option("sqlalchemy.url")
     if not url:
         raise RuntimeError("MDM_DATABASE_URL must be set")
-    config.set_main_option("sqlalchemy.url", url)
+    config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),
         prefix="sqlalchemy.",

@@ -30,7 +30,7 @@ def upgrade():
         op.drop_table(table)
     # Keep pair decisions and IDs; historical auto rejects no longer need a full signal snapshot.
     op.execute("UPDATE mdm_resolution_pairs SET field_evidence = '[]' "
-               "WHERE pair_decision = 'NON_MATCH' AND field_evidence::text <> '[]'")
+               "WHERE pair_decision = 'NON_MATCH' AND CAST(field_evidence AS TEXT) <> '[]'")
 
 
 def downgrade():

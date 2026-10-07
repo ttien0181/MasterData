@@ -30,7 +30,7 @@ button {
 }
 
 button:focus-visible, input:focus-visible, select:focus-visible {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
@@ -97,12 +97,12 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: #EFF6FF;
-  border: 1px solid #BFDBFE;
+  background: var(--primary-bg);
+  border: 1px solid var(--primary-border);
   border-radius: var(--radius);
   padding: 11px 16px;
   margin-bottom: 20px;
-  color: #1E40AF;
+  color: var(--primary-hover);
   font-size: 13px;
   font-weight: 500;
   box-shadow: var(--shadow-xs);
@@ -116,7 +116,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 
 .notice button {
   margin-left: auto;
-  color: #3B82F6;
+  color: var(--primary);
   font-size: 18px;
   line-height: 1;
   padding: 2px 6px;
@@ -125,7 +125,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 
 .notice button:hover {
-  background: #DBEAFE;
+  background: var(--primary-bg);
 }
 
 /* ========================================================
@@ -180,15 +180,15 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 
 .button.primary, .btn-primary {
-  background: var(--blue);
-  color: #FFFFFF;
-  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.25);
+  background: var(--primary);
+  color: var(--color-on-primary);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--primary) 25%, transparent);
 }
 
 .button.primary:hover:not(:disabled), .btn-primary:hover:not(:disabled) {
-  background: var(--blue-hover);
+  background: var(--primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(37, 99, 235, 0.25);
+  box-shadow: 0 4px 8px color-mix(in srgb, var(--primary) 25%, transparent);
 }
 
 .button.outline, .btn-secondary {
@@ -258,9 +258,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 
 .badge-blue {
-  background: var(--blue-bg);
-  color: var(--blue);
-  border: 1px solid var(--blue-border);
+  background: var(--primary-bg);
+  color: var(--primary);
+  border: 1px solid var(--primary-border);
 }
 
 .badge-green {
@@ -301,7 +301,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   margin-bottom: 10px;
 }
 
-.stat-icon.blue { background: var(--blue-bg); color: var(--blue); }
+.stat-icon.blue { background: var(--primary-bg); color: var(--primary); }
 .stat-icon.green { background: var(--green-bg); color: var(--green); }
 .stat-icon.amber { background: var(--amber-bg); color: var(--amber); }
 .stat-icon.purple { background: var(--purple-bg); color: var(--purple); }
@@ -352,14 +352,14 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 
 .upload-card:hover, .file-card:hover {
-  border-color: var(--blue);
-  background: var(--blue-bg);
+  border-color: var(--primary);
+  background: var(--primary-bg);
 }
 
 .upload-card.filled, .file-card.filled {
   border-style: solid;
   border-color: var(--green);
-  background: #FCFDFD;
+  background: var(--surface);
 }
 
 .upload-card input, .file-card input {
@@ -387,7 +387,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .upload-card.filled .upload-icon, .file-card.filled .upload-icon {
   background: var(--green);
   border-color: var(--green);
-  color: #FFFFFF;
+  color: var(--color-on-primary);
 }
 
 .upload-label, .file-hint {
@@ -436,7 +436,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   margin-top: auto;
   width: 100%;
   font-size: 13px;
-  color: var(--blue);
+  color: var(--primary);
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -466,7 +466,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   padding: 2px 6px;
   border-radius: 4px;
   border: 1px solid var(--line);
-  color: var(--blue);
+  color: var(--primary);
 }
 
 .profile-strip {
@@ -487,7 +487,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 
 .profile-strip b {
   font: 700 10px var(--mono);
-  color: var(--blue);
+  color: var(--primary);
   text-transform: uppercase;
 }
 
@@ -563,8 +563,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 
 .queue-item.selected, .candidate-item.selected {
-  background: var(--blue-bg);
-  border-left: 3px solid var(--blue);
+  background: var(--primary-bg);
+  border-left: 3px solid var(--primary);
   padding-left: 13px;
 }
 
@@ -689,7 +689,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 
 .signal-total, .signal-count {
   font: 800 18px var(--sans);
-  color: var(--blue);
+  color: var(--primary);
   line-height: 1;
 }
 
@@ -783,7 +783,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 
 .diff-table tr:hover {
-  background: #FAFBFD;
+  background: var(--surface-hover);
 }
 
 .diff-table tr.conflict {
@@ -791,7 +791,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 
 .diff-table tr.conflict:hover {
-  background: #FFF6E0;
+  background: var(--amber-bg);
 }
 
 .diff-table .field-name {
@@ -852,8 +852,8 @@ td.record-card .data-row em {
 }
 
 .diff-table mark {
-  background: rgba(245, 158, 11, 0.2);
-  color: #92400E;
+  background: color-mix(in srgb, var(--amber) 20%, transparent);
+  color: var(--amber);
   padding: 0 2px;
   border-radius: 2px;
   font-weight: 700;
@@ -993,14 +993,14 @@ td.record-card .data-row em {
 }
 
 .radio-option:hover:not(:disabled), .source-choice:hover:not(:disabled) {
-  border-color: var(--blue);
-  background: var(--blue-bg);
+  border-color: var(--primary);
+  background: var(--primary-bg);
 }
 
 .radio-option.selected, .source-choice.chosen {
-  border-color: var(--blue);
-  background: var(--blue-bg);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  border-color: var(--primary);
+  background: var(--primary-bg);
+  box-shadow: 0 0 0 3px var(--color-focus-shadow);
 }
 
 .radio-option:disabled, .source-choice:disabled {
@@ -1028,8 +1028,8 @@ td.record-card .data-row em {
 }
 
 .radio-option.selected .radio-dot, .source-choice.chosen .radio-dot {
-  border-color: var(--blue);
-  background: var(--blue);
+  border-color: var(--primary);
+  background: var(--primary);
 }
 
 .radio-option.selected .radio-dot::after, .source-choice.chosen .radio-dot::after {
@@ -1037,7 +1037,7 @@ td.record-card .data-row em {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #FFFFFF;
+  background: var(--color-on-primary);
 }
 
 .radio-option strong, .source-choice strong {
@@ -1059,7 +1059,7 @@ td.record-card .data-row em {
 }
 
 .selected-label, .chosen-mark {
-  color: var(--blue);
+  color: var(--primary);
   font-weight: 600;
   font-size: 10px;
 }
@@ -1108,7 +1108,7 @@ td.record-card .data-row em {
 .preview-progress span {
   display: block;
   height: 100%;
-  background: var(--blue);
+  background: var(--primary);
   transition: width 0.3s ease;
 }
 
@@ -1290,18 +1290,18 @@ td.record-card .data-row em {
   }
 }
 
-.auth-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 10% 10%, #dbeafe, transparent 32%), radial-gradient(circle at 90% 90%, #ede9fe, transparent 34%), var(--bg); }
+.auth-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--auth-backdrop), var(--bg); }
 .auth-card { width: min(100%, 430px); padding: 36px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-sm); }
 .auth-brand { display: flex; align-items: center; gap: 10px; font-size: 18px; color: var(--ink); }
-.auth-brand strong span { color: var(--blue); }
-.auth-eyebrow { margin: 32px 0 8px; color: var(--blue); font: 600 11px var(--mono); letter-spacing: .1em; }
+.auth-brand strong span { color: var(--primary); }
+.auth-eyebrow { margin: 32px 0 8px; color: var(--primary); font: 600 11px var(--mono); letter-spacing: .1em; }
 .auth-card h1 { margin: 0 0 8px; font-size: 28px; color: var(--ink); }
 .auth-description { margin: 0 0 28px; color: var(--ink-3); line-height: 1.5; font-size: 13px; }
 .auth-card form { display: grid; gap: 9px; }
 .auth-card label { color: var(--ink-2); font-size: 12px; font-weight: 700; margin-top: 8px; }
 .auth-card input { width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 11px 12px; background: var(--surface); color: var(--ink); outline: none; }
-.auth-card input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+.auth-card input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--color-focus-shadow); }
 .auth-submit { margin-top: 18px; width: 100%; padding: 11px; }
 .auth-error { margin: 6px 0 0; color: var(--red); font-size: 12px; }
 .auth-switch { margin: 24px 0 0; text-align: center; font-size: 12px; color: var(--ink-3); }
-.auth-switch a { color: var(--blue); font-weight: 700; }
+.auth-switch a { color: var(--primary); font-weight: 700; }

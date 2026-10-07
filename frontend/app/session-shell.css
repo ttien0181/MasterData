@@ -1,0 +1,199 @@
+/* Session-centric frame: the data views stay in their existing route and component tree. */
+.app-shell:not(.legacy-shell) {
+  min-height: 100svh;
+  padding-bottom: 132px;
+  background: transparent;
+}
+
+.app-shell:not(.legacy-shell) .shell-main { min-height: 100svh; }
+.app-shell:not(.legacy-shell) .app-header {
+  position: sticky;
+  top: 14px;
+  z-index: 45;
+  display: flex;
+  width: min(1510px, calc(100% - 48px));
+  min-height: 68px;
+  margin: 14px auto 0;
+  padding: 0 clamp(16px, 2vw, 26px);
+  border: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--glass-strong);
+  box-shadow: var(--shadow-xs);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.app-shell:not(.legacy-shell) .header-leading { gap: clamp(14px, 2.4vw, 34px); }
+.workspace-drawer-layer { position: fixed; inset: 0; z-index: 120; }
+.workspace-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: rgb(5 12 25 / 52%);
+  animation: workspace-drawer-fade-in 180ms ease both;
+}
+.workspace-drawer {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: flex;
+  width: min(480px, calc(100vw - 24px));
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: 0 18px 18px 0;
+  background: var(--surface);
+  box-shadow: 22px 0 60px rgb(7 20 38 / 25%);
+  animation: workspace-drawer-slide-in 240ms cubic-bezier(.2,.8,.2,1) both;
+  transition: width 220ms ease, border-radius 220ms ease;
+}
+.workspace-drawer.is-expanded { width: 100vw; border-radius: 0; }
+.workspace-drawer-heading {
+  display: flex;
+  min-height: 76px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 18px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--glass-strong);
+}
+.workspace-drawer-eyebrow { color: var(--ink-3); font: 600 9px var(--mono); letter-spacing: .11em; }
+.workspace-drawer-heading h2 { margin: 3px 0 0; color: var(--ink); font-size: 17px; font-weight: 700; }
+.workspace-drawer-actions { display: flex; gap: 7px; }
+.workspace-drawer-icon { display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink-2); cursor: pointer; }
+.workspace-drawer-icon:hover { border-color: var(--primary-border); background: var(--primary-bg); color: var(--primary); }
+.workspace-drawer-content { flex: 1; overflow: auto; overscroll-behavior: contain; padding: 16px; }
+.workspace-drawer-content > .resolution-intake { width: 100%; margin: 0; }
+.workspace-drawer-content .sessions-overlay.is-embedded { position: static; display: block; min-height: 100%; overflow: visible; padding: 0; background: transparent; }
+.workspace-drawer-content .sessions-overlay.is-embedded .sessions-hub { display: flex; width: 100%; max-height: none; flex-direction: column; overflow: visible; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.workspace-drawer-content .sessions-overlay.is-embedded .sessions-heading { display: none; }
+.workspace-drawer-content .sessions-overlay.is-embedded .sessions-filters { grid-template-columns: 1fr; margin: 0 0 16px; padding: 0; }
+.workspace-drawer-content .sessions-overlay.is-embedded .sessions-hub-body { max-height: none; grid-template-columns: 1fr; overflow: visible; padding: 0; }
+.workspace-drawer-content .sessions-overlay.is-embedded .sessions-preview { position: static; }
+.workspace-drawer-content .sessions-overlay.is-embedded .sessions-pagination { position: static; }
+.workspace-drawer-content .sessions-overlay.is-embedded .sessions-row { grid-template-columns: minmax(0, 1fr); }
+.workspace-drawer-content .sessions-overlay.is-embedded .sessions-row-meta { white-space: normal; }
+.app-shell:not(.legacy-shell) .shell-content { min-height: calc(100svh - 84px); padding-bottom: 72px; }
+.app-shell:not(.legacy-shell) .container { max-width: 1510px; padding: 34px clamp(24px, 3vw, 46px) 130px; }
+.app-shell:not(.legacy-shell) .workspace-dock {
+  bottom: 50px;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: var(--glass-strong);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.app-shell:not(.legacy-shell) .workspace-dock .sidebar-link {
+  min-height: 43px;
+  padding: 8px 12px;
+  border-radius: 11px;
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  transition: background 140ms ease, color 140ms ease;
+}
+.app-shell:not(.legacy-shell) .workspace-dock .sidebar-link:hover { background: var(--surface-hover); color: var(--ink); }
+.app-shell:not(.legacy-shell) .workspace-dock .sidebar-link.active {
+  border-color: var(--primary-border);
+  background: var(--primary-bg);
+  color: var(--primary);
+}
+.app-shell:not(.legacy-shell) .workspace-dock .sidebar-link.active::before { display: none; }
+.app-shell:not(.legacy-shell) .workspace-dock .sidebar-link-icon { color: currentColor; }
+.app-shell:not(.legacy-shell) .workspace-dock .sidebar-count { border: 1px solid var(--primary-border); background: var(--surface); color: var(--primary); }
+
+.app-shell:not(.legacy-shell) .workspace-orbit-button {
+  width: 54px;
+  height: 54px;
+  border-color: var(--line);
+  background: var(--glass-strong);
+  color: var(--ink-2);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.app-shell:not(.legacy-shell) .workspace-orbit-button:hover { border-color: var(--primary-border); background: var(--primary-bg); color: var(--primary); }
+.app-shell:not(.legacy-shell) .upload-orbit { left: clamp(14px, 2vw, 30px); }
+.app-shell:not(.legacy-shell) .sessions-orbit { right: clamp(14px, 2vw, 30px); }
+.app-shell:not(.legacy-shell) .sidebar-session {
+  min-height: 39px;
+  gap: 11px;
+  padding-inline: clamp(16px, 3.2vw, 48px);
+  border-top-color: var(--line);
+  background: var(--glass-strong);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.app-shell:not(.legacy-shell) .sidebar-session strong { color: var(--ink-2); }
+.app-shell:not(.legacy-shell) .sidebar-session small { color: var(--ink-3); }
+.app-shell:not(.legacy-shell) .status-current-run { display: flex; min-width: 0; flex: 1; align-items: center; gap: 11px; }
+.app-shell:not(.legacy-shell) .status-current-run .session-overline { flex: 0 0 auto; }
+.app-shell:not(.legacy-shell) .status-current-run strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-shell:not(.legacy-shell) .status-current-run small { margin-left: auto; white-space: nowrap; }
+.app-shell:not(.legacy-shell) .status-active-runs { position: relative; flex: 0 0 auto; }
+.app-shell:not(.legacy-shell) .status-active-trigger { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2); font: 600 10px var(--sans); cursor: pointer; }
+.app-shell:not(.legacy-shell) .status-active-trigger:hover, .app-shell:not(.legacy-shell) .status-active-trigger:focus-visible { border-color: var(--primary-border); color: var(--primary); }
+.app-shell:not(.legacy-shell) .status-active-trigger.is-stale { border-color: var(--amber-border); color: var(--amber); }
+.app-shell:not(.legacy-shell) .status-active-trigger i { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+.app-shell:not(.legacy-shell) .status-active-trigger i.is-running { background: var(--primary); box-shadow: 0 0 0 3px var(--primary-bg); animation: active-run-pulse 1.8s ease-in-out infinite; }
+.app-shell:not(.legacy-shell) .status-active-trigger i.is-running.is-stale { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-bg); animation: none; }
+.app-shell:not(.legacy-shell) .status-active-panel { position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 100; width: min(360px, calc(100vw - 24px)); max-height: min(55vh, 400px); overflow: auto; padding: 9px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); box-shadow: var(--shadow-md); }
+.app-shell:not(.legacy-shell) .status-active-panel ul { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.app-shell:not(.legacy-shell) .status-active-panel li button { display: grid; width: 100%; gap: 4px; padding: 9px 10px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.app-shell:not(.legacy-shell) .status-active-panel li button:hover, .app-shell:not(.legacy-shell) .status-active-panel li button:focus-visible { border-color: var(--primary-border); background: var(--primary-bg); }
+.app-shell:not(.legacy-shell) .status-active-panel li strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.app-shell:not(.legacy-shell) .status-active-panel li span, .app-shell:not(.legacy-shell) .status-active-panel li small,
+.app-shell:not(.legacy-shell) .status-active-panel > p, .app-shell:not(.legacy-shell) .status-active-more,
+.app-shell:not(.legacy-shell) .status-active-stale { margin: 0; color: var(--ink-3); font-size: 10px; }
+.app-shell:not(.legacy-shell) .status-active-stale { padding: 5px 9px 8px; color: var(--amber); }
+.app-shell:not(.legacy-shell) .status-active-more { display: block; padding: 8px 10px 2px; }
+.app-shell:not(.legacy-shell) .run-stale { display: flex; align-items: center; gap: 9px; padding: 9px 11px; border: 1px solid var(--amber-border); border-radius: 9px; background: var(--amber-bg); color: var(--ink-2); font-size: 12px; }
+.app-shell:not(.legacy-shell) .run-stale button { margin-left: auto; border: 0; background: transparent; color: var(--primary); font: inherit; font-weight: 650; cursor: pointer; }
+.app-shell:not(.legacy-shell) .session-chip { border-radius: 12px; }
+.app-shell:not(.legacy-shell) .account-menu { border: 1px solid var(--line); border-radius: 13px; box-shadow: var(--shadow-md); }
+.app-shell:not(.legacy-shell) .icon-button,
+.app-shell:not(.legacy-shell) .account-trigger { border-radius: 10px; }
+
+@media (max-width: 760px) {
+  .app-shell:not(.legacy-shell) { padding-bottom: 121px; }
+  .app-shell:not(.legacy-shell) .app-header { top: 8px; width: calc(100% - 20px); min-height: 60px; margin-top: 8px; padding-inline: 9px; border-radius: 13px; }
+  .app-shell:not(.legacy-shell) .header-leading { gap: 7px; }
+  .app-shell:not(.legacy-shell) .shell-content { min-height: calc(100svh - 70px); }
+  .app-shell:not(.legacy-shell) .container { padding: 25px 16px 120px; }
+  .app-shell:not(.legacy-shell) .workspace-dock { bottom: 48px; }
+  .app-shell:not(.legacy-shell) .workspace-dock .sidebar-link { min-height: 40px; }
+  .app-shell:not(.legacy-shell) .sidebar-session { min-height: 38px; padding-inline: 12px; }
+  .app-shell:not(.legacy-shell) .status-current-run { gap: 6px; }
+  .app-shell:not(.legacy-shell) .status-current-run .session-overline,
+  .app-shell:not(.legacy-shell) .status-current-run small { display: none; }
+  .app-shell:not(.legacy-shell) .status-active-trigger { gap: 5px; padding: 5px 7px; font-size: 9px; }
+  .app-shell:not(.legacy-shell) .workspace-orbit-button { bottom: 100px; }
+}
+
+@media (max-width: 420px) {
+  .app-shell:not(.legacy-shell) .workspace-dock { bottom: 47px; gap: 0; }
+  .app-shell:not(.legacy-shell) .workspace-dock .sidebar-link { width: 48px; padding-inline: 2px; }
+  .app-shell:not(.legacy-shell) .workspace-dock .sidebar-link-label { font-size: 8px; }
+  .app-shell:not(.legacy-shell) .workspace-orbit-button { bottom: 98px; width: 42px; height: 42px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell:not(.legacy-shell) .workspace-dock .sidebar-link { transition: none; }
+  .app-shell:not(.legacy-shell) .status-active-trigger i.is-running { animation: none; }
+  .workspace-drawer, .workspace-drawer-backdrop { animation: none; transition: none; }
+}
+
+@keyframes workspace-drawer-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes workspace-drawer-slide-in { from { transform: translateX(-102%); } to { transform: translateX(0); } }
+@keyframes active-run-pulse {
+  50% { box-shadow: 0 0 0 5px var(--primary-bg); }
+}

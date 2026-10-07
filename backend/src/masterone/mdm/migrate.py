@@ -8,7 +8,7 @@ from alembic.config import Config
 
 from masterone.config import get_settings
 
-HEAD = "0017_r2_storage"
+HEAD = "0019_upload_links"
 
 
 def alembic_config(url: str, config_path: str | Path | None = None) -> Config:
@@ -28,7 +28,8 @@ def alembic_config(url: str, config_path: str | Path | None = None) -> Config:
             )
     cfg = Config(str(ini))
     cfg.set_main_option("script_location", str(ini.parent / "migrations"))
-    cfg.set_main_option("sqlalchemy.url", url)
+    # ConfigParser interpolates %, including URL-encoded passwords and paths.
+    cfg.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
     return cfg
 
 
@@ -55,6 +56,6 @@ def require_current(engine) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--database-url", default=get_settings().mdm_database_url)
+    parser.add_argument("--database-url", default=get_settings().active_mdm_database_url)
     args = parser.parse_args()
     upgrade_database(args.database_url)

@@ -1,153 +1,145 @@
-"""M7 tests: RBAC role model and require_role dependency (architecture §26.1)."""
+"""Exercise actual auth/capability dependencies and HTTP endpoints."""
 
 import pytest
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
-
-from masterone.auth.security import (
-    ROLES,
-    _CAPABILITY_MIN_ROLE,
-    _ROLE_RANK,
-    require_capability,
-    require_role,
-)
+from masterone.auth.manage_role import change_role
+from masterone.auth.models import User
+from masterone.auth.security import ROLES, capabilities_for_role, current_session, require_capability
+from masterone.mdm.models import ResolutionRun, ResolutionTask
 
 
-# ── Role ordering ─────────────────────────────────────────────────────────────
-
-def test_roles_defined():
-    assert "VIEWER" in ROLES
-    assert "STEWARD" in ROLES
-    assert "SENIOR_STEWARD" in ROLES
-    assert "POLICY_ADMIN" in ROLES
-    assert "AUDITOR" in ROLES
+def set_role(client, role):
+    with client.session_factory.begin() as db:
+        db.query(User).filter_by(email_normalized="steward@example.com").one().role = role
 
 
-def test_viewer_is_lowest_rank():
-    assert _ROLE_RANK["VIEWER"] < _ROLE_RANK["STEWARD"]
-    assert _ROLE_RANK["STEWARD"] < _ROLE_RANK["SENIOR_STEWARD"]
+@pytest.mark.parametrize("role", ROLES)
+def test_auth_contract_matches_enforced_permissions(client, role):
+    set_role(client, role)
+    me = client.get("/api/v1/auth/me").json()
+    login = client.post("/api/v1/auth/login", json={
+        "email": "steward@example.com", "password": "a-long-test-password",
+    }).json()
+    assert me["role"] == login["role"] == role
+    assert me["capabilities"] == login["capabilities"] == capabilities_for_role(role)
+    assert me["id"] == login["id"]
+    assert me["csrf_token"] and login["csrf_token"]
 
 
-def test_role_rank_unique():
-    ranks = list(_ROLE_RANK.values())
-    assert len(ranks) == len(set(ranks))
+def test_registration_cannot_choose_a_privileged_role(client):
+    response = client.post("/api/v1/auth/register", json={
+        "email": "viewer@example.com", "password": "a-long-test-password",
+        "role": "SENIOR_STEWARD", "capabilities": ["export_data"],
+    })
+    assert response.status_code == 201
+    login = client.post("/api/v1/auth/login", json={
+        "email": "viewer@example.com", "password": "a-long-test-password",
+    }).json()
+    assert login["role"] == "VIEWER"
+    assert "create_run" not in login["capabilities"]
 
 
-# ── Capability mapping ────────────────────────────────────────────────────────
-
-def test_approve_pair_needs_steward():
-    assert _CAPABILITY_MIN_ROLE["approve_pair"] == "STEWARD"
-
-
-def test_approve_d_subgroup_needs_senior_steward():
-    assert _CAPABILITY_MIN_ROLE["approve_d_subgroup"] == "SENIOR_STEWARD"
+def test_audit_read_is_available_to_stewards_and_above_but_not_viewers():
+    assert "read_audit" not in capabilities_for_role("VIEWER")
+    for role in ("STEWARD", "SENIOR_STEWARD", "POLICY_ADMIN", "AUDITOR"):
+        assert "read_audit" in capabilities_for_role(role)
 
 
-def test_edit_policy_needs_policy_admin():
-    assert _CAPABILITY_MIN_ROLE["edit_policy"] == "POLICY_ADMIN"
+OPERATIONS = [
+    ("POST", "/runs", None),
+    ("POST", "/runs/owned/start", None),
+    ("POST", "/runs/owned/review-items/transition", {"item_ids": ["item"], "decision": "merge"}),
+    ("POST", "/runs/owned/review-items/transition", {"item_ids": ["item"], "decision": "no_merge"}),
+    ("POST", "/runs/owned/merge-items/item/resolve-conflict", None),
+    ("POST", "/runs/owned/previews", {}),
+    ("POST", "/runs/owned/previews/preview/execute", {"execute_request_id": "request"}),
+    ("POST", "/runs/owned/exports", {}),
+    ("GET", "/runs/owned/source-records.csv", None),
+    ("GET", "/runs/owned/exports/export/download", None),
+    ("GET", "/runs/owned/exports/export/merges/event/split-preview?member_id=member", None),
+    ("POST", "/runs/owned/exports/export/merges/event/split",
+     {"member_id": "member", "version": "version", "execute_request_id": "request"}),
+    ("PUT", "/runs/owned/proposals/item/golden-record", {"fields": {}}),
+    ("POST", "/runs/owned/items/review/item/explanation", None),
+    ("POST", "/runs/owned/categories/category/explanation", None),
+]
 
 
-def test_read_needs_viewer():
-    assert _CAPABILITY_MIN_ROLE["read"] == "VIEWER"
+@pytest.mark.parametrize("role", ["VIEWER", "AUDITOR", "POLICY_ADMIN"])
+def test_read_only_roles_cannot_write_or_download_even_on_owned_run(client, role):
+    owner_id = client.get("/api/v1/auth/me").json()["id"]
+    with client.session_factory.begin() as db:
+        db.add(ResolutionRun(id="owned", owner_user_id=owner_id))
+    set_role(client, role)
+    assert client.get("/api/v1/mdm/runs/owned").status_code == 200
+    assert client.get("/api/v1/mdm/runs/owned/overview").status_code == 200
+    assert client.get("/api/v1/mdm/runs/owned/exports").status_code == 200
+    for method, path, body in OPERATIONS:
+        kwargs = {"json": body} if body is not None else {}
+        if path == "/runs":
+            kwargs = {"files": [("files", ("test.csv", b"irrelevant", "text/csv"))]}
+        response = client.request(method, "/api/v1/mdm" + path, **kwargs)
+        assert response.status_code == 403, (role, method, path, response.text)
 
 
-# ── require_role FastAPI dependency ───────────────────────────────────────────
-
-class _FakeUser:
-    def __init__(self, role):
-        self.role = role
-        self.is_active = True
-
-
-class _FakeSession:
-    def __init__(self, role):
-        self.user = _FakeUser(role)
-        self.session = None
-        self.token = "fake"
+def test_steward_cannot_selectively_unmerge_but_senior_can_reach_owned_resource(client):
+    owner_id = client.get("/api/v1/auth/me").json()["id"]
+    with client.session_factory.begin() as db:
+        db.add(ResolutionRun(id="owned", owner_user_id=owner_id, status="COMPLETED"))
+    url = "/api/v1/mdm/runs/owned/exports/missing/merges/event/split-preview?member_id=a"
+    assert client.get(url).status_code == 403
+    set_role(client, "SENIOR_STEWARD")
+    response = client.get(url)
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Bản xuất đã thay đổi; hãy mở bản mới nhất"
 
 
-def _make_app(min_role: str):
-    """Minimal FastAPI app with a single route protected by require_role."""
+def test_permissions_never_bypass_owner_and_csrf_checks(client):
+    with client.session_factory.begin() as db:
+        other = User(email="other@example.com", email_normalized="other@example.com",
+                     password_hash="unused", role="STEWARD")
+        db.add(other)
+        db.flush()
+        db.add(ResolutionRun(id="foreign", owner_user_id=other.id))
+        db.add(ResolutionTask(id="foreign-task", run_id="foreign"))
+    for role in ROLES:
+        set_role(client, role)
+        assert client.get("/api/v1/mdm/runs/foreign").status_code == 404
+        assert client.get("/api/v1/mdm/runs/foreign/overview").status_code == 404
+        assert client.get("/api/v1/mdm/runs/tasks/foreign-task").status_code == 404
+        assert client.get("/api/v1/mdm/runs").json()["total"] == 0
+    set_role(client, "STEWARD")
+    assert client.post("/api/v1/mdm/runs/foreign/start").status_code == 404
+    assert client.get("/api/v1/mdm/runs/foreign/source-records.csv").status_code == 404
+    for headers in ({"X-CSRF-Token": "wrong"}, {"Origin": "https://evil.test"}):
+        response = client.post("/api/v1/mdm/runs/foreign/previews", json={}, headers=headers)
+        assert response.status_code == 403
+        assert "Capability" not in response.json()["detail"]
+
+
+@pytest.mark.parametrize("role,capability", [("UNKNOWN", "read"), ("SENIOR_STEWARD", "unknown")])
+def test_unknown_roles_and_capabilities_fail_closed(role, capability):
+    from types import SimpleNamespace
+
     app = FastAPI()
-
-    dep = require_role(min_role)
+    app.dependency_overrides[current_session] = lambda: SimpleNamespace(user=SimpleNamespace(role=role))
 
     @app.get("/protected")
-    def route(auth=dep):
-        return {"role": auth.user.role}
+    def protected(auth=Depends(require_capability(capability))):
+        return {"ok": True}
 
-    return app
-
-
-def test_require_role_passes_exact_role(monkeypatch):
-    from masterone.auth import security as sec
-    monkeypatch.setattr(sec, "current_session", lambda: _FakeSession("STEWARD"))
-    app = _make_app("STEWARD")
-    # We test the logic directly rather than wiring the full HTTP stack
-    from fastapi import HTTPException
-    # simulate: user has STEWARD, required is STEWARD
-    auth = _FakeSession("STEWARD")
-    # rank check
-    user_rank = _ROLE_RANK.get(auth.user.role, -1)
-    min_rank  = _ROLE_RANK.get("STEWARD", 0)
-    assert user_rank >= min_rank
+    assert TestClient(app).get("/protected").status_code == 403
 
 
-def test_require_role_passes_higher_role():
-    auth = _FakeSession("SENIOR_STEWARD")
-    user_rank = _ROLE_RANK.get(auth.user.role, -1)
-    min_rank  = _ROLE_RANK.get("STEWARD", 0)
-    assert user_rank >= min_rank
-
-
-def test_require_role_blocks_lower_role():
-    from fastapi import HTTPException
-    auth = _FakeSession("VIEWER")
-    user_rank = _ROLE_RANK.get(auth.user.role, -1)
-    min_rank  = _ROLE_RANK.get("STEWARD", 0)
-    assert user_rank < min_rank
-
-
-def test_require_role_blocks_unknown_role():
-    auth = _FakeSession("UNKNOWN_ROLE")
-    user_rank = _ROLE_RANK.get(auth.user.role, -1)
-    min_rank  = _ROLE_RANK.get("VIEWER", 0)
-    assert user_rank < min_rank
-
-
-# ── require_role function produces correct dependency ─────────────────────────
-
-def test_require_role_factory_returns_callable():
-    dep = require_role("STEWARD")
-    assert callable(dep)
-
-
-def test_require_capability_factory_returns_callable():
-    dep = require_capability("approve_pair")
-    assert callable(dep)
-
-
-def test_require_capability_unknown_defaults_to_senior_steward():
-    min_role = _CAPABILITY_MIN_ROLE.get("nonexistent_cap", "SENIOR_STEWARD")
-    assert min_role == "SENIOR_STEWARD"
-
-
-# ── User model has role field ─────────────────────────────────────────────────
-
-def test_user_model_has_role_column():
-    from masterone.auth.models import User
-    assert hasattr(User, "role")
-
-
-def test_user_role_default_is_viewer():
-    from masterone.auth.models import User
-    # The ORM-level default (Python-side) should produce VIEWER for new instances
-    u = User.__new__(User)
-    # mapped_column default is applied by the ORM on INSERT; check the column default callable
-    col_default = User.__table__.c["role"].default
-    # Python-side default may be a ColumnDefault with arg="VIEWER" or None if set via init
-    # Fallback: instantiate via ORM and check
-    import inspect
-    # Check the annotation / init default from dataclass-style mapped columns
-    role_attr = User.role
-    assert hasattr(User, "role"), "User must have a role attribute"
+def test_offline_role_assignment_is_explicit_and_defaults_to_dry_run(client):
+    with client.session_factory() as db:
+        user = db.query(User).one()
+        result = change_role(db, user.email, "SENIOR_STEWARD", "STEWARD")
+        assert result["applied"] is False
+        db.refresh(user)
+        assert user.role == "STEWARD"
+        with pytest.raises(ValueError, match="Expected"):
+            change_role(db, user.email, "SENIOR_STEWARD", "VIEWER", apply=True)
+        change_role(db, user.email, "SENIOR_STEWARD", "STEWARD", apply=True)
+    assert "selective_unmerge" in client.get("/api/v1/auth/me").json()["capabilities"]

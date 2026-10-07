@@ -41,7 +41,9 @@ Tạo `.env` từ `.env.example`; **không commit key hoặc file `.env`**.
 
 | Biến | Công dụng |
 |---|---|
-| `MDM_DATABASE_URL` | Database backend; mặc định `sqlite:///./data/masterone.db`. File SQL trong `supabase/` không tự kết nối Supabase. |
+| `MDM_DATABASE_PROFILE` | Chọn `local` hoặc `neon`; mặc định là `neon`. Đổi biến này rồi khởi động lại backend để chuyển database. |
+| `MDM_DATABASE_URL_LOCAL` | Chuỗi kết nối PostgreSQL cài trên máy, mặc định cổng 5432. Chỉ dùng với profile `local`. |
+| `MDM_DATABASE_URL` | Chuỗi kết nối PostgreSQL cloud, ví dụ Neon. Chỉ dùng với profile `neon`; không commit thông tin đăng nhập. |
 | `CORS_ORIGINS` | Origin frontend được phép trong production; local development chấp nhận origin loopback. |
 | `AUTH_CSRF_SECRET` | Bắt buộc là bí mật ít nhất 32 ký tự khi `APP_ENV=production`. |
 | `GEMINI_API_KEY` | Chỉ cần khi dùng nút giải thích bằng Gemini hoặc bật đối chiếu địa chỉ. |
@@ -51,6 +53,19 @@ Tạo `.env` từ `.env.example`; **không commit key hoặc file `.env`**.
 | `AI_LOG_API_KEY` | Key ghi log quá trình dùng công cụ AI cho chương trình; tách biệt với `GEMINI_API_KEY` của ứng dụng. |
 
 `OPENAI_API_KEY` còn trong file mẫu cho agent template; luồng MDM không cần key này. Nếu frontend phải gọi API ở địa chỉ khác, đặt `NEXT_PUBLIC_API_BASE_URL` cho Next.js trước khi chạy (ví dụ trong `frontend/.env.local`).
+
+#### Chuyển giữa PostgreSQL local và Neon
+
+Tạo database/user local bằng pgAdmin hoặc `psql` (thay mật khẩu bằng mật khẩu riêng):
+
+```sql
+CREATE ROLE masterone WITH LOGIN PASSWORD 'YOUR_LOCAL_PASSWORD';
+CREATE DATABASE masterone OWNER masterone;
+```
+
+Trong `.env`, đặt `MDM_DATABASE_PROFILE=local` và `MDM_DATABASE_URL_LOCAL=postgresql+psycopg://masterone:YOUR_LOCAL_PASSWORD@localhost:5432/masterone`. Chạy migration một lần bằng `.venv\Scripts\python.exe -m masterone.mdm.migrate`, rồi khởi động lại backend.
+
+Để quay lại Neon, đặt `MDM_DATABASE_PROFILE=neon`, giữ URL Neon trong `MDM_DATABASE_URL`, rồi khởi động lại backend. Mỗi database có tài khoản, run và dữ liệu riêng; đổi profile chỉ đổi nơi backend đọc/ghi, không sao chép dữ liệu giữa hai database.
 
 ## Dữ liệu mẫu và luồng sử dụng
 

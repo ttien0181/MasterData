@@ -1,15 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export default function ThemeToggle({ className = "" }: { className?: string }) {
   const [dark, setDark] = useState(false);
+  const manualSelection = useRef(false);
 
   useEffect(() => {
     const update = () => setDark(document.documentElement.dataset.theme === "dark");
     const media = window.matchMedia?.("(prefers-color-scheme: dark)");
+    try {
+      const saved = window.localStorage.getItem("masterone.theme");
+      manualSelection.current = saved === "light" || saved === "dark";
+    } catch {
+      manualSelection.current = false;
+    }
     const followSystem = () => {
-      if (!window.localStorage.getItem("masterone.theme")) {
+      if (!manualSelection.current) {
         document.documentElement.dataset.theme = media?.matches ? "dark" : "light";
         update();
       }
@@ -22,7 +29,12 @@ export default function ThemeToggle({ className = "" }: { className?: string }) 
   function toggle() {
     const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = next;
-    window.localStorage.setItem("masterone.theme", next);
+    manualSelection.current = true;
+    try {
+      window.localStorage.setItem("masterone.theme", next);
+    } catch {
+      // The selected theme still applies for this page even if storage is blocked.
+    }
     setDark(next === "dark");
   }
 

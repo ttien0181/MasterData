@@ -75,21 +75,35 @@ def require_mutation(request: Request, auth: CurrentSession = Depends(current_se
 ROLES = ("VIEWER", "STEWARD", "SENIOR_STEWARD", "POLICY_ADMIN", "AUDITOR")
 _ROLE_RANK: dict[str, int] = {r: i for i, r in enumerate(ROLES)}
 
-# Minimum role required for each capability
-_CAPABILITY_MIN_ROLE: dict[str, str] = {
-    "read":              "VIEWER",
-    "approve_pair":      "STEWARD",
-    "reject_pair":       "STEWARD",
-    "approve_d_subgroup":"SENIOR_STEWARD",
-    "selective_unmerge": "SENIOR_STEWARD",
-    "edit_policy":       "POLICY_ADMIN",
-    "simulate_policy":   "POLICY_ADMIN",
-    "read_audit":        "AUDITOR",
+# Operational permissions are explicit: an auditor/policy admin is NOT a steward.
+_READ_CAPABILITIES = frozenset({"read"})
+_AUDIT_CAPABILITIES = _READ_CAPABILITIES | frozenset({"read_audit"})
+_STEWARD_CAPABILITIES = _AUDIT_CAPABILITIES | frozenset({
+    "create_run", "start_run", "approve_pair", "reject_pair", "edit_golden",
+    "explain", "export_data", "manage_run",
+})
+ROLE_CAPABILITIES: dict[str, frozenset[str]] = {
+    "VIEWER": _READ_CAPABILITIES,
+    "STEWARD": _STEWARD_CAPABILITIES,
+    "SENIOR_STEWARD": _STEWARD_CAPABILITIES | {"approve_d_subgroup", "selective_unmerge"},
+    "POLICY_ADMIN": _AUDIT_CAPABILITIES | {"edit_policy", "simulate_policy"},
+    "AUDITOR": _AUDIT_CAPABILITIES,
 }
+
+def capabilities_for_role(role: str) -> list[str]:
+    """Stable public contract; unknown roles have no permissions."""
+    return sorted(ROLE_CAPABILITIES.get(role, frozenset()))
+
+
+def check_capability(auth: CurrentSession, capability: str) -> None:
+    if capability not in ROLE_CAPABILITIES.get(auth.user.role, frozenset()):
+        raise HTTPException(403, f"Capability '{capability}' required")
 
 
 def require_role(min_role: str):
-    """FastAPI dependency factory — raises 403 if the current user's role is below min_role."""
+    """Legacy rank helper. Product endpoints must use explicit capabilities."""
+    if min_role not in _ROLE_RANK:
+        raise ValueError(f"Unknown role: {min_role}")
     def _dep(auth: CurrentSession = Depends(current_session)) -> CurrentSession:
         user_rank = _ROLE_RANK.get(auth.user.role, -1)
         min_rank  = _ROLE_RANK.get(min_role, 0)
@@ -101,8 +115,18 @@ def require_role(min_role: str):
 
 def require_capability(capability: str):
     """FastAPI dependency factory — checks that the user has a capability."""
-    min_role = _CAPABILITY_MIN_ROLE.get(capability, "SENIOR_STEWARD")
-    return require_role(min_role)
+    def _dep(auth: CurrentSession = Depends(current_session)) -> CurrentSession:
+        check_capability(auth, capability)
+        return auth
+    return _dep
+
+
+def require_mutation_capability(capability: str):
+    """Preserve cookie, Origin and CSRF validation before authorizing a write."""
+    def _dep(auth: CurrentSession = Depends(require_mutation)) -> CurrentSession:
+        check_capability(auth, capability)
+        return auth
+    return _dep
 
 
 def normalized_email(email: str) -> str:

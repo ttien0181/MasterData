@@ -2,6 +2,10 @@ import asyncio
 import csv
 from hashlib import sha256
 from io import StringIO
+from itertools import islice
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse, Response
@@ -9,11 +13,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from masterone.auth.security import CurrentSession, current_session, require_mutation
+from masterone.auth.security import (
+    CurrentSession,
+    check_capability,
+    require_capability,
+    require_mutation_capability,
+)
 from masterone.config import get_settings
-from masterone.db.base import now_utc
 from masterone.db.session import get_session
-from masterone.storage.r2 import get_store
 from masterone.mdm.gemini_explanation import explain_cohort
 from masterone.mdm.models import (
     ResolutionAuditEvent,
@@ -26,6 +33,7 @@ from masterone.mdm.models import (
     ResolutionTask,
 )
 from masterone.mdm.ownership import owned_run
+from masterone.mdm.resolution_analytics import session_analytics
 from masterone.mdm.resolution_items import (
     _review_groups,
     create_export,
@@ -38,10 +46,22 @@ from masterone.mdm.resolution_items import (
     source_csv,
     transition_review,
 )
+from masterone.mdm.resolution_pairs import decide_review_pair, pair_categories, pending_pairs
 from masterone.mdm.resolution_preview import execute_preview, prepare_preview
 from masterone.mdm.resolution_split import execute_split, list_merge_events, prepare_split
+from masterone.mdm.schemas import ResolutionOverviewRead, task_read
+from masterone.storage.r2 import get_store
 
 router = APIRouter(prefix="/mdm/runs", tags=["MDM resolution"])
+
+
+@router.get("/{run_id}/analytics")
+def get_session_analytics(run_id: str, db: Session = Depends(get_session),
+                          auth: CurrentSession = Depends(require_capability("read"))):
+    run = owned_run(db, run_id, auth.user.id)
+    if run.status != "COMPLETED":
+        raise HTTPException(409, "Số liệu tổng hợp có sau khi phiên xử lý xong")
+    return session_analytics(db, run_id)
 
 
 def _category_key(primary_group: str, subgroup: str) -> str:
@@ -50,7 +70,28 @@ def _category_key(primary_group: str, subgroup: str) -> str:
 
 class ReviewTransition(BaseModel):
     item_ids: list[str] = Field(min_length=1)
-    decision: str
+    decision: Literal["merge", "no_merge"]
+
+
+class PairDecisionRequest(BaseModel):
+    decision: Literal["merge", "no_merge"]
+    revision: int = Field(ge=1)
+
+
+@router.get("/{run_id}/pair-categories")
+def get_pair_categories(run_id: str, db: Session = Depends(get_session),
+                        auth: CurrentSession = Depends(require_capability("read"))):
+    owned_run(db, run_id, auth.user.id)
+    return pair_categories(db, run_id)
+
+
+@router.post("/{run_id}/review-pairs/{pair_id}/decision")
+def post_pair_decision(run_id: str, pair_id: str, request: PairDecisionRequest,
+                       db: Session = Depends(get_session),
+                       auth: CurrentSession = Depends(require_mutation_capability("read"))):
+    check_capability(auth, "approve_pair" if request.decision == "merge" else "reject_pair")
+    owned_run(db, run_id, auth.user.id)
+    return decide_review_pair(db, run_id, pair_id, request.decision, request.revision, auth.user.id)
 
 
 class ExportRequest(BaseModel):
@@ -73,7 +114,7 @@ def get_items(run_id: str, bucket: str, limit: int = Query(25, ge=1, le=100),
               offset: int = Query(0, ge=0), origin: str | None = None,
               primary_group: str | None = None, subgroup: str | None = None,
               signature_hash: str | None = None,
-              db: Session = Depends(get_session), auth: CurrentSession = Depends(current_session)):
+              db: Session = Depends(get_session), auth: CurrentSession = Depends(require_capability("read"))):
     owned_run(db, run_id, auth.user.id)
     return list_items(db, run_id, bucket, offset, limit, origin, primary_group, subgroup, signature_hash)
 
@@ -82,7 +123,7 @@ def get_items(run_id: str, bucket: str, limit: int = Query(25, ge=1, le=100),
 def get_separate_records(run_id: str, offset: int = Query(0, ge=0),
                          limit: int = Query(25, ge=1, le=100), q: str = Query("", max_length=100),
                          db: Session = Depends(get_session),
-                         auth: CurrentSession = Depends(current_session)):
+                         auth: CurrentSession = Depends(require_capability("read"))):
     owned_run(db, run_id, auth.user.id)
     return list_separate_records(db, run_id, offset, limit, q)
 
@@ -90,28 +131,31 @@ def get_separate_records(run_id: str, offset: int = Query(0, ge=0),
 @router.get("/{run_id}/items/{bucket}/{item_id}")
 def get_item_detail(run_id: str, bucket: str, item_id: str, signature_hash: str | None = None,
                     primary_group: str | None = None, subgroup: str | None = None,
-                    db: Session = Depends(get_session), auth: CurrentSession = Depends(current_session)):
+                    db: Session = Depends(get_session), auth: CurrentSession = Depends(require_capability("read"))):
     owned_run(db, run_id, auth.user.id)
     return get_item(db, run_id, bucket, item_id, signature_hash, primary_group, subgroup)
 
 
 @router.post("/{run_id}/review-items/transition")
 def post_review_transition(run_id: str, request: ReviewTransition,
-                           db: Session = Depends(get_session), auth: CurrentSession = Depends(require_mutation)):
+                           db: Session = Depends(get_session),
+                           auth: CurrentSession = Depends(require_mutation_capability("read"))):
+    check_capability(auth, "approve_pair" if request.decision == "merge" else "reject_pair")
     owned_run(db, run_id, auth.user.id)
     return transition_review(db, run_id, request.item_ids, request.decision, auth.user.id)
 
 
 @router.post("/{run_id}/merge-items/{item_id}/resolve-conflict")
 def post_resolve_staged_conflict(run_id: str, item_id: str,
-                                 db: Session = Depends(get_session), auth: CurrentSession = Depends(require_mutation)):
+                                 db: Session = Depends(get_session),
+                                 auth: CurrentSession = Depends(require_mutation_capability("reject_pair"))):
     owned_run(db, run_id, auth.user.id)
     return resolve_staged_conflict(db, run_id, item_id, auth.user.id)
 
 
 @router.post("/{run_id}/export-readiness")
 def get_export_readiness(run_id: str, request: ExportRequest, db: Session = Depends(get_session),
-                         auth: CurrentSession = Depends(current_session)):
+                         auth: CurrentSession = Depends(require_capability("read"))):
     owned_run(db, run_id, auth.user.id)
     return export_readiness(db, run_id, request.choices)
 
@@ -133,9 +177,23 @@ def _csv_response(snapshot: ResolutionExport):
                              "X-Export-Id": snapshot.id})
 
 
+def _csv_sample(snapshot: ResolutionExport, limit: int = 10) -> list[dict[str, str]]:
+    if snapshot.csv_bytes is not None:
+        return list(islice(csv.DictReader(StringIO(snapshot.csv_bytes.decode("utf-8-sig"))), limit))
+    if snapshot.r2_key:
+        store = get_store(get_settings())
+        if store is not None:
+            with TemporaryDirectory(prefix="masterone-export-compare-") as temp_dir:
+                path = Path(temp_dir) / "snapshot.csv"
+                store.download_file(snapshot.r2_key, path)
+                with path.open("r", encoding="utf-8-sig", newline="") as stream:
+                    return list(islice(csv.DictReader(stream), limit))
+    raise HTTPException(500, "Export data unavailable")
+
+
 @router.post("/{run_id}/exports")
 def post_export(run_id: str, request: ExportRequest, db: Session = Depends(get_session),
-                auth: CurrentSession = Depends(require_mutation)):
+                auth: CurrentSession = Depends(require_mutation_capability("export_data"))):
     run = owned_run(db, run_id, auth.user.id)
     if run.policy_version == "person-linh-v1":
         raise HTTPException(409, "Hãy xem trước và xác nhận bản gộp trước khi xuất CSV")
@@ -145,21 +203,23 @@ def post_export(run_id: str, request: ExportRequest, db: Session = Depends(get_s
 
 @router.post("/{run_id}/previews")
 def post_preview(run_id: str, request: ExportRequest,
-                 db: Session = Depends(get_session), auth: CurrentSession = Depends(require_mutation)):
+                 db: Session = Depends(get_session),
+                 auth: CurrentSession = Depends(require_mutation_capability("export_data"))):
     owned_run(db, run_id, auth.user.id)
     return prepare_preview(db, run_id, auth.user.id, request.choices, request.acknowledge_unreviewed)
 
 
 @router.post("/{run_id}/previews/{preview_id}/execute")
 def post_execute_preview(run_id: str, preview_id: str, request: ExecutePreviewRequest,
-                         db: Session = Depends(get_session), auth: CurrentSession = Depends(require_mutation)):
+                         db: Session = Depends(get_session),
+                         auth: CurrentSession = Depends(require_mutation_capability("export_data"))):
     owned_run(db, run_id, auth.user.id)
     return _csv_response(execute_preview(db, run_id, preview_id, request.execute_request_id, auth.user.id))
 
 
 @router.get("/{run_id}/exports")
 def get_exports(run_id: str, db: Session = Depends(get_session),
-                auth: CurrentSession = Depends(current_session)):
+                auth: CurrentSession = Depends(require_capability("read"))):
     owned_run(db, run_id, auth.user.id)
     rows = db.query(ResolutionExport).filter_by(run_id=run_id).order_by(
         ResolutionExport.created_at.desc(), ResolutionExport.id.desc()).all()
@@ -173,21 +233,23 @@ def get_exports(run_id: str, db: Session = Depends(get_session),
 @router.get("/{run_id}/exports/{export_id}/merges")
 def get_export_merges(run_id: str, export_id: str, offset: int = Query(0, ge=0),
                       limit: int = Query(25, ge=1, le=100), q: str = Query("", max_length=100),
-                      db: Session = Depends(get_session), auth: CurrentSession = Depends(current_session)):
+                      db: Session = Depends(get_session), auth: CurrentSession = Depends(require_capability("read"))):
     owned_run(db, run_id, auth.user.id)
     return list_merge_events(db, run_id, export_id, offset, limit, q)
 
 
 @router.get("/{run_id}/exports/{export_id}/merges/{event_id}/split-preview")
 def get_split_preview(run_id: str, export_id: str, event_id: str, member_id: str,
-                      db: Session = Depends(get_session), auth: CurrentSession = Depends(current_session)):
+                      db: Session = Depends(get_session),
+                      auth: CurrentSession = Depends(require_capability("selective_unmerge"))):
     owned_run(db, run_id, auth.user.id)
     return prepare_split(db, run_id, export_id, event_id, member_id)
 
 
 @router.post("/{run_id}/exports/{export_id}/merges/{event_id}/split")
 def post_split(run_id: str, export_id: str, event_id: str, request: ExecuteSplitRequest,
-               db: Session = Depends(get_session), auth: CurrentSession = Depends(require_mutation)):
+               db: Session = Depends(get_session),
+               auth: CurrentSession = Depends(require_mutation_capability("selective_unmerge"))):
     owned_run(db, run_id, auth.user.id)
     snapshot = execute_split(db, run_id, export_id, event_id, request.member_id,
                              request.version, request.execute_request_id, auth.user.id)
@@ -197,7 +259,7 @@ def post_split(run_id: str, export_id: str, event_id: str, request: ExecuteSplit
 
 @router.get("/{run_id}/source-records.csv")
 def download_source_records(run_id: str, db: Session = Depends(get_session),
-                            auth: CurrentSession = Depends(current_session)):
+                            auth: CurrentSession = Depends(require_capability("export_data"))):
     owned_run(db, run_id, auth.user.id)
     return Response(source_csv(db, run_id), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="masterone-{run_id[:8]}-source.csv"'})
@@ -205,7 +267,7 @@ def download_source_records(run_id: str, db: Session = Depends(get_session),
 
 @router.get("/{run_id}/exports/{export_id}/download")
 def download_export(run_id: str, export_id: str, db: Session = Depends(get_session),
-                    auth: CurrentSession = Depends(current_session)):
+                    auth: CurrentSession = Depends(require_capability("export_data"))):
     owned_run(db, run_id, auth.user.id)
     snapshot = db.get(ResolutionExport, export_id)
     if snapshot is None or snapshot.run_id != run_id:
@@ -221,15 +283,21 @@ def download_export(run_id: str, export_id: str, db: Session = Depends(get_sessi
 
 @router.get("/{run_id}/exports/{export_id}/compare")
 def compare_export(run_id: str, export_id: str, db: Session = Depends(get_session),
-                   auth: CurrentSession = Depends(current_session)):
-    owned_run(db, run_id, auth.user.id)
+                   auth: CurrentSession = Depends(require_capability("read"))):
+    run = owned_run(db, run_id, auth.user.id)
     snapshot = db.get(ResolutionExport, export_id)
     if snapshot is None or snapshot.run_id != run_id:
         raise HTTPException(404, "Không tìm thấy bản xuất")
-    source_rows = list(csv.DictReader(StringIO(source_csv(db, run_id).decode("utf-8-sig"))))
-    output_rows = list(csv.DictReader(StringIO(snapshot.csv_bytes.decode("utf-8-sig"))))
-    return {"source_count": len(source_rows), "output_count": len(output_rows),
-            "source_sample": source_rows[:10], "output_sample": output_rows[:10]}
+    source_rows = db.query(ResolutionRecord).filter_by(run_id=run_id).order_by(
+        ResolutionRecord.id).limit(10).all()
+    source_sample = [{"id": record.external_id, "source_system": record.source_system,
+                      "full_name": record.raw_fields.get("name", ""),
+                      "phone_number": record.raw_fields.get("phone", ""),
+                      "email_address": record.raw_fields.get("email", ""),
+                      "raw_address": record.raw_fields.get("address", "")}
+                     for record in source_rows]
+    return {"source_count": run.record_count, "output_count": snapshot.row_count,
+            "source_sample": source_sample, "output_sample": _csv_sample(snapshot)}
 
 
 def _record_summary(record: ResolutionRecord) -> dict:
@@ -238,9 +306,9 @@ def _record_summary(record: ResolutionRecord) -> dict:
             "quality_flags": record.quality_flags}
 
 
-@router.get("/{run_id}/overview")
+@router.get("/{run_id}/overview", response_model=ResolutionOverviewRead)
 def get_overview(run_id: str, db: Session = Depends(get_session),
-                 auth: CurrentSession = Depends(current_session)):
+                 auth: CurrentSession = Depends(require_capability("read"))):
     run = owned_run(db, run_id, auth.user.id)
     task = db.query(ResolutionTask).filter_by(run_id=run.id).one_or_none()
     counts = {
@@ -255,6 +323,7 @@ def get_overview(run_id: str, db: Session = Depends(get_session),
         "manual": db.query(ResolutionProposal).filter_by(run_id=run_id, status="REVIEW_REQUIRED").count(),
     }
     counts["review"] = counts["review_cases"] + counts["manual"]
+    counts["review_pairs"] = pending_pairs(db, run_id).count()
     counts["hard_blocked"] = db.query(ResolutionPair).filter_by(run_id=run_id,
                                                                   pair_decision="NOT_MERGEABLE").count()
     counts["insufficient"] = run.insufficient_count
@@ -262,6 +331,12 @@ def get_overview(run_id: str, db: Session = Depends(get_session),
     counts["group_c"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="C").count()
     counts["group_d"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="D").count()
     counts["separate"] = separate_record_count(db, run_id, run.record_count)
+    eligible_merge_group_count = db.query(ResolutionProposal).filter(
+        ResolutionProposal.run_id == run_id,
+        ResolutionProposal.status.in_(["AUTO_READY", "REVIEW_APPROVED"]),
+    ).count()
+    estimated_entity_count = counts["separate"] + eligible_merge_group_count
+    duplicate_record_count = max(0, run.record_count - estimated_entity_count)
     source_counts = {source: count for source, count in db.query(ResolutionRecord.source_system,
                     func.count(ResolutionRecord.id)).filter_by(run_id=run_id).group_by(
                     ResolutionRecord.source_system).all()}
@@ -271,12 +346,38 @@ def get_overview(run_id: str, db: Session = Depends(get_session),
             "total_count": task.total_count if task else run.record_count,
             "record_count": run.record_count, "file_count": run.file_count,
             "source_counts": source_counts, "history_count": history_count,
-            "candidate_count": run.candidate_count, "counts": counts}
+            "candidate_count": run.candidate_count,
+            "estimated_entity_count": estimated_entity_count,
+            "duplicate_record_count": duplicate_record_count,
+            "eligible_merge_group_count": eligible_merge_group_count,
+            "counts": counts,
+            "task": task_read(task) if task else None}
+
+
+@router.get("/{run_id}/audit")
+def get_run_audit(run_id: str, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0),
+                  action: str | None = Query(None, max_length=40), pair_id: str | None = Query(None, max_length=64),
+                  proposal_id: str | None = Query(None, max_length=64), db: Session = Depends(get_session),
+                  auth: CurrentSession = Depends(require_capability("read_audit"))):
+    owned_run(db, run_id, auth.user.id)
+    query = db.query(ResolutionAuditEvent).filter_by(run_id=run_id)
+    if action and action.strip():
+        query = query.filter(ResolutionAuditEvent.action == action.strip().upper())
+    if pair_id:
+        query = query.filter_by(pair_id=pair_id)
+    if proposal_id:
+        query = query.filter_by(proposal_id=proposal_id)
+    total = query.count()
+    events = query.order_by(ResolutionAuditEvent.created_at.desc(), ResolutionAuditEvent.id.desc()).offset(offset).limit(limit).all()
+    return {"total": total, "items": [{"id": event.id, "run_id": event.run_id,
+            "actor_user_id": event.actor_user_id, "pair_id": event.pair_id,
+            "proposal_id": event.proposal_id, "action": event.action,
+            "details": event.details, "created_at": event.created_at} for event in events]}
 
 
 @router.get("/{run_id}/categories")
 def get_categories(run_id: str, db: Session = Depends(get_session),
-                   auth: CurrentSession = Depends(current_session)):
+                   auth: CurrentSession = Depends(require_capability("read"))):
     owned_run(db, run_id, auth.user.id)
     groups = _review_groups(db, run_id)
     grouped: dict[tuple[str, str], dict] = {}
@@ -308,7 +409,7 @@ def get_categories(run_id: str, db: Session = Depends(get_session),
 
 @router.post("/{run_id}/categories/{signature_hash}/explanation")
 async def explain_category(run_id: str, signature_hash: str, db: Session = Depends(get_session),
-                          auth: CurrentSession = Depends(require_mutation)):
+                          auth: CurrentSession = Depends(require_mutation_capability("explain"))):
     owned_run(db, run_id, auth.user.id)
     cases = [case for case in db.query(ResolutionReviewCase).filter_by(run_id=run_id, status="OPEN").all()
              if _category_key(case.primary_group, case.subgroup) == signature_hash]
@@ -371,7 +472,7 @@ async def explain_category(run_id: str, signature_hash: str, db: Session = Depen
 @router.post("/{run_id}/items/{bucket}/{item_id}/explanation")
 async def explain_item(run_id: str, bucket: str, item_id: str,
                        db: Session = Depends(get_session),
-                       auth: CurrentSession = Depends(require_mutation)):
+                       auth: CurrentSession = Depends(require_mutation_capability("explain"))):
     """Explain one item from comparison states; never send source values to AI."""
     owned_run(db, run_id, auth.user.id)
     detail = get_item(db, run_id, bucket, item_id)
@@ -442,7 +543,7 @@ _GOLDEN_FIELDS = frozenset({'name', 'phone', 'email', 'address', 'dob', 'governm
 @router.get('/{run_id}/proposals/{proposal_id}/golden-record')
 def get_golden_record(run_id: str, proposal_id: str,
                       db: Session = Depends(get_session),
-                      auth: CurrentSession = Depends(current_session)):
+                      auth: CurrentSession = Depends(require_capability("read"))):
     owned_run(db, run_id, auth.user.id)
     proposal = db.get(ResolutionProposal, proposal_id)
     if proposal is None or proposal.run_id != run_id:
@@ -465,7 +566,7 @@ def get_golden_record(run_id: str, proposal_id: str,
 @router.put('/{run_id}/proposals/{proposal_id}/golden-record')
 def put_golden_record(run_id: str, proposal_id: str, request: GoldenRecordOverride,
                       db: Session = Depends(get_session),
-                      auth: CurrentSession = Depends(require_mutation)):
+                      auth: CurrentSession = Depends(require_mutation_capability("edit_golden"))):
     owned_run(db, run_id, auth.user.id)
     proposal = db.get(ResolutionProposal, proposal_id)
     if proposal is None or proposal.run_id != run_id:

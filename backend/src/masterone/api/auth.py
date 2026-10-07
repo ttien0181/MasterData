@@ -16,6 +16,7 @@ from masterone.auth.security import (
     LOGIN_WINDOW,
     SESSION_SECONDS,
     CurrentSession,
+    capabilities_for_role,
     check_rate_limit,
     csrf_token,
     current_session,
@@ -36,6 +37,19 @@ class Credentials(BaseModel):
     password: str = Field(min_length=12, max_length=128)
 
 
+class AuthUserResponse(BaseModel):
+    id: str
+    email: str
+    csrf_token: str
+    role: str
+    capabilities: list[str]
+
+
+def auth_user_response(user: User, token: str) -> AuthUserResponse:
+    return AuthUserResponse(id=user.id, email=user.email, csrf_token=csrf_token(token),
+                            role=user.role, capabilities=capabilities_for_role(user.role))
+
+
 @router.post("/register", status_code=201)
 def register(body: Credentials, request: Request, db: Session = Depends(get_session)):
     require_origin(request)
@@ -51,7 +65,7 @@ def register(body: Credentials, request: Request, db: Session = Depends(get_sess
     return {"id": user.id, "email": user.email}
 
 
-@router.post("/login")
+@router.post("/login", response_model=AuthUserResponse)
 def login(body: Credentials, request: Request, response: Response, db: Session = Depends(get_session)):
     require_origin(request)
     email = normalized_email(str(body.email))
@@ -71,12 +85,12 @@ def login(body: Credentials, request: Request, response: Response, db: Session =
     db.commit()
     response.set_cookie(COOKIE, raw_token, max_age=SESSION_SECONDS, httponly=True,
                         secure=get_settings().app_env == "production", samesite="lax", path="/")
-    return {"id": user.id, "email": user.email, "csrf_token": csrf_token(raw_token)}
+    return auth_user_response(user, raw_token)
 
 
-@router.get("/me")
+@router.get("/me", response_model=AuthUserResponse)
 def me(auth: CurrentSession = Depends(current_session)):
-    return {"id": auth.user.id, "email": auth.user.email, "csrf_token": csrf_token(auth.token)}
+    return auth_user_response(auth.user, auth.token)
 
 
 @router.post("/logout")

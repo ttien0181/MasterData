@@ -167,7 +167,8 @@ def test_new_policy_requires_preview_before_export(client):
     assert preview.status_code == 200, preview.text
 
 
-def test_selective_unmerge_creates_new_snapshot_and_negative_edge(client):
+def test_selective_unmerge_creates_new_snapshot_and_negative_edge(senior_client):
+    client = senior_client
     run_id = seed_run(client)
     prefix = f"/api/v1/mdm/runs/{run_id}"
     prepared = client.post(f"{prefix}/previews", json={"acknowledge_unreviewed": True}).json()
@@ -201,7 +202,8 @@ def test_selective_unmerge_creates_new_snapshot_and_negative_edge(client):
     assert detail.json()["field_evidence"]
 
 
-def test_selective_unmerge_preserves_other_members_and_selected_value(client):
+def test_selective_unmerge_preserves_other_members_and_selected_value(senior_client):
+    client = senior_client
     run_id = seed_run(client)
     with client.session_factory() as db:
         from masterone.mdm.models import ResolutionProposal, ResolutionRecord, ResolutionRun

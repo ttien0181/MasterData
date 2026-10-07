@@ -1,7 +1,18 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, LargeBinary, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from masterone.db.base import Base, now_utc
@@ -9,13 +20,18 @@ from masterone.db.base import Base, now_utc
 
 class ResolutionRun(Base):
     __tablename__ = "mdm_resolution_runs"
+    __table_args__ = (UniqueConstraint("upload_session_id", name="uq_mdm_run_upload_session"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    upload_session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("mdm_resolution_upload_sessions.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(24), default="UPLOADED")
     phase: Mapped[str] = mapped_column(String(40), default="upload")
     policy_version: Mapped[str] = mapped_column(String(40), default="person-v1")
-    record_count: Mapped[int] = mapped_column(Integer, default=0)
+    record_count: Mapped[int] = mapped_column(BigInteger, default=0)
     file_count: Mapped[int] = mapped_column(Integer, default=0)
     candidate_count: Mapped[int] = mapped_column(Integer, default=0)
     insufficient_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -31,9 +47,60 @@ class ResolutionFile(Base):
     run_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_runs.id", ondelete="CASCADE"), index=True)
     filename: Mapped[str] = mapped_column(String(255))
     sha256: Mapped[str] = mapped_column(String(64))
-    row_count: Mapped[int] = mapped_column(Integer)
+    row_count: Mapped[int] = mapped_column(BigInteger)
     # R2 key of the original uploaded CSV bytes (null when R2 is not configured)
     r2_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class ResolutionUploadSession(Base):
+    __tablename__ = "mdm_resolution_upload_sessions"
+    __table_args__ = (Index("ix_mdm_upload_sessions_owner_status", "owner_user_id", "status", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="UPLOADING")
+    storage_backend: Mapped[str] = mapped_column(String(12), default="local")
+    total_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+
+class ResolutionUploadFile(Base):
+    __tablename__ = "mdm_resolution_upload_files"
+    __table_args__ = (UniqueConstraint("session_id", "position", name="uq_mdm_upload_file_position"),
+                      UniqueConstraint("replaces_file_id", name="uq_mdm_upload_file_replacement"),
+                      Index("ix_mdm_upload_files_session", "session_id", "position"))
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    session_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_upload_sessions.id", ondelete="CASCADE"), index=True)
+    replaces_file_id: Mapped[str | None] = mapped_column(
+        ForeignKey("mdm_resolution_upload_files.id", ondelete="SET NULL"), nullable=True)
+    position: Mapped[int] = mapped_column(Integer)
+    filename: Mapped[str] = mapped_column(String(255))
+    expected_size: Mapped[int] = mapped_column(BigInteger)
+    received_size: Mapped[int] = mapped_column(BigInteger, default=0)
+    status: Mapped[str] = mapped_column(String(24), default="UPLOADING")
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    row_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source_counts: Mapped[dict] = mapped_column(JSON, default=dict)
+    validation_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+
+class ResolutionUploadPart(Base):
+    __tablename__ = "mdm_resolution_upload_parts"
+    __table_args__ = (UniqueConstraint("upload_file_id", "part_number", name="uq_mdm_upload_part_number"),
+                      Index("ix_mdm_upload_parts_file", "upload_file_id", "part_number"))
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    upload_file_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_upload_files.id", ondelete="CASCADE"), index=True)
+    part_number: Mapped[int] = mapped_column(BigInteger)
+    byte_size: Mapped[int] = mapped_column(BigInteger)
+    sha256: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 

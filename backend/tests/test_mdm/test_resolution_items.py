@@ -5,6 +5,7 @@ from io import StringIO
 
 from masterone.auth.models import User
 from masterone.mdm.models import (
+    ResolutionExport,
     ResolutionFile,
     ResolutionPair,
     ResolutionProposal,
@@ -50,6 +51,70 @@ def read_csv(response):
     return list(csv.DictReader(StringIO(response.content.decode("utf-8-sig"))))
 
 
+def test_pair_review_compares_only_two_records_and_keeps_other_edges_pending(client):
+    run_id = seed_run(client)
+    prefix = f"/api/v1/mdm/runs/{run_id}"
+    with client.session_factory.begin() as db:
+        db.add(ResolutionPair(id="uncertain-ac", run_id=run_id, left_record_id="a", right_record_id="c",
+            blocking_reasons=[], field_evidence=[], score=0.6, pair_decision="REVIEW",
+            decision_reason="AMBIGUOUS", triage_status="REVIEW", triage_reason="AMBIGUOUS"))
+        case = db.get(ResolutionReviewCase, "case-bc")
+        case.pair_ids = ["uncertain-bc", "uncertain-ac"]
+        case.member_record_ids = ["a", "b", "c"]
+    listing = client.get(f"{prefix}/items/review_pairs").json()
+    assert listing["total"] == 2
+    assert all(item["member_count"] == 2 for item in listing["items"])
+    detail = client.get(f"{prefix}/items/review_pairs/uncertain-bc").json()
+    assert set(detail["member_record_ids"]) == {"b", "c"}
+    assert detail["affected_record_count"] == 3
+    result = client.post(f"{prefix}/review-pairs/uncertain-bc/decision",
+                         json={"decision": "no_merge", "revision": detail["revision"]})
+    assert result.status_code == 200, result.text
+    assert [item["id"] for item in client.get(f"{prefix}/items/review_pairs").json()["items"]] == ["uncertain-ac"]
+    assert client.get(f"{prefix}/items/no_merge").json()["total"] == 1
+    with client.session_factory() as db:
+        case = db.get(ResolutionReviewCase, "case-bc")
+        assert case.status == "OPEN"
+        assert case.pair_ids == ["uncertain-ac"]
+    # A+C would also merge B because A+B is already a safe group. The rejected B+C blocks that.
+    blocked = client.post(f"{prefix}/review-pairs/uncertain-ac/decision", json={"decision": "merge", "revision": 1})
+    assert blocked.status_code == 409
+
+
+def test_pair_approval_creates_one_disjoint_proposal_and_audit(client):
+    run_id = seed_run(client)
+    prefix = f"/api/v1/mdm/runs/{run_id}"
+    result = client.post(f"{prefix}/review-pairs/uncertain-bc/decision", json={"decision": "merge", "revision": 1})
+    assert result.status_code == 200, result.text
+    assert result.json()["affected_record_count"] == 3
+    assert client.get(f"{prefix}/items/review_pairs").json()["total"] == 0
+    groups = client.get(f"{prefix}/items/merge").json()["items"]
+    assert len(groups) == 1
+    assert set(groups[0]["member_record_ids"]) == {"a", "b", "c"}
+    assert groups[0]["origin"] == "REVIEW"
+    assert client.get(f"{prefix}/audit").json()["items"][0]["action"] == "PAIR_ACCEPTED"
+    assert client.post(f"{prefix}/review-pairs/uncertain-bc/decision", json={"decision": "no_merge", "revision": 1}).status_code == 409
+    response = client.post(f"{prefix}/exports", json={"choices": {groups[0]["id"]: {"phone": "c"}}})
+    assert response.status_code == 200, response.text
+    assert read_csv(response)[0]["source_record_ids"] == "A|B|C"
+
+
+def test_pair_review_checks_revision_role_and_run_ownership(client):
+    run_id = seed_run(client)
+    prefix = f"/api/v1/mdm/runs/{run_id}"
+    assert client.post(f"{prefix}/review-pairs/uncertain-bc/decision", json={"decision": "merge", "revision": 99}).status_code == 409
+    with client.session_factory.begin() as db:
+        db.query(User).one().role = "VIEWER"
+    assert client.get(f"{prefix}/items/review_pairs").status_code == 200
+    assert client.post(f"{prefix}/review-pairs/uncertain-bc/decision", json={"decision": "merge", "revision": 1}).status_code == 403
+    with client.session_factory.begin() as db:
+        owner = db.query(User).one()
+        owner.role = "STEWARD"
+        other = ResolutionRun(id="other-pair-run", owner_user_id=owner.id, status="COMPLETED", record_count=0, file_count=0)
+        db.add(other)
+    assert client.post("/api/v1/mdm/runs/other-pair-run/review-pairs/uncertain-bc/decision", json={"decision": "merge", "revision": 1}).status_code == 404
+
+
 def test_review_choice_survives_move_to_merge_and_final_csv(client):
     run_id = seed_run(client)
     prefix = f"/api/v1/mdm/runs/{run_id}"
@@ -80,6 +145,34 @@ def test_review_choice_survives_move_to_merge_and_final_csv(client):
     assert comparison["source_sample"][0]["id"] == "A"
     source_rows = read_csv(client.get(f"{prefix}/source-records.csv"))
     assert len(source_rows) == 3
+
+
+def test_compare_reads_export_snapshot_from_r2_when_database_bytes_are_cleared(client, monkeypatch):
+    run_id = seed_run(client)
+    owner_id = client.get("/api/v1/auth/me").json()["id"]
+    export_bytes = (
+        b"master_record_id,full_name,phone_number,source_record_ids,source_systems,record_count\n"
+        b"merged-1,An,111,A|B,CRM|ERP,2\n"
+    )
+    with client.session_factory.begin() as db:
+        db.add(ResolutionExport(
+            id="r2-export", run_id=run_id, actor_user_id=owner_id,
+            csv_bytes=None, r2_key=f"exports/{run_id}/r2-export.csv", row_count=1,
+            merged_group_count=1, pending_review_count=0,
+        ))
+
+    class FakeR2:
+        def download_file(self, key, path):
+            assert key == f"exports/{run_id}/r2-export.csv"
+            with open(path, "wb") as stream:
+                stream.write(export_bytes)
+
+    monkeypatch.setattr("masterone.api.mdm_resolution.get_store", lambda _settings: FakeR2())
+    response = client.get(f"/api/v1/mdm/runs/{run_id}/exports/r2-export/compare")
+    assert response.status_code == 200, response.text
+    assert response.json()["source_count"] == 3
+    assert response.json()["output_count"] == 1
+    assert response.json()["output_sample"][0]["source_record_ids"] == "A|B"
 
 
 def test_automatic_non_match_rebuilds_field_evidence_without_changing_decision(client):

@@ -6,6 +6,20 @@ from pathlib import Path
 from typing import BinaryIO
 
 
+class _BorrowedStream:
+    """Let the transfer SDK close its body without closing the caller's file."""
+
+    def __init__(self, stream: BinaryIO):
+        self._stream = stream
+
+    def __getattr__(self, name: str):
+        return getattr(self._stream, name)
+
+    def close(self) -> None:
+        # The caller owns the stream lifetime, including when an upload fails.
+        pass
+
+
 class R2ObjectStore:
     def __init__(self, endpoint_url: str, access_key_id: str, secret_access_key: str, bucket: str):
         import boto3
@@ -34,7 +48,9 @@ class R2ObjectStore:
         self.client.upload_file(str(path), self.bucket, key, ExtraArgs={"ContentType": content_type})
 
     def upload_stream(self, stream: BinaryIO, key: str, content_type: str = "application/octet-stream") -> None:
-        self.client.upload_fileobj(stream, self.bucket, key, ExtraArgs={"ContentType": content_type})
+        """Upload from the current position, leaving the caller's stream open."""
+        self.client.upload_fileobj(_BorrowedStream(stream), self.bucket, key,
+                                   ExtraArgs={"ContentType": content_type})
 
     def download_file(self, key: str, path: str | Path) -> None:
         self.client.download_file(self.bucket, key, str(path))

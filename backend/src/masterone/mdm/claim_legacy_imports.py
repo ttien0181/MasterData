@@ -16,7 +16,7 @@ def main() -> None:
     parser.add_argument("--import-id", action="append", required=True, help="Repeat for each legacy import")
     parser.add_argument("--apply", action="store_true", help="Write changes; default is dry run")
     args = parser.parse_args()
-    engine, factory = create_database(get_settings().mdm_database_url)
+    engine, factory = create_database(get_settings().active_mdm_database_url)
     with factory() as db:
         user = db.scalar(select(User).where(User.email_normalized == args.user_email.strip().casefold()))
         if not user:

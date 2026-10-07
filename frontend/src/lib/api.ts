@@ -1,7 +1,10 @@
 import { exportChoices } from "./resolutionChoices";
 import type { ResolutionOverview, ResolutionRunHistory, ResolutionRun, ReviewCategory, SeparateRecord,
   ResolutionItem, ResolutionItemDetail, ResolutionExportReadiness, ResolutionExportSummary,
-  ResolutionPreview, ResolutionMergeHistory, ResolutionSplitPreview } from "./contracts";
+  ResolutionPreview, ResolutionMergeHistory, ResolutionSplitPreview, AuthUser, ResolutionTask,
+  UploadSession, ResolutionAuditPage, ResolutionAnalytics } from "./contracts";
+
+export const getResolutionAnalytics = (runId: string) => request<ResolutionAnalytics>(`/runs/${runId}/analytics`);
 
 function apiBase() {
   if (process.env.NEXT_PUBLIC_API_BASE_URL) return process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -30,16 +33,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const detail = await response.json().catch(() => null);
     throw new ApiError(errorMessage(detail?.detail, response.status), response.status);
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
-export type AuthUser = { id: string; email: string; csrf_token: string };
+export type { AuthUser } from "./contracts";
+export type BackendHealth = { status: string; env?: string };
+export async function getBackendHealth() {
+  const response = await fetch(`${apiBase()}/health`, { cache: "no-store" });
+  if (!response.ok) throw new ApiError(`Health check failed (${response.status})`, response.status);
+  return response.json() as Promise<BackendHealth>;
+}
 async function authRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBase()}/api/v1/auth${path}`, { ...init, credentials: "include" });
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
     throw new ApiError(errorMessage(detail?.detail, response.status), response.status);
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 export const getMe = () => authRequest<AuthUser>("/me");
@@ -58,16 +69,90 @@ export async function uploadResolutionFiles(files: File[]) {
     "/runs", { method: "POST", body: data });
 }
 export const getResolutionRun = (id: string) => request<ResolutionRun>(`/runs/${id}`);
-export const getResolutionRuns = () => request<ResolutionRunHistory>("/runs?limit=25&offset=0");
+export type RunListOptions = { cursor?: string | null; q?: string; status?: string; archived?: "active" | "archived" | "all" };
+export const getResolutionRuns = (limit = 25, offset = 0, options: RunListOptions = {}) => {
+  const query = new URLSearchParams({ limit: String(limit), offset: String(offset), archived: options.archived ?? "active" });
+  if (options.cursor) query.set("cursor", options.cursor);
+  if (options.q?.trim()) query.set("q", options.q.trim());
+  if (options.status?.trim()) query.set("run_status", options.status.trim());
+  return request<ResolutionRunHistory>(`/runs?${query}`);
+};
+export const renameResolutionRun = (runId: string, name: string | null) =>
+  request<{ run_id: string; name: string | null }>(`/runs/${runId}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+  });
+export const bulkResolutionRuns = (operation: "archive" | "restore", runIds: string[]) =>
+  request<{ changed_count: number; operation: string; run_ids: string[] }>("/runs/bulk", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operation, run_ids: runIds }),
+  });
+export const getUploadSessions = (limit = 20) =>
+  request<{ items: UploadSession[] }>(`/upload-sessions?limit=${limit}`);
+export const getUploadSession = (sessionId: string) => request<UploadSession>(`/upload-sessions/${sessionId}`);
+export const createUploadSession = (name: string, files: File[]) =>
+  request<UploadSession>("/upload-sessions", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: name.trim() || null, files: files.map((file) => ({ filename: file.name, size: file.size })) }) });
+export const renameUploadSession = (sessionId: string, name: string) =>
+  request<UploadSession>(`/upload-sessions/${sessionId}`, { method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: name.trim() || null }) });
+export const replaceUploadSessionFile = (sessionId: string, fileId: string, file: File) =>
+  request<UploadSession>(`/upload-sessions/${sessionId}/files/${fileId}/replace`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename: file.name, size: file.size }),
+  });
+export const validateUploadSession = (sessionId: string) =>
+  request<UploadSession>(`/upload-sessions/${sessionId}/validate`, { method: "POST" });
+export const commitUploadSession = (sessionId: string) =>
+  request<{ run_id: string; status: string; profile: { row_count: number; file_count: number;
+    source_counts: Record<string, number>; files: { filename: string; row_count: number; sha256: string }[] } }>(
+    `/upload-sessions/${sessionId}/commit`, { method: "POST" });
+export const deleteUploadSession = (sessionId: string) =>
+  request<void>(`/upload-sessions/${sessionId}`, { method: "DELETE" });
+
+export function uploadResolutionUploadPart(sessionId: string, fileId: string, partNumber: number,
+                                           blob: Blob, digest: string,
+                                           onProgress: (loaded: number) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", `${apiBase()}/api/v1/mdm/upload-sessions/${encodeURIComponent(sessionId)}/files/${encodeURIComponent(fileId)}/parts/${partNumber}`);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.setRequestHeader("X-CSRF-Token", csrfToken);
+    xhr.setRequestHeader("X-Chunk-SHA256", digest);
+    xhr.upload.onprogress = (event) => onProgress(event.loaded);
+    xhr.onerror = () => reject(new Error("Kết nối bị gián đoạn khi tải file."));
+    xhr.onabort = () => reject(new Error("Đã hủy khối upload."));
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) { resolve(); return; }
+      let message = `Yêu cầu thất bại (${xhr.status})`;
+      try {
+        const payload = JSON.parse(xhr.responseText) as { detail?: unknown };
+        if (typeof payload.detail === "string") message = payload.detail;
+      } catch { /* Keep the status fallback for non-JSON errors. */ }
+      reject(new ApiError(message, xhr.status));
+    };
+    xhr.send(blob);
+  });
+}
 export const startResolutionRun = (id: string) => request<{ task_id: string; run_id: string; status: string }>(`/runs/${id}/start`, { method: "POST" });
-export const getResolutionTask = (id: string) => request<{ task_id: string; run_id: string; status: string; phase: string; processed_count: number; total_count: number; error_code: string | null }>(`/runs/tasks/${id}`);
+export const getResolutionTask = (id: string) => request<ResolutionTask>(`/runs/tasks/${id}`);
 export const getResolutionOverview = (id: string) => request<ResolutionOverview>(`/runs/${id}/overview`);
+export const getResolutionAudit = (runId: string, options: { offset?: number; limit?: number; action?: string;
+  pair_id?: string; proposal_id?: string } = {}) => {
+  const query = new URLSearchParams();
+  Object.entries(options).forEach(([key, value]) => { if (value !== undefined && value !== "") query.set(key, String(value)); });
+  return request<ResolutionAuditPage>(`/runs/${runId}/audit?${query}`);
+};
 export const getSeparateRecords = (runId: string, offset = 0, q = "") =>
   request<{ total: number; items: SeparateRecord[] }>(
     `/runs/${runId}/separate-records?offset=${offset}&limit=25&q=${encodeURIComponent(q)}`);
 export const getReviewCategories = (id: string) => request<ReviewCategory[]>(`/runs/${id}/categories`);
 export const explainReviewCategory = (runId: string, signature: string) => request<{ status: string; explanation?: { summary_vi: string; attention_fields: string[]; limitations: string[] }; model_version?: string; usage?: Record<string, number> }>(`/runs/${runId}/categories/${signature}/explanation`, { method: "POST" });
-export type ItemBucket = "merge" | "no_merge" | "review";
+export type ItemBucket = "merge" | "no_merge" | "review" | "review_pairs";
+export type PairCategory = { primary_group: string; subgroup: string; pair_count: number };
+export const getPairCategories = (runId: string) => request<PairCategory[]>(`/runs/${runId}/pair-categories`);
+export const decideReviewPair = (runId: string, pairId: string, decision: "merge" | "no_merge", revision: number) =>
+  request<{ pair_id: string; proposal_id: string | null; affected_record_count: number }>(
+    `/runs/${runId}/review-pairs/${pairId}/decision`, { method: "POST", body: JSON.stringify({ decision, revision }) });
 export function getResolutionItems(runId: string, bucket: ItemBucket, options: { offset?: number; limit?: number; origin?: string; primary_group?: string; subgroup?: string; signature_hash?: string } = {}) {
   const query = new URLSearchParams();
   Object.entries(options).forEach(([key, value]) => { if (value !== undefined) query.set(key, String(value)); });

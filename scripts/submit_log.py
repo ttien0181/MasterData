@@ -68,6 +68,17 @@ def _restore_pending(pending: Path) -> None:
 
 
 def main():
+    # Recover prompts from local Codex transcripts when a command hook was
+    # skipped. Run this before checking the server so logs are kept locally
+    # even when submission is not configured yet.
+    try:
+        from log_codex_sessions import collect_sessions
+        recovered = collect_sessions(log_dir=LOG_DIR)
+        if recovered:
+            print(f"[ai-log] Recovered {recovered} Codex prompt(s).", file=sys.stderr)
+    except Exception as exc:
+        print(f"[ai-log] Codex recovery skipped: {exc}", file=sys.stderr)
+
     if not SERVER_URL:
         print("[ai-log] AI_LOG_SERVER not set — skipping submission.", file=sys.stderr)
         sys.exit(0)

@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from masterone.api.auth import router as auth_router
 from masterone.api.mdm_resolution import router as mdm_resolution_router
 from masterone.api.mdm_runs import router as mdm_runs_router
+from masterone.api.mdm_uploads import router as mdm_uploads_router
 from masterone.api.routes import router
 from masterone.auth import models as auth_models  # noqa: F401 - registers auth tables
 from masterone.config import LOCAL_DEV_ORIGIN_REGEX, get_settings
@@ -23,7 +24,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     if settings.app_env == "production" and len(settings.auth_csrf_secret) < 32:
         raise RuntimeError("AUTH_CSRF_SECRET must be at least 32 characters in production")
-    engine, factory = create_database(settings.mdm_database_url)
+    engine, factory = create_database(settings.active_mdm_database_url)
     require_current(engine)
     app.state.engine = engine
     app.state.session_factory = factory
@@ -61,6 +62,7 @@ app.add_middleware(
 
 app.include_router(router, prefix="/api/v1")
 app.include_router(mdm_runs_router, prefix="/api/v1")
+app.include_router(mdm_uploads_router, prefix="/api/v1")
 app.include_router(mdm_resolution_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 
