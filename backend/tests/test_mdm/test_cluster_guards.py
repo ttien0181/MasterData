@@ -97,14 +97,14 @@ def test_no_negative_pairs_no_guard():
 
 # ── §21.3 Same-source Guard ────────────────────────────────────────────────────
 
-def test_same_source_guard_warns_on_two_crm_records():
+def test_same_source_guard_blocks_on_two_crm_records():
     r1 = _rec("f1", source="CRM")
     r2 = _rec("f2", source="CRM")
     violations = _guards(["f1"], ["f2"], [r1, r2])
     assert any(v.guard == "SAME_SOURCE_GUARD" for v in violations)
-    # WARN not BLOCK — steward may override
+    # §21.3: BLOCK — source declared unique_per_entity cannot have 2+ records
     same_src = [v for v in violations if v.guard == "SAME_SOURCE_GUARD"]
-    assert all(v.severity == "WARN" for v in same_src)
+    assert all(v.severity == "BLOCK" for v in same_src)
 
 
 def test_same_source_guard_passes_different_sources():

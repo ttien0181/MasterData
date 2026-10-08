@@ -50,10 +50,10 @@ def test_T21_phone_different_valid_no_primary_flag_is_DF_not_D():
     result = _score(r1, r2)
 
     assert _state(result, "phone") == "DF", "Phone khác nhau VALID không có primary/current → DF"
-    assert result["decision"] != "NON_MATCH"
+    assert result["decision"] != "NOT_MERGEABLE"
 
     # Không vào Group D vì DF không phải CF
-    # (pair sẽ là REVIEW hoặc MATCH_CANDIDATE tùy match_weight, nhưng nếu classify thì group != D)
+    # (pair sẽ là REVIEW hoặc MERGEABLE tùy match_weight, nhưng nếu classify thì group != D)
     # Tạo pair ở REVIEW để test classify
     pair = {"triage_status": "REVIEW", "triage_reason": result["reason"],
             "field_evidence": result["field_evidence"], "comparisons": result["comparisons"]}
@@ -183,8 +183,8 @@ def test_T28_gov_id_type_auto_detection():
     assert _infer_gov_id_type("0123456789") == "TAX_ID"
 
 
-def test_T28_same_type_gov_id_conflict_is_NON_MATCH():
-    """Cùng CCCD_12, cả hai VALID, khác giá trị → NON_MATCH với reason SAME_TYPE_GOV_ID_CONFLICT."""
+def test_T28_same_type_gov_id_conflict_is_NOT_MERGEABLE():
+    """Cùng CCCD_12, cả hai VALID, khác giá trị → NOT_MERGEABLE với reason SAME_TYPE_GOV_ID_CONFLICT."""
     nf1, _ = standardize({"name": "Nguyen Van X", "government_id": "123456789012",
                           "government_id_type": "CCCD_12"})
     nf2, _ = standardize({"name": "Nguyen Van X", "government_id": "999888777666",
@@ -194,7 +194,7 @@ def test_T28_same_type_gov_id_conflict_is_NON_MATCH():
     r2 = {"id": "h2", "external_id": "h2", "source_system": "ERP",
           "raw_fields": {}, "normalized_fields": nf2}
     result = score_pair(r1, r2, set())
-    assert result["decision"] == "NON_MATCH"
+    assert result["decision"] == "NOT_MERGEABLE"
     assert result["reason"] == "SAME_TYPE_GOV_ID_CONFLICT"
 
 
@@ -211,7 +211,7 @@ def test_T28_different_gov_id_types_is_NC():
     result = score_pair(r1, r2, set())
     gov_state = next(e["state"] for e in result["field_evidence"] if e["field"] == "government_id")
     assert gov_state == "NC", f"Khác loại giấy tờ → NC, got {gov_state}"
-    assert result["decision"] != "NON_MATCH", "Khác type gov_id không phải hard conflict"
+    assert result["decision"] != "NOT_MERGEABLE", "Khác type gov_id không phải hard conflict"
 
 
 # ─── Mục 5.4 — Address parsing ───────────────────────────────────────────────

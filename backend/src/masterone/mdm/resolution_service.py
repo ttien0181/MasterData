@@ -63,22 +63,53 @@ def run_pipeline(run_id: str, factory: sessionmaker, progress) -> None:
         task.status = "RUNNING"
         task.phase = "loading"
         task.updated_at = now_utc()
+        record_count = db.query(ResolutionRecord).filter_by(run_id=run_id).count()
+        run.status = "RUNNING"
+        run.phase = "loading"
+        policy_version = run.policy_version
+        db_url = db.get_bind().url.render_as_string(hide_password=False)
+        db.commit()
+
+    if record_count > 10000:
+        progress("blocking", 0, record_count)
+        with factory() as db:
+            negative_pairs: frozenset = frozenset(
+                tuple(sorted((p.left_record_id, p.right_record_id)))
+                for p in db.query(ResolutionPair).filter_by(run_id=run_id, user_decision="NON_MATCH").all()
+            )
+        from masterone.mdm.pipeline.stage_runner import StageRunner
+        runner = StageRunner(run_id=run_id, attempt_id=task.id, db_url=db_url)
+        computed = runner.run_all(records_raw=None, policy_version=policy_version, negative_pairs=negative_pairs, return_data=False)
+        
+        progress("persisting", record_count, record_count)
+        with factory.begin() as db:
+            run = db.get(ResolutionRun, run_id)
+            task = db.query(ResolutionTask).filter_by(run_id=run_id).one()
+            task.status = "COMPLETED"
+            task.phase = "completed"
+            task.processed_count = record_count
+            task.total_count = record_count
+            task.updated_at = now_utc()
+            run.status = "COMPLETED"
+            run.phase = "completed"
+            run.candidate_count = computed.get("candidate_count", 0)
+            run.insufficient_count = computed.get("insufficient_count", 0)
+            run.completed_at = now_utc()
+        return
+
+    with factory() as db:
         records = [{"id": item.id, "external_id": item.external_id, "source_system": item.source_system,
                     "entity_type": item.entity_type,
                     "raw_fields": item.raw_fields, "normalized_fields": item.normalized_fields,
                     "quality_flags": item.quality_flags}
                    for item in db.query(ResolutionRecord).filter_by(run_id=run_id).order_by(ResolutionRecord.id).all()]
-        # Load steward negative edges (§11.3) for this run
         negative_pairs: frozenset = frozenset(
             tuple(sorted((p.left_record_id, p.right_record_id)))
             for p in db.query(ResolutionPair).filter_by(run_id=run_id, user_decision="NON_MATCH").all()
         )
-        run.status = "RUNNING"
-        run.phase = "loading"
-        db.commit()
 
     progress("blocking", 0, len(records))
-    computed = _compute(records, run_id, run.policy_version, negative_pairs=negative_pairs)
+    computed = _compute(records, run_id, policy_version, negative_pairs=negative_pairs)
     progress("persisting", len(records), len(records))
     with factory.begin() as db:
         run = db.get(ResolutionRun, run_id)

@@ -34,7 +34,7 @@ def test_person_vs_org_is_hard_conflict():
     person = _make("p1", entity_type="PERSON", name="Nguyen Van An", phone="0912345678")
     org    = _make("o1", entity_type="ORGANIZATION", name="Nguyen Van An", phone="0912345678")
     r = _result(person, org)
-    assert r["decision"] == "NON_MATCH"
+    assert r["decision"] == "NOT_MERGEABLE"
     assert r["reason"] == "PERSON_ORG_MISMATCH"
 
 
@@ -42,21 +42,21 @@ def test_same_entity_type_not_blocked():
     p1 = _make("p1", entity_type="PERSON", name="Nguyen Van An", phone="0912345678")
     p2 = _make("p2", entity_type="PERSON", name="Nguyen Van An", phone="0912345678")
     r = _result(p1, p2)
-    assert r["decision"] != "NON_MATCH"
+    assert r["decision"] != "NOT_MERGEABLE"
 
 
 def test_unknown_entity_type_not_blocked():
     r1 = _make("r1", entity_type="UNKNOWN", name="Nguyen Van An", phone="0912345678")
     r2 = _make("r2", entity_type="UNKNOWN", name="Nguyen Van An", phone="0912345678")
     r = _result(r1, r2)
-    assert r["decision"] != "NON_MATCH"
+    assert r["decision"] != "NOT_MERGEABLE"
 
 
 def test_one_unknown_entity_type_not_blocked():
     p = _make("p1", entity_type="PERSON", name="Nguyen Van An", phone="0912345678")
     u = _make("u1", entity_type="UNKNOWN", name="Nguyen Van An", phone="0912345678")
     r = _result(p, u)
-    assert r["decision"] != "NON_MATCH"
+    assert r["decision"] != "NOT_MERGEABLE"
 
 
 # ── §11.2 Same-type gov_id conflict ──────────────────────────────────────────
@@ -71,7 +71,7 @@ def test_same_type_gov_id_different_is_hard_conflict():
     r2 = {"id": "h2", "external_id": "h2", "entity_type": "UNKNOWN",
           "source_system": "ERP", "raw_fields": {}, "normalized_fields": nf2, "quality_flags": []}
     r = _result(r1, r2)
-    assert r["decision"] == "NON_MATCH"
+    assert r["decision"] == "NOT_MERGEABLE"
     assert r["reason"] == "SAME_TYPE_GOV_ID_CONFLICT"
 
 
@@ -85,7 +85,7 @@ def test_different_gov_id_types_is_nc_not_hard_conflict():
     r2 = {"id": "i2", "entity_type": "UNKNOWN", "external_id": "i2",
           "source_system": "ERP", "raw_fields": {}, "normalized_fields": nf2, "quality_flags": []}
     r = _result(r1, r2)
-    assert r["decision"] != "NON_MATCH", "Different gov_id types → NC, not hard conflict"
+    assert r["decision"] != "NOT_MERGEABLE", "Different gov_id types → NC, not hard conflict"
 
 
 # ── §11.3 Negative edge ───────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ def test_negative_edge_blocks_merge():
     r2 = _make("n2", name="Nguyen Van An", phone="0912345678")
     neg = frozenset({tuple(sorted(("n1", "n2")))})
     r = _result(r1, r2, negative_pairs=neg)
-    assert r["decision"] == "NON_MATCH"
+    assert r["decision"] == "NOT_MERGEABLE"
     assert r["reason"] == "STEWARD_NEGATIVE_DECISION"
 
 
@@ -105,7 +105,7 @@ def test_negative_edge_not_applied_to_other_pair():
     r3 = _make("n3", name="Nguyen Van An", phone="0912345678")
     neg = frozenset({tuple(sorted(("n1", "n3")))})
     r = _result(r1, r2, negative_pairs=neg)
-    assert r["decision"] != "NON_MATCH"
+    assert r["decision"] != "NOT_MERGEABLE"
 
 
 def test_negative_edge_takes_priority_over_score():
@@ -114,7 +114,7 @@ def test_negative_edge_takes_priority_over_score():
     r2 = _make("x2", name="Nguyen Van An", phone="0912345678", email="an@test.com")
     neg = frozenset({tuple(sorted(("x1", "x2")))})
     r = _result(r1, r2, negative_pairs=neg)
-    assert r["decision"] == "NON_MATCH"
+    assert r["decision"] == "NOT_MERGEABLE"
     assert r["score"] == 0.0
 
 

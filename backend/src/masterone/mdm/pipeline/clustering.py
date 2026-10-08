@@ -3,7 +3,7 @@ from hashlib import sha256
 from masterone.mdm.pipeline.cluster_guards import has_blocking_violation, run_cluster_guards
 from masterone.mdm.pipeline.golden import build_golden
 
-MAX_CLUSTER_MEMBERS = 25
+MAX_CLUSTER_MEMBERS = 20
 
 
 def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_version: str,
@@ -23,7 +23,7 @@ def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_
     for pair in pairs:
         # A Group D name conflict pauses automatic closure; a steward may still
         # approve that review pair. Only explicit negative decisions block export.
-        if pair["decision"] in {"NOT_MERGEABLE", "NON_MATCH"} or pair.get("primary_group") == "D":
+        if pair["decision"] in {"NOT_MERGEABLE"} or pair.get("primary_group") == "D":
             blocked_links.add(tuple(sorted((pair["left_id"], pair["right_id"]))))
 
     accepted = []
@@ -32,8 +32,9 @@ def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_
     edge_order: list[dict] = []
     edge_seq: int = 0
 
-    match_edges = sorted((pair for pair in pairs if pair["decision"] == "MATCH_CANDIDATE"),
-                         key=lambda item: (-item["score"], item["left_id"], item["right_id"]))
+    # §23: sort by match_weight DESC, pair_id ASC
+    match_edges = sorted((pair for pair in pairs if pair["decision"] == "MERGEABLE"),
+                         key=lambda item: (-item["match_weight"], item["id"]))
     for pair in match_edges:
         left_root, right_root = find(pair["left_id"]), find(pair["right_id"])
         if left_root == right_root:
@@ -82,7 +83,7 @@ def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_
         if pair["decision"] == "REVIEW":
             pair["triage_status"] = "REVIEW"
             pair["triage_reason"] = pair["reason"]
-        elif pair["decision"] in {"NOT_MERGEABLE", "NON_MATCH", "INSUFFICIENT_EVIDENCE"}:
+        elif pair["decision"] in {"NOT_MERGEABLE", "INSUFFICIENT_EVIDENCE"}:
             pair["triage_status"] = pair["decision"]
             pair["triage_reason"] = pair["reason"]
 

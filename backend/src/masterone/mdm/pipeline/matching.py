@@ -16,7 +16,7 @@ from unicodedata import normalize
 
 from masterone.mdm.pipeline.evidence_floor import evaluate as _floor_evaluate
 from masterone.mdm.pipeline.hard_constraints import check_all as _hard_check
-from masterone.mdm.pipeline.policy_engine import apply_policy
+from masterone.mdm.pipeline.policy_engine import POLICY_FILE_VERSION, apply_policy
 from masterone.mdm.pipeline.standardization import parse_dob
 from rapidfuzz.distance import JaroWinkler, Levenshtein
 
@@ -24,6 +24,9 @@ FIELDS = ("name", "phone", "email", "address")
 OPTIONAL_FIELDS = ("dob", "government_id")
 POLICY_VERSION = "person-linh-v2-selective"
 CONFLICT_RULE_VERSION = "v3.1.0"
+
+# §8.1: frequency threshold for SHARED detection on phone/email
+SHARED_CONTACT_MIN_FREQ: int = 5
 
 # Signature field abbreviations (architecture §15.2)
 _SIG_ABBREV = {"name": "N", "phone": "P", "email": "E",
@@ -79,9 +82,9 @@ def _dob_state(nf_left: dict, nf_right: dict) -> tuple[str, float, str]:
             and pa["month"] != pa["day"]):
         return "CL", 0.8, "RULE"
 
-    # Same year but different day/month → CL (close, but not definitively CF)
+    # Same year but different day/month → CF (§4.4.4 dob line 7: DATE_DIFF)
     if pa["year"] == pb["year"]:
-        return "CL", 0.5, "RULE"
+        return "CF", 0.0, "RULE"
 
     # Different years → CF (both full-date VALID, different year is exclusion evidence)
     return "CF", 0.0, "RULE"
@@ -115,7 +118,7 @@ def _gov_id_state(nf_left: dict, nf_right: dict) -> tuple[str, float, str]:
         return "EX", 1.0, "RULE"
 
     # Same type, both VALID, different value → HARD_CONFLICT signal
-    # Caller will detect this and set decision=NON_MATCH. Return a sentinel.
+    # Caller will detect this and set decision=NOT_MERGEABLE. Return a sentinel.
     return "_HARD_CONFLICT", 0.0, "RULE"
 
 
@@ -153,6 +156,14 @@ def _name_state(left: dict, right: dict) -> tuple[str, float, list[str]]:
             return "NA", 1.0, ["NAME_ASCII_EQUIVALENT"]
         if sorted(a.split()) == sorted(b.split()):
             return "NX", 1.0, ["TOKEN_ORDER_VARIATION"]
+
+        # §4.4.4 name: different surname → CF regardless of overall similarity
+        parts_l = left.get("normalized_fields", {}).get("_name_parts", {})
+        parts_r = right.get("normalized_fields", {}).get("_name_parts", {})
+        surname_a = parts_l.get("surname", "")
+        surname_b = parts_r.get("surname", "")
+        if surname_a and surname_b and surname_a != surname_b:
+            return "CF", _name_similarity(a, b), ["SURNAME_MISMATCH"]
 
         similarity = _name_similarity(a, b)
         if similarity >= 0.88:
@@ -213,7 +224,7 @@ def _contact_state(field: str, left: dict, right: dict, frequencies: dict) -> tu
             elif {qa, qb} & {"SHARED", "PLACEHOLDER"}:
                 state, sim, tags = "SH", 0.0, []
             elif a == b:
-                if frequencies[field].get(a, 0) > 12:
+                if frequencies[field].get(a, 0) > SHARED_CONTACT_MIN_FREQ:
                     state, sim, tags = "SH", 1.0, []
                 else:
                     raw_a = (left.get("raw_fields", {}).get(field) or "").strip()
@@ -224,19 +235,25 @@ def _contact_state(field: str, left: dict, right: dict, frequencies: dict) -> tu
                         tag = {"phone": "PHONE_FORMAT_EQUIVALENT", "email": "EMAIL_CASE_EQUIVALENT"}[field]
                         state, sim, tags = "NX", 1.0, [tag]
             else:
-                # Phone/email are discrete: different values → DF with sim=0.0
-                # Using edit distance here is misleading (0384... vs 0385... look close but are different numbers)
+                # §8.1: CF requires cf_eligible metadata (valid_to, current,
+                # single_valued_reliable source) which is not yet in the data
+                # model. Default to DF until schema supports cf_eligible.
                 state, sim, tags = "DF", 0.0, []
 
             if state in ("EX", "NX"):
                 return state, sim, tags
-            if state == "SH" and best_state == "DF":
+            if state == "CF" and best_state in ("DF", "IV"):
+                best_state = "CF"
+                best_sim = sim
+                best_tags = tags
+            elif state == "SH" and best_state in ("DF", "IV"):
                 best_state = "SH"
                 best_sim = sim
-            elif state == "DF" and best_state == "DF" and sim > best_sim:
+            elif state == "DF" and best_state in ("DF", "IV") and sim > best_sim:
+                best_state = "DF"
                 best_sim = sim
-            elif state == "IV" and best_state not in ("EX", "NX", "SH", "DF"):
-                best_state = "IV"
+            elif state == "IV" and best_state == "IV":
+                pass
                 
     return best_state, best_sim, best_tags
 
@@ -399,6 +416,7 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
     ns, n_sim, n_tags = _name_state(left, right)
     evidence.append({"field": "name", "state": ns, "provenance": "RULE",
                      "similarity": round(n_sim, 4), "normalization_tags": n_tags,
+                     "is_hard_conflict": False,
                      "left": left["normalized_fields"].get("name", ""),
                      "right": right["normalized_fields"].get("name", "")})
 
@@ -406,6 +424,7 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
     ps, p_sim, p_tags = _contact_state("phone", left, right, frequencies)
     evidence.append({"field": "phone", "state": ps, "provenance": "RULE",
                      "similarity": round(p_sim, 4), "normalization_tags": p_tags,
+                     "is_hard_conflict": False,
                      "left": left["normalized_fields"].get("phone", ""),
                      "right": right["normalized_fields"].get("phone", "")})
 
@@ -413,6 +432,7 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
     es, e_sim, e_tags = _contact_state("email", left, right, frequencies)
     evidence.append({"field": "email", "state": es, "provenance": "RULE",
                      "similarity": round(e_sim, 4), "normalization_tags": e_tags,
+                     "is_hard_conflict": False,
                      "left": left["normalized_fields"].get("email", ""),
                      "right": right["normalized_fields"].get("email", "")})
 
@@ -420,6 +440,7 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
     dob_s, dob_sim, dob_prov = _dob_state(left["normalized_fields"], right["normalized_fields"])
     evidence.append({"field": "dob", "state": dob_s, "provenance": dob_prov,
                      "similarity": round(dob_sim, 4), "normalization_tags": [],
+                     "is_hard_conflict": False,
                      "left": left["normalized_fields"].get("dob", ""),
                      "right": right["normalized_fields"].get("dob", "")})
 
@@ -427,12 +448,14 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
     as_, a_sim, a_tags = _address_state(left, right)
     evidence.append({"field": "address", "state": as_, "provenance": "RULE",
                      "similarity": round(a_sim, 4), "normalization_tags": a_tags,
+                     "is_hard_conflict": False,
                      "left": left["normalized_fields"].get("address", ""),
                      "right": right["normalized_fields"].get("address", "")})
 
     # government_id
     evidence.append({"field": "government_id", "state": gov_state, "provenance": gov_prov,
                      "similarity": round(gov_sim, 4), "normalization_tags": [],
+                     "is_hard_conflict": False,
                      "left": left["normalized_fields"].get("government_id", ""),
                      "right": right["normalized_fields"].get("government_id", "")})
 
@@ -516,19 +539,20 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
             "decision_subgroup": None,
             "normalization_tags": norm_tags, "signature": signature,
             "policy_id": None, "policy_version": POLICY_VERSION,
+            "policy_file_version": POLICY_FILE_VERSION,
             "conflict_rule_version": CONFLICT_RULE_VERSION,
             "blocking_reasons": sorted(blocking_reasons),
             "triage_status": "INSUFFICIENT_EVIDENCE", "triage_reason": "NO_VALID_IDENTITY_ANCHOR",
         }
 
-    # ── Policy engine (§17) — gates MATCH_CANDIDATE ─────────────────────────
+    # ── Policy engine (§17) — gates MERGEABLE ─────────────────────────────
     pol_result = apply_policy(group, comparisons, weight, nf_left, nf_right)
 
     matched_subgroups  = pol_result.matched_subgroups
     decision_subgroup  = pol_result.decision_subgroup or subgroup
 
     if pol_result.eligible:
-        decision = "MATCH_CANDIDATE"
+        decision = "MERGEABLE"
         reason   = pol_result.policy_id
         policy_id = pol_result.policy_id
         triage_status = "AUTO_MERGE"
@@ -557,6 +581,7 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
         "signature": signature,
         "policy_id": policy_id,
         "policy_version": POLICY_VERSION,
+        "policy_file_version": POLICY_FILE_VERSION,
         "conflict_rule_version": CONFLICT_RULE_VERSION,
         "blocking_reasons": sorted(blocking_reasons),
         "triage_status": triage_status,
@@ -565,13 +590,13 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
 
 
 def _non_match(decision_type: str, reason: str, blocking_reasons: set[str]) -> dict:
-    """Return a hard NON_MATCH result (no field scoring needed)."""
+    """Return a hard NOT_MERGEABLE result (no field scoring needed)."""
     return {
         "score": 0.0,
         "match_weight": 0.0,
         "field_evidence": [],
         "comparisons": {},
-        "decision": "NON_MATCH",
+        "decision": "NOT_MERGEABLE",
         "reason": reason,
         "primary_group": None,
         "subgroup": None,
@@ -581,8 +606,9 @@ def _non_match(decision_type: str, reason: str, blocking_reasons: set[str]) -> d
         "signature": "",
         "policy_id": None,
         "policy_version": POLICY_VERSION,
+        "policy_file_version": POLICY_FILE_VERSION,
         "conflict_rule_version": CONFLICT_RULE_VERSION,
         "blocking_reasons": sorted(blocking_reasons),
-        "triage_status": "NON_MATCH",
+        "triage_status": "NOT_MERGEABLE",
         "triage_reason": reason,
     }

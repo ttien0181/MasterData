@@ -19,7 +19,7 @@ from dataclasses import dataclass
 _SOURCE_UNIQUE_KEYS: frozenset[str] = frozenset({"CRM", "ERP"})
 
 # Shared-value: fraction of edges that are phone/email SH or DF across the cluster
-_SHARED_VALUE_EDGE_RATIO = 0.6
+_SHARED_VALUE_EDGE_RATIO = 0.5
 
 # Anomaly thresholds
 _MAX_CLUSTER_SIZE     = 20
@@ -98,7 +98,7 @@ def _same_source_guard(records: list[dict]) -> GuardViolation | None:
             return GuardViolation(
                 guard="SAME_SOURCE_GUARD",
                 reason=f"CLUSTER_SOURCE_UNIQUE_CONFLICT_{src}",
-                severity="WARN",
+                severity="BLOCK",
             )
     return None
 

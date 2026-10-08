@@ -3,6 +3,8 @@
 from collections import defaultdict
 from itertools import combinations
 
+from masterone.mdm.pipeline.tfidf_blocking import tfidf_candidates
+
 
 def _ngrams(value: str, size: int = 3) -> set[str]:
     padded = f"  {value} "
@@ -78,5 +80,11 @@ def generate_candidates(records: list[dict], max_bucket_size: int = 60,
             continue
         for left, right in combinations(sorted(record_ids), 2):
             candidates[(left, right)].add(kind)
+
+    # TF-IDF pass (§STG-03-FR-006) — merge on top of rule-based candidates
+    tfidf = tfidf_candidates(records)
+    for pair, reasons in tfidf.items():
+        candidates[pair] |= reasons
+
     return dict(candidates)
 

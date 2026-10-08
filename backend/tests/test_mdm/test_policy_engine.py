@@ -24,21 +24,21 @@ def _score(r1, r2, reasons=None):
 # ── Group A subgroups ─────────────────────────────────────────────────────────
 
 def test_a1_name_phone_match_candidate():
-    """Name EX + Phone EX → A1_NAME_PHONE subgroup (weight ≥ 10.5 required for MATCH_CANDIDATE)."""
+    """Name EX + Phone EX → A1_NAME_PHONE subgroup (weight ≥ 10.5 required for MERGEABLE)."""
     r1 = _make("a1", name="Nguyen Van An", phone="0912345678")
     r2 = _make("a2", name="Nguyen Van An", phone="0912345678")
     r = _score(r1, r2)
     assert r["primary_group"] == "A"
     assert r["subgroup"] == "A1_NAME_PHONE"
     # With a single common phone, frequency-adjusted weight is typically < 10.5 → REVIEW
-    # MATCH_CANDIDATE requires weight ≥ 10.5 (§17) — rare-phone pairs will hit it
-    assert r["decision"] in ("MATCH_CANDIDATE", "REVIEW")
+    # MERGEABLE requires weight ≥ 10.5 (§17) — rare-phone pairs will hit it
+    assert r["decision"] in ("MERGEABLE", "REVIEW")
     assert "A1" in (r["matched_subgroups"] or []) or r["subgroup"] == "A1_NAME_PHONE"
     assert r["decision_subgroup"] is None or str(r["decision_subgroup"]).startswith(("A", "C", "D"))
 
 
 def test_a1_high_weight_is_match_candidate():
-    """A1 with rare phone (high frequency-adjusted weight) → MATCH_CANDIDATE."""
+    """A1 with rare phone (high frequency-adjusted weight) → MERGEABLE."""
     from masterone.mdm.pipeline.matching import score_pair
     from masterone.mdm.pipeline.standardization import standardize
     from collections import Counter
@@ -53,7 +53,7 @@ def test_a1_high_weight_is_match_candidate():
     assert r["subgroup"] == "A1_NAME_PHONE"
     # name EX (+2.0) + rare phone (+5.0) = 7.0 — still < 10.5 without extra signals
     # This test documents realistic weight; REVIEW is acceptable here
-    assert r["decision"] in ("MATCH_CANDIDATE", "REVIEW")
+    assert r["decision"] in ("MERGEABLE", "REVIEW")
 
 
 def test_a2_name_email_subgroup():
@@ -64,7 +64,7 @@ def test_a2_name_email_subgroup():
     assert r["primary_group"] == "A"
     assert r["subgroup"] == "A2_NAME_EMAIL"
     # weight ≥ 10.5 required; typical score without DOB/gov_id may not reach it
-    assert r["decision"] in ("MATCH_CANDIDATE", "REVIEW")
+    assert r["decision"] in ("MERGEABLE", "REVIEW")
 
 
 def test_a3_name_gov_id():
@@ -272,7 +272,7 @@ def test_triage_status_auto_merge_on_match_candidate():
     r1 = _make("m1", name="Nguyen Van An", phone="0912345678")
     r2 = _make("m2", name="Nguyen Van An", phone="0912345678")
     r = _score(r1, r2)
-    if r["decision"] == "MATCH_CANDIDATE":
+    if r["decision"] == "MERGEABLE":
         assert r["triage_status"] == "AUTO_MERGE"
     else:
         assert r["triage_status"] == "REVIEW"
@@ -281,7 +281,7 @@ def test_triage_status_auto_merge_on_match_candidate():
 def test_triage_status_non_match():
     from masterone.mdm.pipeline.matching import _non_match
     r = _non_match("test", "REASON", {"blk"})
-    assert r["triage_status"] == "NON_MATCH"
+    assert r["triage_status"] == "NOT_MERGEABLE"
     assert r["decision_subgroup"] is None
     assert r["matched_subgroups"] == []
 

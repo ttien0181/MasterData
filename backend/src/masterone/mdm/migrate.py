@@ -8,7 +8,7 @@ from alembic.config import Config
 
 from masterone.config import get_settings
 
-HEAD = "0019_upload_links"
+HEAD = "0020_phase5_entities_and_edges"
 
 
 def alembic_config(url: str, config_path: str | Path | None = None) -> Config:

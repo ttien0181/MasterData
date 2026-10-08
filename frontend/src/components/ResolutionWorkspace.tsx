@@ -15,11 +15,12 @@ import { runPhaseLabel, runStatusLabel, toSessionViewModel } from "@/lib/session
 import SessionsHub from "./SessionsHub";
 import AuditTrail from "./AuditTrail";
 import WorkspaceDrawer from "./WorkspaceDrawer";
+import PolicyAdmin from "./PolicyAdmin";
 
 function activeRunKey(userId: string) { return `masterone.resolution-run.v1.${userId}`; }
 const RUNS_PAGE_SIZE = 25;
 const ACTIVE_RUNS_PAGE_SIZE = 5;
-const stages: Stage[] = ["overview", "import", "auto", "review", "no_merge", "history", "audit"];
+const stages: Stage[] = ["overview", "import", "auto", "review", "no_merge", "history", "audit", "policy"];
 function readLocation() {
   const params = new URLSearchParams(window.location.search);
   const requestedStage = params.get("view") as Stage | null;
@@ -28,6 +29,7 @@ function readLocation() {
 function allowedStage(stage: Stage, user: AuthUser): Stage {
   if (stage === "import" && !can(user, "create_run")) return "overview";
   if (stage === "audit" && !can(user, "read_audit")) return "overview";
+  if (stage === "policy" && !can(user, "edit_policy") && !can(user, "simulate_policy")) return "overview";
   return stage;
 }
 function writeLocation(runId: string, stage: Stage, mode: "push" | "replace" = "push") {
@@ -430,6 +432,9 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
       {stage === "audit" && can(user, "read_audit") && (runId
         ? <AuditTrail key={runId} runId={runId} />
         : <div className="card empty-state"><b>Chưa chọn phiên</b><p>Mở một phiên từ Hub để xem các thao tác đã ghi nhận.</p></div>)}
+
+      {stage === "policy" && (can(user, "edit_policy") || can(user, "simulate_policy")) &&
+        <PolicyAdmin user={user} runId={runId || null} />}
 
       {["auto", "history"].includes(stage) && runId && <ResolutionFlow key={runId} user={user} runId={runId} stage={stage} onChanged={() => refreshOverview(runId)} notify={setMessage} />}
       {(stage === "review" || stage === "no_merge") && runId && <PairReviewFlow key={`${runId}:${stage}`} user={user} runId={runId} rejected={stage === "no_merge"} onChanged={() => refreshOverview(runId)} notify={setMessage} />}

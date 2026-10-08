@@ -56,5 +56,7 @@ class ResolutionWorker:
             try:
                 run_pipeline(run_id, self.factory,
                              lambda phase, done, total: self._progress(run_id, phase, done, total))
-            except Exception:
+            except Exception as e:
+                import logging
+                logging.exception("Pipeline failed with exception")
                 mark_failed(run_id, self.factory)

@@ -12,11 +12,13 @@ Returns a golden record dict with field provenance attached.
 
 from unicodedata import normalize
 
-# Source reliability priority (lower = more reliable) — §22
-SOURCE_PRIORITY: dict[str, int] = {"ERP": 0, "CRM": 1, "BILL": 2}
+# Source reliability priority (lower = more reliable) — §22: CRM > ERP > BILL
+SOURCE_PRIORITY: dict[str, int] = {"CRM": 0, "ERP": 1, "BILL": 2}
 
-# Fields included in the golden record
-FIELDS = ("name", "phone", "email", "address", "dob", "government_id")
+# Single-value fields in the golden record
+FIELDS = ("name", "address", "dob", "government_id")
+# Multi-value fields that collect all unique values from cluster members
+MULTI_VALUE_FIELDS = ("phone", "email")
 
 # Quality tiers — higher is better
 _QUALITY_TIER: dict[str, int] = {
@@ -110,5 +112,38 @@ def build_golden(member_ids: list[str], records_by_id: dict[str, dict]) -> dict:
                     "quality": q,
                     "provenance": "SURVIVORSHIP",
                 }
+
+    # §22: multi-valued phone/email — collect all unique VALID values from cluster
+    for mv_field in MULTI_VALUE_FIELDS:
+        collection_key = "phones" if mv_field == "phone" else "emails"
+        seen_values: set[str] = set()
+        collected: list[dict] = []
+        for rec in ordered:
+            nf = rec.get("normalized_fields", {})
+            items = nf.get(collection_key, [])
+            if not items and nf.get(mv_field):
+                items = [{"value": nf[mv_field],
+                          "quality": nf.get("_field_quality", {}).get(mv_field, "UNKNOWN")}]
+            if not items:
+                raw_val = (rec.get("raw_fields", {}).get(mv_field) or "").strip()
+                if raw_val:
+                    items = [{"value": raw_val, "quality": "UNKNOWN"}]
+            for item in items:
+                val = item.get("value", "")
+                q = item.get("quality", "UNKNOWN")
+                if val and q not in ("INVALID", "PLACEHOLDER", "SHARED") and val not in seen_values:
+                    seen_values.add(val)
+                    collected.append({
+                        "value": val,
+                        "source_record_id": rec["id"],
+                        "source_system": rec.get("source_system", ""),
+                        "quality": q,
+                    })
+        if collected:
+            fields[mv_field] = {
+                "values": collected,
+                "value": collected[0]["value"],
+                "provenance": "SURVIVORSHIP",
+            }
 
     return {"member_record_ids": sorted(member_ids), "fields": fields}

@@ -9,7 +9,7 @@ import SessionDock from "./SessionDock";
 import SessionStatusBar from "./SessionStatusBar";
 import { ShellIcon } from "./ShellIcons";
 
-export type Stage = "overview" | "import" | "auto" | "review" | "no_merge" | "history" | "audit";
+export type Stage = "overview" | "import" | "auto" | "review" | "no_merge" | "history" | "audit" | "policy";
 
 export default function AppShell({ stage, pendingCount, mergeCount, totalCount, runStatus, sessionLabel, activeRuns,
   activeTotal, activeStale, onOpenRun, user, onNavigate, onLogout, onOpenSessions, uploadPending, children }: {
@@ -34,12 +34,12 @@ export default function AppShell({ stage, pendingCount, mergeCount, totalCount, 
 
   return <div className={`app-shell ${legacyShell ? "legacy-shell" : ""}`}>
     <div className="shell-main">
-      <ShellTopBar currentLabel={{ overview: "Tổng quan", import: "Nạp dữ liệu", auto: "Tự động gộp", review: "Cần xem xét", no_merge: "Không gộp", history: "Lịch sử xuất", audit: "Audit" }[stage]}
+      <ShellTopBar currentLabel={{ overview: "Tổng quan", import: "Nạp dữ liệu", auto: "Tự động gộp", review: "Cần xem xét", no_merge: "Không gộp", history: "Lịch sử xuất", audit: "Audit", policy: "Chính sách" }[stage]}
         sessionLabel={sessionLabel} runStatus={runStatus} user={user} onLogout={onLogout} onOpenSessions={onOpenSessions} />
       <main className="shell-content">{children}</main>
     </div>
     <SessionDock stage={stage} pendingCount={pendingCount} mergeCount={mergeCount}
-      canReadAudit={can(user, "read_audit")} onNavigate={onNavigate} />
+      canReadAudit={can(user, "read_audit")} canEditPolicy={can(user, "edit_policy")} onNavigate={onNavigate} />
     <div className="workspace-orbit-actions" aria-label="Thao tác phiên">
       {can(user, "create_run") && <button className="workspace-orbit-button upload-orbit upload-open-button" type="button" aria-label="Nạp dữ liệu" title={uploadPending || "Nạp dữ liệu"} onClick={() => onNavigate("import")}><ShellIcon name="import" size={21} /><span>{uploadPending ? "Tiếp tục" : "Nạp"}</span>{uploadPending && <i className="upload-pending-dot" aria-label={uploadPending} />}</button>}
       <button className="workspace-orbit-button sessions-orbit sessions-open-button" type="button" aria-label="Lịch sử phiên" title="Lịch sử phiên" onClick={onOpenSessions}><ShellIcon name="history" size={21} /><span>Phiên</span></button>

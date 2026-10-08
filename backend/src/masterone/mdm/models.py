@@ -186,6 +186,13 @@ class ResolutionReviewCase(Base):
     triage_reason: Mapped[str] = mapped_column(String(80))
     status: Mapped[str] = mapped_column(String(24), default="OPEN")
     revision: Mapped[int] = mapped_column(Integer, default=1)
+    # TASK-6.2: four-eyes approval for Group D (§SVC-02-FR-006)
+    first_reviewer_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    first_decision: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    first_decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    second_reviewer_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    second_decision: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    second_decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ResolutionProposal(Base):
@@ -302,6 +309,114 @@ class ResolutionSplitEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
+
+
+# ── TASK-5.1: Persistent entities (§6.3) ─────────────────────────────────────
+
+class ResolutionEntity(Base):
+    __tablename__ = "mdm_resolution_entities"
+    __table_args__ = (
+        Index("ix_mdm_resolution_entities_run", "run_id"),
+        Index("ix_mdm_resolution_entities_status", "run_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    run_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_runs.id", ondelete="CASCADE"), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(16), default="ACTIVE")  # ACTIVE | SPLIT | MERGED
+    entity_type: Mapped[str] = mapped_column(String(16), default="UNKNOWN")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+
+class ResolutionEntityMember(Base):
+    __tablename__ = "mdm_resolution_entity_members"
+    __table_args__ = (
+        UniqueConstraint("entity_id", "record_id", name="uq_mdm_entity_member"),
+        Index("ix_mdm_entity_members_record", "record_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    entity_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_entities.id", ondelete="CASCADE"), index=True)
+    record_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_records.id"))
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    added_by: Mapped[str] = mapped_column(String(36), default="SYSTEM")  # "SYSTEM" | user_id
+
+
+class ResolutionEntityVersion(Base):
+    __tablename__ = "mdm_resolution_entity_versions"
+    __table_args__ = (
+        UniqueConstraint("entity_id", "version", name="uq_mdm_entity_version"),
+        Index("ix_mdm_entity_versions_entity", "entity_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    entity_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_entities.id", ondelete="CASCADE"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    golden_fields: Mapped[dict] = mapped_column(JSON)
+    changed_by: Mapped[str] = mapped_column(String(36), default="SYSTEM")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+# ── TASK-5.2: Negative edges table (§6.3) ────────────────────────────────────
+
+class ResolutionNegativeEdge(Base):
+    __tablename__ = "mdm_resolution_negative_edges"
+    __table_args__ = (
+        Index("ix_mdm_negative_edges_run", "run_id"),
+        Index("ix_mdm_negative_edges_pair", "run_id", "left_record_id", "right_record_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    run_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_runs.id", ondelete="CASCADE"), index=True)
+    left_record_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_records.id"))
+    right_record_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_records.id"))
+    created_by: Mapped[str] = mapped_column(String(36))  # user_id or "SYSTEM"
+    reason: Mapped[str] = mapped_column(String(32))  # STEWARD_REJECT | HARD_CONSTRAINT | SPLIT
+    active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+# ── TASK-5.3: Golden field values table (§6.3) ───────────────────────────────
+
+class ResolutionGoldenFieldValue(Base):
+    __tablename__ = "mdm_resolution_golden_field_values"
+    __table_args__ = (
+        Index("ix_mdm_golden_field_values_entity", "entity_id", "version"),
+        UniqueConstraint("entity_id", "version", "field_name", name="uq_mdm_golden_field"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    entity_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_entities.id", ondelete="CASCADE"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    field_name: Mapped[str] = mapped_column(String(64))
+    display_value: Mapped[str] = mapped_column(Text)
+    source_record_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # SOURCE_PRIORITY | STEWARD_OVERRIDE | QUALITY_TIER
+    provenance: Mapped[str] = mapped_column(String(24), default="SOURCE_PRIORITY")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+# ── TASK-8.1: Stage result persistence (§XC-RUN-001) ─────────────────────────
+
+class ResolutionStageResult(Base):
+    """One row per (run, attempt, stage) execution — records success, duration, metrics."""
+    __tablename__ = "mdm_resolution_stage_results"
+    __table_args__ = (
+        Index("ix_mdm_stage_results_run", "run_id", "attempt_id"),
+        UniqueConstraint("run_id", "attempt_id", "stage_name", name="uq_mdm_stage_result"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    run_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_runs.id", ondelete="CASCADE"), index=True)
+    attempt_id: Mapped[str] = mapped_column(String(80))
+    stage_name: Mapped[str] = mapped_column(String(24))  # PREPARE | NORMALIZE | ...
+    success: Mapped[bool] = mapped_column(default=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+    output_artifacts: Mapped[list] = mapped_column(JSON, default=list)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
 class LLMRequest(Base):

@@ -231,3 +231,29 @@ export const downloadResolutionSource = (runId: string) =>
 export const compareResolutionExport = (runId: string, exportId: string) =>
   request<{ source_count: number; output_count: number; source_sample: Record<string, string>[]; output_sample: Record<string, string>[] }>(
     `/runs/${runId}/exports/${exportId}/compare`);
+
+export type PolicySimulateDetail = {
+  pair_id: string;
+  primary_group: string;
+  current_decision: string;
+  new_decision: string;
+  changed: boolean;
+};
+export type PolicySimulateResult = {
+  total_pairs: number;
+  changed: number;
+  review_to_merge: number;
+  merge_to_review: number;
+  unchanged_merge: number;
+  unchanged_review: number;
+  details: PolicySimulateDetail[];
+  policy_file_version: string;
+};
+export const getPolicyYaml = () =>
+  request<{ yaml_content: string; version: string }>("/runs/policies/current");
+export const simulatePolicy = (runId: string, yamlContent: string) =>
+  request<PolicySimulateResult>("/runs/policies/simulate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ run_id: runId, policy_yaml: yamlContent }),
+  });

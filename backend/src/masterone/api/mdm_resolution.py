@@ -21,11 +21,15 @@ from masterone.auth.security import (
 )
 from masterone.mdm.benchmark import run_benchmark
 from masterone.mdm.pipeline.blocking import generate_candidates
+from masterone.mdm.pipeline.policy_engine import simulate_policy, POLICY_FILE_VERSION, _DEFAULT_YAML_PATH
 from masterone.config import get_settings
 from masterone.db.session import get_session
 from masterone.mdm.gemini_explanation import explain_cohort
 from masterone.mdm.models import (
     ResolutionAuditEvent,
+    ResolutionEntity,
+    ResolutionEntityMember,
+    ResolutionEntityVersion,
     ResolutionExplanation,
     ResolutionExport,
     ResolutionPair,
@@ -669,4 +673,144 @@ def run_benchmark_endpoint(
         "auto_merge": _metrics(result.auto_merge),
         "cluster": _metrics(result.cluster),
         "per_subgroup": {sg: _metrics(m) for sg, m in result.per_subgroup.items()},
+    }
+
+
+# ── §SVC-06 Policy simulate (TASK-6.4) ───────────────────────────────────────
+
+@router.get("/runs/policies/current")
+def get_current_policy(
+    auth: CurrentSession = Depends(require_capability("read")),
+):
+    """Return the active policy YAML content and version."""
+    try:
+        yaml_content = _DEFAULT_YAML_PATH.read_text(encoding="utf-8")
+    except Exception:
+        yaml_content = ""
+    return {"yaml_content": yaml_content, "version": POLICY_FILE_VERSION}
+
+
+class PolicySimulateRequest(BaseModel):
+    run_id: str = Field(..., description="ID của run cần simulate")
+    policy_yaml: str = Field(..., description="Nội dung YAML policy mới muốn test")
+
+
+@router.post("/policies/simulate")
+def policy_simulate(
+    request: PolicySimulateRequest,
+    db: Session = Depends(get_session),
+    auth: CurrentSession = Depends(require_capability("write")),
+):
+    """Simulate impact of a new policy YAML against an existing run's pairs.
+
+    Returns a diff: how many pairs would change decision.
+    POLICY_ADMIN role recommended; does NOT modify any data.
+    """
+    run = owned_run(db, request.run_id, auth.user.id)
+
+    db_pairs = db.query(ResolutionPair).filter_by(run_id=request.run_id).all()
+    if not db_pairs:
+        raise HTTPException(404, "Run không có pair nào để simulate")
+
+    pair_inputs = []
+    for p in db_pairs:
+        comparisons = {}
+        for ev in (p.field_evidence or []):
+            field = ev.get("field")
+            if field:
+                comparisons[field] = {"state": ev.get("state", "MI"),
+                                      "normalization_tags": ev.get("tags", [])}
+        pair_inputs.append({
+            "pair_id": p.id,
+            "primary_group": p.primary_group,
+            "match_weight": float(p.score or 0.0),
+            "comparisons": comparisons,
+            "nf_left": {},
+            "nf_right": {},
+            "current_decision": p.triage_status,
+        })
+
+    result = simulate_policy(pair_inputs, request.policy_yaml)
+
+    return {
+        "run_id": request.run_id,
+        "policy_yaml_length": len(request.policy_yaml),
+        "total_pairs": result.total_pairs,
+        "changed": result.changed,
+        "review_to_merge": result.review_to_merge,
+        "merge_to_review": result.merge_to_review,
+        "unchanged_merge": result.unchanged_merge,
+        "unchanged_review": result.unchanged_review,
+        "details": result.details[:100],  # cap at 100 items
+    }
+
+
+# ── §SVC-01 Entity view + history (TASK-9.1) ─────────────────────────────────
+
+@router.get("/{run_id}/entities/{entity_id}")
+def get_entity(
+    run_id: str,
+    entity_id: str,
+    db: Session = Depends(get_session),
+    auth: CurrentSession = Depends(require_capability("read")),
+):
+    """Return entity detail: members + latest golden fields."""
+    owned_run(db, run_id, auth.user.id)
+    entity = db.query(ResolutionEntity).filter_by(id=entity_id, run_id=run_id).first()
+    if entity is None:
+        raise HTTPException(404, "Entity không tìm thấy")
+
+    members = db.query(ResolutionEntityMember).filter_by(entity_id=entity_id).all()
+    member_ids = [m.record_id for m in members]
+
+    latest_version = db.query(ResolutionEntityVersion).filter_by(
+        entity_id=entity_id, version=entity.version
+    ).first()
+
+    return {
+        "entity_id": entity_id,
+        "run_id": run_id,
+        "status": entity.status,
+        "entity_type": entity.entity_type,
+        "version": entity.version,
+        "member_record_ids": member_ids,
+        "golden_fields": latest_version.golden_fields if latest_version else {},
+        "created_at": entity.created_at.isoformat() if entity.created_at else None,
+        "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
+    }
+
+
+@router.get("/{run_id}/entities/{entity_id}/history")
+def get_entity_history(
+    run_id: str,
+    entity_id: str,
+    db: Session = Depends(get_session),
+    auth: CurrentSession = Depends(require_capability("read")),
+):
+    """Return entity version history timeline."""
+    owned_run(db, run_id, auth.user.id)
+    entity = db.query(ResolutionEntity).filter_by(id=entity_id, run_id=run_id).first()
+    if entity is None:
+        raise HTTPException(404, "Entity không tìm thấy")
+
+    versions = (
+        db.query(ResolutionEntityVersion)
+        .filter_by(entity_id=entity_id)
+        .order_by(ResolutionEntityVersion.version)
+        .all()
+    )
+
+    return {
+        "entity_id": entity_id,
+        "run_id": run_id,
+        "current_version": entity.version,
+        "history": [
+            {
+                "version": v.version,
+                "changed_by": v.changed_by,
+                "golden_fields": v.golden_fields,
+                "created_at": v.created_at.isoformat() if v.created_at else None,
+            }
+            for v in versions
+        ],
     }

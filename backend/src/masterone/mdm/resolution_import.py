@@ -31,8 +31,23 @@ LINH_COLUMNS = {"record_id", "source", "name", "phone", "email", "address"}
 LEGACY_COLUMNS = {"id", "source_system", "full_name"}
 LEGACY_FIELDS = {"full_name": "name", "phone_number": "phone",
                  "email_address": "email", "raw_address": "address"}
-ALLOWED_SOURCES = {"CRM", "ERP", "BILL"}
-CORE_RAW_FIELDS = {"name", "phone", "email", "address", "dob", "government_id"}
+CRM_COLUMNS = {"contact_id", "source_system", "contact_name"}
+CRM_FIELDS = {"contact_name": "name", "mobile": "phone", 
+              "email": "email", "mailing_address": "address",
+              "birth_date": "dob", "government_id": "government_id",
+              "government_id_type": "government_id_type"}
+BILL_COLUMNS = {"debtor_code", "source_system", "legal_name"}
+BILL_FIELDS = {"legal_name": "name", "contact_number": "phone",
+               "email": "email", "invoice_address": "address",
+               "dob": "dob", "government_id": "government_id",
+               "government_id_type": "government_id_type"}
+ERP_COLUMNS = {"MA_KH", "source_system", "HO_TEN"}
+ERP_FIELDS = {"HO_TEN": "name", "DIEN_THOAI": "phone",
+              "email": "email", "DIA_CHI": "address",
+              "NGAY_SINH": "dob", "government_id": "government_id",
+              "government_id_type": "government_id_type"}
+ALLOWED_SOURCES = {"CRM", "ERP", "BILL", "CSV"}
+CORE_RAW_FIELDS = {"name", "phone", "email", "address", "dob", "government_id", "government_id_type"}
 
 
 @dataclass(frozen=True)
@@ -46,18 +61,29 @@ class ParsedFile:
     raw_bytes: bytes
 
 
-def _validate_headers(filename: str, fieldnames: list[str] | None) -> tuple[set[str], bool, list[str]]:
+def _validate_headers(filename: str, fieldnames: list[str] | None) -> tuple[set[str], str, list[str]]:
     headers = set(fieldnames or [])
-    is_linh_file = LINH_COLUMNS <= headers
+    schema_type = ""
+    if LINH_COLUMNS <= headers:
+        schema_type = "LINH"
+    elif CRM_COLUMNS <= headers:
+        schema_type = "CRM"
+    elif BILL_COLUMNS <= headers:
+        schema_type = "BILL"
+    elif ERP_COLUMNS <= headers:
+        schema_type = "ERP"
+    elif LEGACY_COLUMNS <= headers:
+        schema_type = "LEGACY"
+
     if (not filename.lower().endswith(".csv") or "pairs.csv" in filename.lower()
-            or not (is_linh_file or LEGACY_COLUMNS <= headers)):
+            or not schema_type):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
-            f"{filename} cần các cột {', '.join(sorted(LINH_COLUMNS))}",
+            f"{filename} cần các cột {', '.join(sorted(LINH_COLUMNS))} hoặc cấu trúc chuẩn tương đương",
         )
-    reserved = {"record_id", "id", "source", "source_system"} | CORE_RAW_FIELDS | {"entity_id"}
+    reserved = {"record_id", "id", "contact_id", "debtor_code", "MA_KH", "source", "source_system"} | CORE_RAW_FIELDS | {"entity_id"}
     extra_columns = [column for column in (fieldnames or []) if column not in reserved]
-    return headers, is_linh_file, extra_columns
+    return headers, schema_type, extra_columns
 
 
 @contextmanager
@@ -65,9 +91,16 @@ def _csv_reader(stream: BinaryIO, filename: str):
     stream.seek(0)
     text = io.TextIOWrapper(stream, encoding="utf-8-sig", newline="")
     try:
-        reader = csv.DictReader(text)
-        headers, is_linh_file, extra_columns = _validate_headers(filename, reader.fieldnames)
-        yield reader, headers, is_linh_file, extra_columns
+        sample = text.read(4096)
+        text.seek(0)
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+        except csv.Error:
+            dialect = csv.excel
+            
+        reader = csv.DictReader(text, dialect=dialect)
+        headers, schema_type, extra_columns = _validate_headers(filename, reader.fieldnames)
+        yield reader, headers, schema_type, extra_columns
     except UnicodeDecodeError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"{filename} phải dùng UTF-8") from exc
     except csv.Error as exc:
@@ -81,26 +114,58 @@ def _csv_reader(stream: BinaryIO, filename: str):
         stream.seek(0)
 
 
-def _normalized_row(filename: str, line: int, source_row: dict, is_linh_file: bool,
+def _normalized_row(filename: str, line: int, source_row: dict, schema_type: str,
                     extra_columns: list[str]) -> dict:
     if None in source_row or any(value is None for value in source_row.values()):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"{filename} sai số cột ở dòng {line}")
-    external_id = (source_row.get("record_id" if is_linh_file else "id") or "").strip()
-    source = (source_row.get("source" if is_linh_file else "source_system") or "").strip().upper()
-    name = (source_row.get("name" if is_linh_file else "full_name") or "").strip()
+        
+    if schema_type == "LINH":
+        external_id = source_row.get("record_id")
+        source = source_row.get("source")
+        name = source_row.get("name")
+    elif schema_type == "CRM":
+        external_id = source_row.get("contact_id")
+        source = source_row.get("source_system")
+        name = source_row.get("contact_name")
+    elif schema_type == "BILL":
+        external_id = source_row.get("debtor_code")
+        source = source_row.get("source_system")
+        name = source_row.get("legal_name")
+    elif schema_type == "ERP":
+        external_id = source_row.get("MA_KH")
+        source = source_row.get("source_system")
+        name = source_row.get("HO_TEN")
+    else:
+        external_id = source_row.get("id")
+        source = source_row.get("source_system")
+        name = source_row.get("full_name")
+
+    external_id = (external_id or "").strip()
+    source = (source or "").strip().upper()
+    name = (name or "").strip()
     entity_type = (source_row.get("entity_type") or "PERSON").strip().upper()
     if not external_id or not name or source not in ALLOWED_SOURCES:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
                             f"{filename} có dữ liệu bắt buộc sai ở dòng {line}")
 
-    if is_linh_file:
+    if schema_type == "LINH":
         raw = {field: (source_row.get(field) or "").strip() for field in ("name", "phone", "email", "address")}
-        for optional in ("dob", "government_id"):
+        for optional in ("dob", "government_id", "government_id_type"):
             if optional in source_row:
                 raw[optional] = (source_row.get(optional) or "").strip()
+    elif schema_type == "CRM":
+        raw = {target: (source_row.get(column) or "").strip()
+               for column, target in CRM_FIELDS.items() if column in source_row}
+    elif schema_type == "BILL":
+        raw = {target: (source_row.get(column) or "").strip()
+               for column, target in BILL_FIELDS.items() if column in source_row}
+    elif schema_type == "ERP":
+        raw = {target: (source_row.get(column) or "").strip()
+               for column, target in ERP_FIELDS.items() if column in source_row}
     else:
         raw = {target: (source_row.get(column) or "").strip()
-               for column, target in LEGACY_FIELDS.items()}
+               for column, target in LEGACY_FIELDS.items() if column in source_row}
+               
     return {
         "external_id": external_id,
         "source_system": source,
@@ -112,9 +177,9 @@ def _normalized_row(filename: str, line: int, source_row: dict, is_linh_file: bo
 
 
 def _iter_normalized(stream: BinaryIO, filename: str) -> Iterator[dict]:
-    with _csv_reader(stream, filename) as (reader, _headers, is_linh_file, extra_columns):
+    with _csv_reader(stream, filename) as (reader, _headers, schema_type, extra_columns):
         for line, source_row in enumerate(reader, start=2):
-            yield _normalized_row(filename, line, source_row, is_linh_file, extra_columns)
+            yield _normalized_row(filename, line, source_row, schema_type, extra_columns)
 
 
 async def parse_upload(upload: UploadFile) -> ParsedFile:

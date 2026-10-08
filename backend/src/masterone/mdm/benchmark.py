@@ -116,7 +116,7 @@ def compute_pair_metrics(
     positive_decisions: frozenset[str] | None = None,
 ) -> PairMetrics:
     if positive_decisions is None:
-        positive_decisions = frozenset({"MATCH_CANDIDATE"})
+        positive_decisions = frozenset({"MERGEABLE", "MATCH_CANDIDATE"})
 
     tp = fp = fn = tn = 0
     scored_keys = {_pair_key(p) for p in pairs}
@@ -215,7 +215,7 @@ def compute_per_subgroup_metrics(
     positive_decisions: frozenset[str] | None = None,
 ) -> dict[str, PairMetrics]:
     if positive_decisions is None:
-        positive_decisions = frozenset({"MATCH_CANDIDATE"})
+        positive_decisions = frozenset({"MERGEABLE", "MATCH_CANDIDATE"})
 
     subgroup_pairs: dict[str, list[dict]] = defaultdict(list)
     for pair in pairs:

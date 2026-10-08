@@ -69,7 +69,7 @@ def test_T3_similar_name_no_phone_no_auto_merge():
     r1 = _make("t3a", name="Nguyen Van An",  address="10 Nguyen Trai Ha Noi")
     r2 = _make("t3b", name="Nguyen Van Anh", address="10 Nguyen Trai Ha Noi")
     result = _score(r1, r2, {"name_gram"})
-    assert result["decision"] != "MATCH_CANDIDATE", "T3: similar name + address only → no auto merge"
+    assert result["decision"] != "MERGEABLE", "T3: similar name + address only → no auto merge"
 
 
 # ── T4: Sinh đôi — same phone+DOB+address but different names ────────────────
@@ -82,7 +82,7 @@ def test_T4_twins_different_name_no_auto_merge():
                address="5 Tran Phu Da Nang")
     result = _score(r1, r2, {"exact_phone"})
     # name CF (very different) → Group D → no auto merge
-    assert result["decision"] != "MATCH_CANDIDATE", "T4: twins → must not auto merge"
+    assert result["decision"] != "MERGEABLE", "T4: twins → must not auto merge"
 
 
 # ── T5: Shared phone (family/shared) ─────────────────────────────────────────
@@ -101,8 +101,8 @@ def test_T5_shared_phone_not_strong_anchor():
     result = _score(r1, r2)
     phone_s = _state(result, "phone")
     assert phone_s == "SH", f"T5: shared phone → SH, got {phone_s}"
-    # SH is not a strong anchor → cannot be MATCH_CANDIDATE without other anchors
-    assert result["decision"] != "MATCH_CANDIDATE", "T5: SH phone → not auto match"
+    # SH is not a strong anchor → cannot be MERGEABLE without other anchors
+    assert result["decision"] != "MERGEABLE", "T5: SH phone → not auto match"
 
 
 # ── T6: CMND 9 vs CCCD 12 ────────────────────────────────────────────────────
@@ -120,13 +120,13 @@ def test_T6_cmnd_vs_cccd_is_NC_not_conflict():
     result = _score(r1, r2)
     gov_s = _state(result, "government_id")
     assert gov_s == "NC", f"T6: CMND vs CCCD → NC, got {gov_s}"
-    assert result["decision"] != "NON_MATCH", "T6: different gov_id types → not NON_MATCH"
+    assert result["decision"] != "NOT_MERGEABLE", "T6: different gov_id types → not NOT_MERGEABLE"
 
 
 # ── T7: Two different valid CCCD 12 ──────────────────────────────────────────
 
-def test_T7_two_different_cccd_is_NON_MATCH():
-    """Hai CCCD 12 khác nhau, cả hai valid → NON_MATCH (hard constraint §11.2)."""
+def test_T7_two_different_cccd_is_NOT_MERGEABLE():
+    """Hai CCCD 12 khác nhau, cả hai valid → NOT_MERGEABLE (hard constraint §11.2)."""
     nf1, _ = standardize({"name": "X", "government_id": "123456789012"})
     nf1["government_id_type"] = "CCCD_12"
     nf1["_field_quality"] = {"government_id": "VALID"}
@@ -138,7 +138,7 @@ def test_T7_two_different_cccd_is_NON_MATCH():
     r2 = {"id": "t7b", "external_id": "t7b", "source_system": "ERP",
           "entity_type": "UNKNOWN", "raw_fields": {}, "normalized_fields": nf2, "quality_flags": []}
     result = _score(r1, r2)
-    assert result["decision"] == "NON_MATCH", "T7: conflicting CCCD → NON_MATCH"
+    assert result["decision"] == "NOT_MERGEABLE", "T7: conflicting CCCD → NOT_MERGEABLE"
     assert result["reason"] == "SAME_TYPE_GOV_ID_CONFLICT"
 
 
@@ -177,7 +177,7 @@ def test_T10_placeholder_phone_not_anchor():
     phone_s = _state(result, "phone")
     # Placeholder/shared phone must be SH or IV, not EX/NX
     assert phone_s in ("SH", "IV", "MI"), f"T10: placeholder phone → SH/IV/MI, got {phone_s}"
-    assert result["decision"] != "MATCH_CANDIDATE", "T10: placeholder phone → not anchor → no auto merge"
+    assert result["decision"] != "MERGEABLE", "T10: placeholder phone → not anchor → no auto merge"
 
 
 # ── T11: Address old/new admin form ──────────────────────────────────────────
@@ -253,9 +253,9 @@ def test_T14_deterministic_edge_order_one_edge_blocked():
         {"id": "C", "source_system": "CSV", "normalized_fields": {}, "raw_fields": {}, "external_id": "C"},
     ]
     pairs = [
-        _make_scored("A", "B", "MATCH_CANDIDATE", score=8.0),
-        _make_scored("B", "C", "MATCH_CANDIDATE", score=7.0),
-        _make_scored("A", "C", "NON_MATCH",       score=0.0, group=None, subgroup=None),
+        _make_scored("A", "B", "MERGEABLE", score=8.0),
+        _make_scored("B", "C", "MERGEABLE", score=7.0),
+        _make_scored("A", "C", "NOT_MERGEABLE",       score=0.0, group=None, subgroup=None),
     ]
 
     result = build_proposals(records, pairs, "run1", "v1")
@@ -274,11 +274,11 @@ def test_T15_negative_edge_rejects_stale_pair():
     r2 = _make("t15b", name="Nguyen Van An", phone="0912345678")
     # Score without negative edge
     r = _score(r1, r2)
-    assert r["decision"] != "NON_MATCH"
+    assert r["decision"] != "NOT_MERGEABLE"
     # Score with negative edge (new steward decision)
     neg = frozenset({tuple(sorted(("t15a", "t15b")))})
     r2_neg = score_pair(r1, r2, {"name_gram"}, negative_pairs=neg)
-    assert r2_neg["decision"] == "NON_MATCH", "T15: negative edge → NON_MATCH"
+    assert r2_neg["decision"] == "NOT_MERGEABLE", "T15: negative edge → NOT_MERGEABLE"
     assert r2_neg["reason"] == "STEWARD_NEGATIVE_DECISION"
 
 
@@ -313,7 +313,7 @@ def test_T17_selective_unmerge_keeps_correct_merge():
 # ── T18: LLM evidence never enables auto merge ───────────────────────────────
 
 def test_T18_llm_evidence_never_enables_auto_merge():
-    """allow_llm_evidence=False (default) — LLM provenance cannot trigger MATCH_CANDIDATE."""
+    """allow_llm_evidence=False (default) — LLM provenance cannot trigger MERGEABLE."""
     from masterone.mdm.pipeline.policy_engine import POLICIES
     for policy_id, policy in POLICIES.items():
         assert policy.allow_llm_evidence is False, \
@@ -323,11 +323,11 @@ def test_T18_llm_evidence_never_enables_auto_merge():
 # ── T19: PERSON vs ORGANIZATION ──────────────────────────────────────────────
 
 def test_T19_person_vs_org_hard_conflict():
-    """PERSON vs ORGANIZATION → NON_MATCH (§11.1 hard constraint)."""
+    """PERSON vs ORGANIZATION → NOT_MERGEABLE (§11.1 hard constraint)."""
     r1 = _make("t19a", entity_type="PERSON",       name="Nguyen Van An", phone="0912345678")
     r2 = _make("t19b", entity_type="ORGANIZATION", name="Nguyen Van An", phone="0912345678")
     result = _score(r1, r2)
-    assert result["decision"] == "NON_MATCH", "T19: PERSON vs ORG → NON_MATCH"
+    assert result["decision"] == "NOT_MERGEABLE", "T19: PERSON vs ORG → NOT_MERGEABLE"
     assert result["reason"] == "PERSON_ORG_MISMATCH"
 
 

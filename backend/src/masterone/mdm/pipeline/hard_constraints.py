@@ -1,6 +1,6 @@
 """Hard Constraints — always run before grouping (architecture §11).
 
-Returns NON_MATCH immediately when any hard constraint fires.
+Returns NOT_MERGEABLE immediately when any hard constraint fires.
 Hard constraints cannot be overridden by score or policy.
 
 §11.1  PERSON vs ORGANIZATION         → HARD_CONFLICT

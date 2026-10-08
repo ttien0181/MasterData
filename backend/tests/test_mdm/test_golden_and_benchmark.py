@@ -40,14 +40,14 @@ def _rec(rid, source="CRM", name=None, phone=None, email=None, gov_id=None,
     }
 
 
-def _pair(pid, lid, rid, decision="MATCH_CANDIDATE", score=6.0,
+def _pair(pid, lid, rid, decision="MERGEABLE", score=6.0,
           subgroup="A1_NAME_PHONE", triage_status=None):
     return {
         "id": pid, "left_id": lid, "right_id": rid,
         "decision": decision, "score": score,
-        "reason": subgroup, "primary_group": "A" if decision == "MATCH_CANDIDATE" else None,
+        "reason": subgroup, "primary_group": "A" if decision == "MERGEABLE" else None,
         "subgroup": subgroup,
-        "triage_status": triage_status or ("AUTO_MERGE" if decision == "MATCH_CANDIDATE" else "REVIEW"),
+        "triage_status": triage_status or ("AUTO_MERGE" if decision == "MERGEABLE" else "REVIEW"),
         "triage_reason": "test",
         "comparisons": {"phone": {"state": "EX"}, "name": {"state": "EX"},
                         "email": {"state": "MI"}, "dob": {"state": "MI"},
@@ -60,23 +60,27 @@ def _pair(pid, lid, rid, decision="MATCH_CANDIDATE", score=6.0,
 
 # ── §22 Golden Record survivorship ───────────────────────────────────────────
 
-def test_golden_prefers_erp_over_crm():
-    """ERP has higher source reliability than CRM → ERP value wins."""
+def test_golden_prefers_crm_over_erp():
+    """CRM has higher source reliability than ERP (§22) → CRM value wins."""
     r_crm = _rec("crm1", source="CRM", name="Nguyen Van An")
     r_erp = _rec("erp1", source="ERP", name="Nguyễn Văn An")
     by_id = {"crm1": r_crm, "erp1": r_erp}
     golden = build_golden(["crm1", "erp1"], by_id)
-    assert golden["fields"]["name"]["source_system"] == "ERP"
+    assert golden["fields"]["name"]["source_system"] == "CRM"
     assert golden["fields"]["name"]["provenance"] == "SURVIVORSHIP"
 
 
-def test_golden_falls_back_to_crm_when_erp_missing():
-    """If ERP has no value for a field, fall back to CRM."""
+def test_golden_multi_value_phone_collected():
+    """Phone/email are multi-valued — all unique values collected from cluster."""
     r_crm = _rec("crm2", source="CRM", phone="0912345678")
-    r_erp = _rec("erp2", source="ERP")   # no phone
+    r_erp = _rec("erp2", source="ERP", phone="0987654321")
     by_id = {"crm2": r_crm, "erp2": r_erp}
     golden = build_golden(["crm2", "erp2"], by_id)
-    assert golden["fields"]["phone"]["source_system"] == "CRM"
+    phone_values = {v["value"] for v in golden["fields"]["phone"]["values"]}
+    assert "0912345678" in phone_values
+    assert "0987654321" in phone_values
+    # Primary value comes from CRM (higher source priority)
+    assert golden["fields"]["phone"]["value"] == "0912345678"
 
 
 def test_golden_steward_override_wins():
@@ -129,7 +133,7 @@ def test_golden_empty_cluster_returns_empty_fields():
 def test_edge_order_present_in_proposal():
     """Accepted merge edges are recorded in proposal's edge_order list."""
     records = [_rec("e1"), _rec("e2")]
-    pairs = [_pair("p1", "e1", "e2", decision="MATCH_CANDIDATE", score=7.0)]
+    pairs = [_pair("p1", "e1", "e2", decision="MERGEABLE", score=7.0)]
     result = build_proposals(records, pairs, "run_eo", "v1")
     for prop in result["proposals"]:
         assert "edge_order" in prop, "proposal must have edge_order"
@@ -187,7 +191,7 @@ def test_compute_candidate_metrics_partial_recall():
 
 def test_compute_pair_metrics_perfect():
     gt = frozenset({("a", "b")})
-    pairs = [_pair("p1", "a", "b", decision="MATCH_CANDIDATE")]
+    pairs = [_pair("p1", "a", "b", decision="MERGEABLE")]
     m = compute_pair_metrics(pairs, gt)
     assert m.precision == 1.0
     assert m.recall == 1.0
@@ -197,7 +201,7 @@ def test_compute_pair_metrics_perfect():
 
 def test_compute_pair_metrics_false_positive():
     gt = frozenset()
-    pairs = [_pair("p1", "x", "y", decision="MATCH_CANDIDATE")]
+    pairs = [_pair("p1", "x", "y", decision="MERGEABLE")]
     m = compute_pair_metrics(pairs, gt)
     assert m.fp == 1
     assert m.precision == 0.0
@@ -214,7 +218,7 @@ def test_compute_pair_metrics_false_negative():
 def test_compute_auto_merge_metrics():
     gt = frozenset({("a", "b"), ("c", "d")})
     pairs = [
-        _pair("p1", "a", "b", decision="MATCH_CANDIDATE", triage_status="AUTO_MERGE"),
+        _pair("p1", "a", "b", decision="MERGEABLE", triage_status="AUTO_MERGE"),
         _pair("p2", "c", "d", decision="REVIEW",          triage_status="REVIEW"),
     ]
     m = compute_auto_merge_metrics(pairs, gt)
@@ -263,7 +267,7 @@ def test_run_benchmark_end_to_end():
         _rec("r3", benchmark_entity_id="E2"),
     ]
     candidates = {("r1", "r2"): set()}
-    pairs = [_pair("p1", "r1", "r2", decision="MATCH_CANDIDATE", triage_status="AUTO_MERGE")]
+    pairs = [_pair("p1", "r1", "r2", decision="MERGEABLE", triage_status="AUTO_MERGE")]
     proposals = [{"member_record_ids": ["r1", "r2"]}]
     result = run_benchmark(records, candidates, pairs, proposals)
     assert isinstance(result, BenchmarkResult)

@@ -1,7 +1,7 @@
 """Evidence Floor — pair must clear this before grouping (architecture §12).
 
 A pair that fails the floor gets decision=INSUFFICIENT_EVIDENCE and is not
-assigned to any group. It is not a NON_MATCH — it just lacks enough signal
+assigned to any group. It is not a NOT_MERGEABLE — it just lacks enough signal
 to classify confidently.
 
 §12.1 Strong anchors (configurable):
@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 # Default thresholds — can be overridden by policy config
-W_MIN: float = 1.0
+W_MIN: float = 0.0
 MIN_VALID_ANCHORS: int = 1
 
 _STRONG_ANCHOR_STATES = frozenset({"EX", "NX"})

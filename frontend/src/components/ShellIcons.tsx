@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-export type ShellIconName = "menu" | "close" | "expand" | "collapse" | "overview" | "import" | "review" | "auto" | "no_merge" | "history" | "audit" | "chevron" | "logout" | "file" | "check" | "warning" | "replace" | "search";
+export type ShellIconName = "menu" | "close" | "expand" | "collapse" | "overview" | "import" | "review" | "auto" | "no_merge" | "history" | "audit" | "chevron" | "logout" | "file" | "check" | "warning" | "replace" | "search" | "policy";
 
 export function ShellIcon({ name, size = 18 }: { name: ShellIconName; size?: number }) {
   const paths: Record<ShellIconName, ReactNode> = {
@@ -20,6 +20,7 @@ export function ShellIcon({ name, size = 18 }: { name: ShellIconName; size?: num
     auto: <><path d="M3 6h7l4 6 4-6h3M3 18h7l4-6 4 6h3" /><path d="m18 3 3 3-3 3m0 6 3 3-3 3" /></>,
     history: <><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5m4-1v5l3 2" /></>,
     audit: <><path d="M8 4h10a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><path d="M8 3h6v4H8zM9 12h7m-7 4h7" /><path d="m7 12 1 1 2-2m-3 5 1 1 2-2" /></>,
+    policy: <><path d="M12 2a5 5 0 0 1 5 5v2H7V7a5 5 0 0 1 5-5z" /><rect x="3" y="9" width="18" height="13" rx="2" /><path d="M12 14v4m-2-2h4" /></>,
     chevron: <path d="m9 18 6-6-6-6" />,
     logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m4 4 5 5-5 5m5-5H9" />,
   };

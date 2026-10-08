@@ -60,7 +60,7 @@ def record_merge_events(db: Session, preview: ResolutionPreview, snapshot: Resol
     for pair in pairs:
         owner = record_owner.get(pair.left_record_id)
         if owner and owner == record_owner.get(pair.right_record_id):
-            if (pair.pair_decision == "MATCH_CANDIDATE" or pair.user_decision == "ACCEPTED") and pair.user_decision != "REJECTED":
+            if (pair.pair_decision in {"MERGEABLE", "MATCH_CANDIDATE"} or pair.user_decision == "ACCEPTED") and pair.user_decision != "REJECTED":
                 edge_ids[owner].append(pair.id)
     records = {row.id: row for row in db.query(ResolutionRecord).filter_by(run_id=preview.run_id).all()}
     for proposal in proposals:
