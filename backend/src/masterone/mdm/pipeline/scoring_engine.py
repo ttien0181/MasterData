@@ -24,6 +24,7 @@ import pyarrow.parquet as pq
 
 from masterone.mdm.pipeline import matching, policy_engine
 
+SCORE_PARALLEL_MIN = 15000  # expected candidates; below this SCORE stays in-process
 CONTRACT_VERSION = "p119_score_v1"
 RULE_VERSION = "p119_rule_v1"
 NORMALIZATION_VERSION = "p119_normalized_v1"
@@ -253,6 +254,25 @@ class SplinkPredictor:
                     self.con.execute(f"DROP {'VIEW' if kind == 'VIEW' else 'TABLE'} IF EXISTS {sql_ident(name)}")
 
 
+def _score_rule_batch(candidates, records, frequencies, negative_pairs, identity):
+    """Pure rule-mode scoring of one hydrated batch; runs in a worker process.
+    Must stay byte-identical to the rule branch of ScoringEngine.score_batch."""
+    results = []
+    for c in candidates:
+        left, right = c["left_id"], c["right_id"]
+        reasons = tuple(sorted(set(c.get("reasons", c.get("blocking_reasons", [])))))
+        evidence = matching.compare_and_score_rule(records[left], records[right], set(reasons),
+                                                   frequencies, negative_pairs)
+        score = evidence.pop("score")
+        raw_score = evidence.pop("_raw_weight", score)
+        evidence.pop("match_weight")
+        results.append(ScoreResult(left_id=left, right_id=right, blocking_reasons=reasons,
+            rule_score=score, raw_rule_score=raw_score, match_probability=None, splink_match_weight=None,
+            evidence_json=canonical_json(evidence), model_version=identity["model_version"],
+            model_hash=identity["model_hash"], config_hash=identity["config_hash"]))
+    return results
+
+
 class ScoringEngine:
     def __init__(self, snapshot, config=None, *, negative_pairs=None):
         self.snapshot, self.config = snapshot, config or ScoringConfig()
@@ -298,8 +318,7 @@ class ScoringEngine:
                     frequencies[f][value] += 1
         return frequencies, count, digest.hexdigest()
 
-    def score_batch(self, candidates):
-        self._check_decision_semantics()
+    def _hydrate_batch(self, candidates):
         if len(candidates) > self.config.batch_size:
             raise ScoringCoverageError("Scoring batch exceeds configured size")
         if self.config.mode == "splink" and self.predictor is None:
@@ -310,6 +329,36 @@ class ScoringEngine:
         records = self.snapshot.get_records({rid for pair in keys for rid in pair})
         if any(a not in records or b not in records for a, b in keys):
             raise ScoringCoverageError("Candidate endpoint missing from normalized snapshot")
+        return keys, records
+
+    def _scored_batches(self, iterator, provider, expected_count):
+        """Yield (batch, scored) in input order. Rule mode fans out to worker processes
+        for large inputs; hydration, validation and every coverage check stay in this process."""
+        workers = int(os.environ.get("MDM_SCORE_WORKERS", min(os.cpu_count() or 1, 4)))
+        if (provider is not None or self.config.mode != "rule" or workers <= 1
+                or expected_count < int(os.environ.get("MDM_SCORE_PARALLEL_MIN", SCORE_PARALLEL_MIN))):
+            while batch := list(islice(iterator, self.config.batch_size)):
+                yield batch, (self.score_batch(batch) if provider is None else provider(batch))
+            return
+        from collections import deque
+        from concurrent.futures import ProcessPoolExecutor
+        self._check_decision_semantics()
+        pending = deque()
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            for batch in iter(lambda: list(islice(iterator, self.config.batch_size)), []):
+                _, records = self._hydrate_batch(batch)
+                pending.append((batch, pool.submit(_score_rule_batch, batch, records, self.frequencies,
+                                                   self.negative_pairs, self.identity)))
+                if len(pending) > 2 * workers:
+                    done, future = pending.popleft()
+                    yield done, future.result()
+            while pending:
+                done, future = pending.popleft()
+                yield done, future.result()
+
+    def score_batch(self, candidates):
+        self._check_decision_semantics()
+        keys, records = self._hydrate_batch(candidates)
         probabilities = self.predictor.predict(keys) if self.predictor else {}
         results = []
         for c in candidates:
@@ -361,7 +410,7 @@ class ScoringEngine:
                     temporary.unlink()
                     sink = stack.enter_context(_LimitedSink(temporary, _max_output_bytes, _disk_guard))
                 writer = stack.enter_context(pq.ParquetWriter(sink, SCORE_SCHEMA, compression="zstd"))
-                while batch := list(islice(iterator, self.config.batch_size)):
+                for batch, scored in self._scored_batches(iterator, _score_provider, expected_count):
                     try:
                         # Conservative room for SQLite B-tree pages + rollback
                         # journal before inserting into the coverage ledger.
@@ -373,12 +422,12 @@ class ScoringEngine:
                         raise ScoringCoverageError("Duplicate candidate pair across batches") from error
                     # Streaming supplies canonical, already-scored partitions;
                     # all existing coverage/model/census checks still run here.
-                    scored = self.score_batch(batch) if _score_provider is None else _score_provider(batch)
                     expected = {(c["left_id"], c["right_id"]) for c in batch}
                     actual = {(r.left_id, r.right_id) for r in scored}
                     if len(scored) != len(batch) or actual != expected:
                         raise ScoringCoverageError("Missing, duplicate or unexpected scored pair")
-                    for r in scored:
+                    rows = [asdict(r) for r in scored]
+                    for r, row in zip(scored, rows):
                         if (not math.isfinite(r.rule_score) or not math.isfinite(r.raw_rule_score) or r.model_hash != self.identity["model_hash"]
                             or r.model_version != self.identity["model_version"] or r.config_hash != self.identity["config_hash"]):
                             raise ScoringCoverageError("Invalid score/model identity")
@@ -387,8 +436,8 @@ class ScoringEngine:
                         if self.config.mode == "splink" and (r.match_probability is None or not math.isfinite(r.match_probability)
                             or not 0 <= r.match_probability <= 1 or r.splink_match_weight is None or not math.isfinite(r.splink_match_weight)):
                             raise ScoringCoverageError("Invalid Splink score/probability")
-                        digest.update((canonical_json(asdict(r)) + "\n").encode())
-                    writer.write_table(pa.Table.from_pylist([asdict(r) for r in scored], schema=SCORE_SCHEMA))
+                        digest.update((canonical_json(row) + "\n").encode())
+                    writer.write_table(pa.Table.from_pylist(rows, schema=SCORE_SCHEMA))
                     count += len(scored)
                     batches += 1
                     max_rows = max(max_rows, len(scored))
