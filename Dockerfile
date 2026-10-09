@@ -6,9 +6,9 @@ WORKDIR /app
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 COPY backend/pyproject.toml backend/pyproject.toml
+RUN python -c "import subprocess, tomllib; p=tomllib.load(open('backend/pyproject.toml','rb')); subprocess.check_call(['pip','install','--no-cache-dir',*p['project']['dependencies']])"
 COPY backend/src backend/src
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir ./backend
+RUN pip install --no-cache-dir --no-deps ./backend
 
 # ---- Stage 2: Production ----
 FROM python:3.11-slim

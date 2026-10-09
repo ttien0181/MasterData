@@ -1,16 +1,24 @@
 """Revision-checked review decisions and merge preview construction."""
 
-from hashlib import sha256
 import json
+from hashlib import sha256
 from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from masterone.db.base import now_utc
-from masterone.mdm.models import (ResolutionPair, ResolutionProposal,
-                                  ResolutionAuditEvent, ResolutionRecord, ResolutionReviewCase, ResolutionRun)
+from masterone.mdm.models import (
+    ResolutionAuditEvent,
+    ResolutionPair,
+    ResolutionProposal,
+    ResolutionRecord,
+    ResolutionReviewCase,
+    ResolutionRun,
+)
+from masterone.mdm.pipeline.decision_semantics import persisted_eligibility, require_manual_merge
 from masterone.mdm.pipeline.golden import build_golden
+from masterone.mdm.pipeline.golden_v2 import golden_payload, merge_existing_golden
 
 ELIGIBLE_PROPOSALS = {"AUTO_READY", "REVIEW_APPROVED"}
 
@@ -24,6 +32,8 @@ def decide_pair(db: Session, pair: ResolutionPair, decision: str, expected_revis
     if pair.user_decision != "UNDECIDED" and pair.user_decision != "DEFERRED":
         raise HTTPException(409, "Quyết định cặp đã được chốt")
     previous = pair.user_decision
+    if decision == "ACCEPTED":
+        require_manual_merge(db, pair.run_id, {pair.left_record_id, pair.right_record_id})
     pair.user_decision = decision
     pair.revision += 1
     if decision == "REJECTED":
@@ -32,7 +42,7 @@ def decide_pair(db: Session, pair: ResolutionPair, decision: str, expected_revis
             members = set(proposal.member_record_ids)
             if pair.left_record_id in members and pair.right_record_id in members and proposal.status in ELIGIBLE_PROPOSALS:
                 proposal.status = "BLOCKED"
-                proposal.decision_reason = "USER_CANNOT_LINK"
+                proposal.decision_reason = "USER_PROPOSAL_REJECTED"
                 proposal.revision += 1
         for case in db.query(ResolutionReviewCase).filter_by(run_id=pair.run_id, status="OPEN").all():
             if pair.id in case.pair_ids:
@@ -112,7 +122,8 @@ def approve_case(db: Session, case: ResolutionReviewCase, expected_revision: int
                 changed = True
     involved_pairs = [pair for pair in pairs_by_id.values()
                       if pair.left_record_id in member_ids and pair.right_record_id in member_ids]
-    if any(pair.pair_decision in {"NOT_MERGEABLE", "NON_MATCH"} or pair.user_decision == "REJECTED" for pair in involved_pairs):
+    require_manual_merge(db, case.run_id, member_ids)
+    if any(not persisted_eligibility(pair).manual_allowed for pair in involved_pairs):
         raise HTTPException(409, "Có cặp xung đột hoặc đã bị từ chối trong cụm")
     review_pair_ids = {pair.id for pair in involved_pairs if pair.triage_status == "REVIEW"}
     if not review_pair_ids <= set(accepted_pair_ids):
@@ -137,12 +148,11 @@ def approve_case(db: Session, case: ResolutionReviewCase, expected_revision: int
     run = db.get(ResolutionRun, case.run_id)
     key = f"{case.run_id}:{run.policy_version}:{case.id}:{','.join(sorted(member_ids))}:{case.revision + 1}"
     proposal_id = sha256(key.encode()).hexdigest()
-    record_data = {item.id: {"id": item.id, "external_id": item.external_id,
-                             "source_system": item.source_system, "raw_fields": item.raw_fields}
-                   for item in records}
+    record_data = {item.id: golden_payload(item) for item in records}
     proposal = ResolutionProposal(id=proposal_id, run_id=case.run_id,
                                   member_record_ids=sorted(member_ids),
-                                  golden_fields=build_golden(sorted(member_ids), record_data),
+                                  golden_fields=build_golden(sorted(member_ids), record_data,
+                    existing_golden=merge_existing_golden(proposals, member_ids)),
                                   status="REVIEW_APPROVED", revision=1,
                                   decision_reason="USER_REVIEW_APPROVED")
     db.add(proposal)
@@ -166,9 +176,10 @@ def approve_deferred_proposal(db: Session, proposal: ResolutionProposal, expecte
     if proposal.status != "REVIEW_REQUIRED" or proposal.revision != expected_revision:
         raise HTTPException(409, "Đề xuất đã thay đổi; hãy tải lại")
     members = set(proposal.member_record_ids)
+    require_manual_merge(db, proposal.run_id, members)
     pairs = db.query(ResolutionPair).filter(ResolutionPair.run_id == proposal.run_id,
         ResolutionPair.left_record_id.in_(members), ResolutionPair.right_record_id.in_(members)).all()
-    if any(pair.pair_decision in {"NOT_MERGEABLE", "NON_MATCH"} or pair.user_decision == "REJECTED" for pair in pairs):
+    if any(not persisted_eligibility(pair).manual_allowed for pair in pairs):
         raise HTTPException(409, "Cụm có cặp xung đột hoặc đã bị từ chối")
     if any(pair.pair_decision == "REVIEW" and pair.user_decision != "ACCEPTED" for pair in pairs):
         raise HTTPException(409, "Cần xử lý các cặp còn mơ hồ trước")
@@ -181,10 +192,8 @@ def approve_deferred_proposal(db: Session, proposal: ResolutionProposal, expecte
     for other in db.query(ResolutionProposal).filter_by(run_id=proposal.run_id).all():
         if other.id != proposal.id and other.status in ELIGIBLE_PROPOSALS and members.intersection(other.member_record_ids):
             raise HTTPException(409, "Cụm chồng lấn với một đề xuất khác")
-    record_data = {item.id: {"id": item.id, "external_id": item.external_id,
-                             "source_system": item.source_system, "raw_fields": item.raw_fields}
-                   for item in records}
-    proposal.golden_fields = build_golden(sorted(members), record_data)
+    record_data = {item.id: golden_payload(item) for item in records}
+    proposal.golden_fields = build_golden(sorted(members), record_data, existing_golden=proposal.golden_fields)
     proposal.status = "REVIEW_APPROVED"
     proposal.decision_reason = "USER_REVIEW_APPROVED"
     proposal.revision += 1

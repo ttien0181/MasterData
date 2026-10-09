@@ -1,0 +1,5 @@
+# Additional host-only dataset/measurement tools used by this audit.
+# Install backend dev dependencies separately; do not load live credentials.
+openpyxl==3.1.5
+et-xmlfile==2.0.0
+psutil==7.2.2

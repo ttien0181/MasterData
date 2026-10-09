@@ -30,6 +30,8 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-development}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      MDM_DATABASE_PROFILE: local
+      MDM_DATABASE_URL_LOCAL: postgresql+psycopg://${POSTGRES_USER:-masterone}:${POSTGRES_PASSWORD:-masterone}@database:5432/${POSTGRES_DB:-masterone}
       MDM_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-masterone}:${POSTGRES_PASSWORD:-masterone}@database:5432/${POSTGRES_DB:-masterone}
       WORK_DIR: /app/data/work
     depends_on:
@@ -41,6 +43,30 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app
+    command: ["python", "-m", "masterone.mdm.resolution_worker"]
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      MDM_DATABASE_PROFILE: local
+      MDM_DATABASE_URL_LOCAL: postgresql+psycopg://${POSTGRES_USER:-masterone}:${POSTGRES_PASSWORD:-masterone}@database:5432/${POSTGRES_DB:-masterone}
+      MDM_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-masterone}:${POSTGRES_PASSWORD:-masterone}@database:5432/${POSTGRES_DB:-masterone}
+      WORK_DIR: /app/data/work
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    # The shared image's HTTP probe applies only to the API process.
+    healthcheck:
+      disable: true
 
   frontend:
     build:

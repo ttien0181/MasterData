@@ -1,49 +1,23 @@
-"""7-stage pipeline runner using DuckDB, Splink, and Parquet for out-of-core execution (Big Data)."""
+"""7-stage pipeline with batched SCORE artifacts; CLUSTER still uses memory."""
 
-import time
 import json
-import duckdb
+import time
 from dataclasses import dataclass, field
+from hashlib import sha256
 from pathlib import Path
+from tempfile import mkdtemp
 from typing import Any
+
+import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from masterone.mdm.pipeline.standardization import standardize
-from masterone.mdm.pipeline.matching import score_pair
-from masterone.mdm.pipeline.semantic_address import enrich_pairs_with_semantic
+from masterone.mdm.pipeline.candidate_engine import CandidateConfig, CandidateEngine, CandidateResult
 from masterone.mdm.pipeline.clustering import build_proposals
 from masterone.mdm.pipeline.review_grouping import classify_pair
-
-def _score_chunk(chunk, by_id, frequencies, negative_pairs, policy_version, run_id):
-    import hashlib
-    results = []
-    insufficient = 0
-    for c in chunk:
-        left_id, right_id, reasons = c["left_id"], c["right_id"], c["reasons"]
-        result = score_pair(by_id[left_id], by_id[right_id], set(reasons),
-                           frequencies, negative_pairs=negative_pairs)
-        if result["decision"] == "INSUFFICIENT_EVIDENCE":
-            insufficient += 1
-            continue
-        pair_id = hashlib.sha256(
-            f"{run_id}:{left_id}:{right_id}:{policy_version}".encode()
-        ).hexdigest()
-        results.append({"id": pair_id, "left_id": left_id, "right_id": right_id,
-                        "blocking_reasons": reasons, **result})
-    return results, insufficient
-
-_WORKER_STATE = {}
-SCORE_PARALLEL_MIN = 15000  # candidates; below this SCORE runs in-process
-
-def _init_score_worker(by_id, frequencies, negative_pairs, policy_version, run_id):
-    _WORKER_STATE.update(by_id=by_id, frequencies=frequencies, negative_pairs=negative_pairs,
-                         policy_version=policy_version, run_id=run_id)
-
-def _score_chunk_worker(chunk):
-    s = _WORKER_STATE
-    return _score_chunk(chunk, s["by_id"], s["frequencies"], s["negative_pairs"],
-                        s["policy_version"], s["run_id"])
+from masterone.mdm.pipeline.scoring_engine import ParquetSnapshot, ScoringConfig, ScoringEngine, iter_score_batches
+from masterone.mdm.pipeline.semantic_address import enrich_pairs_with_semantic
+from masterone.mdm.pipeline.standardization import standardize
 
 
 @dataclass
@@ -72,7 +46,7 @@ class StageRunner:
     def __init__(self, run_id: str, attempt_id: str, output_dir: Path | None = None, db_url: str | None = None):
         self.run_id = run_id
         self.attempt_id = attempt_id
-        self.output_dir = output_dir or Path("/tmp/mdm_stages")
+        self.output_dir = output_dir if output_dir is not None else Path(mkdtemp(prefix="masterone-stages-"))
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.db_url = db_url
         self.stage_results: list[StageResult] = []
@@ -81,128 +55,214 @@ class StageRunner:
     def _ctx(self, stage_name: str) -> StageContext:
         return StageContext(self.run_id, self.attempt_id, stage_name, "", self.output_dir)
 
-    def run_all(self, records_raw: list[dict] = None, policy_version: str = "person-v3", negative_pairs: frozenset | None = None, return_data: bool = True) -> dict:
+    def build_candidates(self, snapshot_path: str, candidate_path: str,
+                         config: CandidateConfig | None = None,
+                         batch_size: int = 50000) -> CandidateResult:
+        """Read batches into a global index; batch boundaries never limit recall."""
+        engine = CandidateEngine(config)
+        for batch in pq.ParquetFile(snapshot_path).iter_batches(batch_size=batch_size):
+            records = batch.to_pylist()
+            for record in records:
+                if isinstance(record["normalized_fields"], str):
+                    record["normalized_fields"] = json.loads(record["normalized_fields"] or "{}")
+            engine.add_records(records)
+        result = engine.finalize()
+        self.con.execute("DROP TABLE IF EXISTS cand_blocks")
+        self.con.execute("CREATE TEMP TABLE cand_blocks (left_id VARCHAR, right_id VARCHAR, reason VARCHAR)")
+        schema = pa.schema([("left_id", pa.string()), ("right_id", pa.string()),
+                            ("reasons", pa.list_(pa.string()))])
+        # One canonical row per pair; every source survives into SCORE.
+        rows = [{"left_id": left, "right_id": right, "reasons": sorted(sources)}
+                for (left, right), sources in result.pairs.items()]
+        candidate_table = pa.Table.from_pylist(rows, schema=schema)
+        pq.write_table(candidate_table, candidate_path)
+        self.con.execute("INSERT INTO cand_blocks SELECT left_id, right_id, unnest(reasons) FROM candidate_table")
+        Path(candidate_path).with_suffix(".metrics.json").write_text(
+            json.dumps(result.metrics, sort_keys=True), encoding="utf-8")
+        Path(candidate_path).with_suffix(".blocks.json").write_text(
+            json.dumps(result.block_log, sort_keys=True), encoding="utf-8")
+        return result
+
+    def score_candidates(self, snapshot_path: str, candidate_path: str, score_path: str,
+                         config: ScoringConfig | None = None, negative_pairs=None) -> dict:
+        self.scoring_engine = ScoringEngine(ParquetSnapshot(snapshot_path, self.con), config,
+                                            negative_pairs=negative_pairs)
+        reader = pq.ParquetFile(candidate_path)
+        def candidates():
+            for batch in reader.iter_batches(batch_size=self.scoring_engine.config.batch_size):
+                yield from batch.to_pylist()
+        return self.scoring_engine.write_scores(candidates(), score_path, expected_count=reader.metadata.num_rows)
+
+    def run_all(self, records_raw: list[dict] = None, policy_version: str = "person-v3", negative_pairs: frozenset | None = None, return_data: bool = True, candidate_config: CandidateConfig | None = None, scoring_config: ScoringConfig | None = None, execution_blocked_pairs: frozenset = frozenset()) -> dict:
+        if not return_data and self.db_url:
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import sessionmaker
+
+            from masterone.mdm.engine_adapter import engine_context, select_engine
+            engine = create_engine(self.db_url)
+            try:
+                profile = select_engine(sessionmaker(engine, expire_on_commit=False), self.run_id)
+                with engine_context(profile):
+                    return self._run_with_profile(records_raw, policy_version, negative_pairs, return_data,
+                        candidate_config, scoring_config, execution_blocked_pairs)
+            finally:
+                engine.dispose()
+        return self._run_with_profile(records_raw, policy_version, negative_pairs, return_data,
+            candidate_config, scoring_config, execution_blocked_pairs)
+
+    def _run_with_profile(self, records_raw, policy_version, negative_pairs, return_data, candidate_config, scoring_config, execution_blocked_pairs):
+        if return_data or not self.db_url:
+            return self._run_all(records_raw, policy_version, negative_pairs, return_data,
+                candidate_config, scoring_config, execution_blocked_pairs)
+        from sqlalchemy import create_engine
+        from sqlalchemy.exc import SQLAlchemyError
+        from sqlalchemy.orm import sessionmaker
+
+        from masterone.mdm.engine_adapter import feature
+        from masterone.mdm.generation_staging import GenerationError, GenerationPublisher, config_identity, failure_code
+        from masterone.mdm.models import ResolutionPublication, ResolutionRecord
+        engine = create_engine(self.db_url)
+        factory = sessionmaker(engine, expire_on_commit=False)
+        identity = None
+        try:
+            with factory() as db:
+                has_generation = db.get(ResolutionPublication, self.run_id) is not None
+            if not feature("generation_staging_enabled") and not feature("stream_decide_materialize_enabled") and not feature("pipeline_resume_enabled") and not has_generation:
+                return self._run_all(records_raw, policy_version, negative_pairs, return_data,
+                    candidate_config, scoring_config, execution_blocked_pairs)
+            publisher = GenerationPublisher(factory)
+            identity = publisher.begin(self.run_id, config=config_identity(policy_version, scoring_config, candidate_config),
+                attempt_id=self.attempt_id)
+            # Direct callers may not substitute different input for imported IDs.
+            if records_raw is not None:
+                with factory() as db:
+                    expected_count = db.query(ResolutionRecord).filter_by(run_id=self.run_id).count()
+                    if len(records_raw) != expected_count or len({r['id'] for r in records_raw}) != expected_count:
+                        raise GenerationError("GENERATION_INPUT_CHANGED")
+                    for raw in records_raw:
+                        row = db.get(ResolutionRecord, raw['id'])
+                        fields = ('external_id', 'source_system', 'entity_type', 'raw_fields', 'normalized_fields', 'quality_flags')
+                        if row is None or row.run_id != self.run_id or any(raw.get(f) != getattr(row, f) for f in fields):
+                            raise GenerationError("GENERATION_INPUT_CHANGED")
+            output = self._run_all(records_raw, policy_version, negative_pairs, True,
+                candidate_config, scoring_config, execution_blocked_pairs)
+            started = time.monotonic()
+            publisher.stage(identity, output)
+            publisher.promote(identity)
+            self.stage_results[-1].duration_ms += int((time.monotonic() - started)*1000)
+            return output
+        except BaseException as error:
+            if identity is not None:
+                publisher.fail(identity, failure_code(error))
+            if isinstance(error, SQLAlchemyError):
+                raise GenerationError("GENERATION_DB_FAILED") from None
+            raise
+        finally:
+            engine.dispose()
+
+    def _run_all(self, records_raw: list[dict] = None, policy_version: str = "person-v3", negative_pairs: frozenset | None = None, return_data: bool = True, candidate_config: CandidateConfig | None = None, scoring_config: ScoringConfig | None = None, execution_blocked_pairs: frozenset = frozenset()) -> dict:
+        from masterone.config import get_settings
+        from masterone.mdm.pipeline.streaming import fallback_reason, requested
+        from masterone.storage.r2 import get_store
+        store = get_store(get_settings()) if requested() else None
+        from masterone.mdm.engine_adapter import feature
+        checkpoint_factory, checkpoint_engine = None, None
+        if feature("pipeline_resume_enabled") and self.db_url:
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import sessionmaker
+
+            from masterone.mdm.job_queue import current_claim
+            from masterone.mdm.pipeline.checkpoints import DatabasePartitionStore
+            checkpoint_engine = create_engine(self.db_url)
+            checkpoint_factory = sessionmaker(checkpoint_engine, expire_on_commit=False)
+            store = store or DatabasePartitionStore(checkpoint_factory, self.run_id, current_claim())
+        serial_reason = fallback_reason(scoring_config, store)
+        if serial_reason is None:
+            from sqlalchemy import create_engine, select
+            from sqlalchemy.orm import Session
+
+            from masterone.mdm.models import ResolutionRecord
+            from masterone.mdm.pipeline.decision_store import DecisionStore
+            from masterone.mdm.pipeline.golden_v2 import record_payload
+            from masterone.mdm.resolution_service import _compute
+            database = checkpoint_engine or (create_engine(self.db_url) if self.db_url else None)
+            def rows():
+                if records_raw is not None:
+                    yield from records_raw
+                elif database is not None:
+                    with Session(database) as db:
+                        query = select(ResolutionRecord).where(ResolutionRecord.run_id == self.run_id).order_by(ResolutionRecord.id)
+                        for row in db.scalars(query.execution_options(yield_per=get_settings().stream_partition_rows)):
+                            yield record_payload(row)
+                else:
+                    raise ValueError("db_url required when records_raw is None")
+            started = time.monotonic()
+            try:
+                output = _compute(rows(), self.run_id, policy_version, negative_pairs=negative_pairs,
+                    candidate_config=candidate_config, scoring_config=scoring_config, scoring_output_dir=self.output_dir,
+                    execution_blocked_pairs=execution_blocked_pairs, _stream_store=store,
+                    _normalize=True, _attempt_id=self.attempt_id, _checkpoint_factory=checkpoint_factory)
+                if isinstance(output["pairs"], DecisionStore):
+                    self.decision_store = output["pairs"]
+                self.stage_results.append(StageResult("STREAMING_COMPUTE", self.run_id, self.attempt_id, True,
+                    int((time.monotonic()-started)*1000), {"candidate_count": output["candidate_count"]}))
+                if not return_data and database is not None:
+                    from masterone.mdm.resolution_persistence import persist_snapshot
+                    with Session(database) as db, db.begin():
+                        persist_snapshot(db, self.run_id, output)
+                self.stage_results.append(StageResult("MATERIALIZE", self.run_id, self.attempt_id, True, 0, {}))
+                return output
+            finally:
+                if database is not None:
+                    database.dispose()
+        if checkpoint_engine is not None:
+            checkpoint_engine.dispose()
         # ---------------------------------------------------------
         # STG-01: PREPARE
         # ---------------------------------------------------------
-        import os, sys, threading, queue, shutil, math
-        
         ctx_prep = self._ctx("PREPARE")
         t0 = time.monotonic()
         prep_path = _artifact_path(ctx_prep, "prepared.parquet")
         
-        if not os.environ.get("SOURCE_MAPPING_VERSION"):
-            sys.exit(1) # TC-CFG-01
-            
-        max_rejected_ratio = float(os.environ.get("MAX_REJECTED_ROW_RATIO", "0.01"))
-        
-        rows = []
         if records_raw is not None:
+            # For tests or memory-bound runs
+            prepared_records = []
             for r in records_raw:
-                rows.append(r)
+                nr = dict(r)
+                # Direct in-memory callers historically provide only `id`.
+                # Keep a source-neutral identity; DB snapshots already carry
+                # their real external ID/source and are never rewritten.
+                nr.setdefault("external_id", r["id"])
+                nr.setdefault("source_system", "UNKNOWN")
+                nr.setdefault("entity_type", "UNKNOWN")
+                nr["raw_fields"] = json.dumps(r.get("raw_fields", {}))
+                nr["normalized_fields"] = json.dumps(r.get("normalized_fields", {}))
+                nr["quality_flags"] = json.dumps(r.get("quality_flags", {}))
+                prepared_records.append(nr)
+            if prepared_records:
+                df = pa.Table.from_pylist(prepared_records)
+                self.con.execute(f"COPY (SELECT * FROM df) TO '{prep_path}' (FORMAT PARQUET)")
+            else:
+                self.con.execute(f"COPY (SELECT '' as id, '' as external_id, '' as source_system, '' as entity_type, '' as raw_fields, '' as normalized_fields, '' as quality_flags LIMIT 0) TO '{prep_path}' (FORMAT PARQUET)")
         else:
             if not self.db_url:
                 raise ValueError("db_url required when records_raw is None")
             pg_url = self.db_url.replace("+psycopg", "").replace("+psycopg2", "")
             self.con.execute("INSTALL postgres; LOAD postgres;")
             self.con.execute(f"ATTACH '{pg_url}' AS pg (TYPE postgres);")
-            db_rows = self.con.execute(f"""
-                SELECT id, external_id, source_system, entity_type,
-                       CAST(raw_fields AS VARCHAR) as raw_fields,
-                       CAST(normalized_fields AS VARCHAR) as normalized_fields,
-                       CAST(quality_flags AS VARCHAR) as quality_flags
-                FROM pg.mdm_resolution_records
-                WHERE run_id = '{self.run_id}'
-            """).df().to_dict('records')
-            rows = db_rows
-
-        rejected = []
-        by_ext = {}
-        for r in rows:
-            if r.get("structurally_broken", False):
-                rejected.append({"id": r.get("id"), "reason": "STRUCTURALLY_BROKEN"})
-                continue
-                
-            ext_id = r.get("source_record_id") or r.get("external_id") or r.get("id")
-            if not ext_id:
-                rejected.append({"id": r.get("id"), "reason": "MISSING_SOURCE_RECORD_ID"})
-                continue
-                
-            upd = r.get("updated_at", 0)
-            if ext_id in by_ext:
-                existing = by_ext[ext_id]
-                if upd > existing.get("updated_at", 0):
-                    rejected.append({"id": existing.get("id"), "reason": "DUPLICATE_SOURCE_RECORD_ID"})
-                    by_ext[ext_id] = r
-                else:
-                    rejected.append({"id": r.get("id"), "reason": "DUPLICATE_SOURCE_RECORD_ID"})
-            else:
-                by_ext[ext_id] = r
-
-        accepted = list(by_ext.values())
-        if len(rows) > 0 and (len(rejected) / len(rows)) > max_rejected_ratio:
-            self.stage_results.append(StageResult("PREPARE", self.run_id, self.attempt_id, False, int((time.monotonic() - t0)*1000), {"error": "MAX_REJECTED_ROW_RATIO_EXCEEDED"}))
-            raise RuntimeError("MAX_REJECTED_ROW_RATIO_EXCEEDED")
-            
-        accepted.sort(key=lambda x: str(x.get("record_id") or x.get("id", "")))
+            self.con.execute(f"""
+                COPY (
+                    SELECT id, external_id, source_system, entity_type, 
+                           CAST(raw_fields AS VARCHAR) as raw_fields, 
+                           CAST(normalized_fields AS VARCHAR) as normalized_fields, 
+                           CAST(quality_flags AS VARCHAR) as quality_flags,
+                           COALESCE(normalized_fields->>'_source_updated_at', original_fields->>'source_updated_at', extra_fields->>'source_updated_at') as source_updated_at
+                    FROM pg.mdm_resolution_records 
+                    WHERE run_id = '{self.run_id}'
+                ) TO '{prep_path}' (FORMAT PARQUET)
+            """)
         
-        prepared_records = []
-        for r in accepted:
-            nr = dict(r)
-            if isinstance(r.get("raw_fields"), dict):
-                nr["raw_fields"] = json.dumps(r.get("raw_fields", {}))
-            if isinstance(r.get("normalized_fields"), dict):
-                nr["normalized_fields"] = json.dumps(r.get("normalized_fields", {}))
-            if isinstance(r.get("quality_flags"), list) or isinstance(r.get("quality_flags"), dict):
-                nr["quality_flags"] = json.dumps(r.get("quality_flags", {}))
-            if "source_system" not in nr:
-                nr["source_system"] = ""
-            if "entity_type" not in nr:
-                nr["entity_type"] = "PERSON"
-            if "external_id" not in nr:
-                nr["external_id"] = nr.get("id", "")
-            prepared_records.append(nr)
-            
-        # Concurrency / Upload logic (Stub to pass Backpressure requirements without full R2)
-        sem = threading.Semaphore(int(os.environ.get("MAX_ACTIVE_R2_TRANSFERS", "16")))
-        pending_bytes = 0
-        min_headroom = int(os.environ.get("MIN_DISK_HEADROOM_BYTES", "0"))
-        
-        try:
-            disk_free = shutil.disk_usage(ctx_prep.output_dir).free
-            if disk_free < pending_bytes + min_headroom:
-                pass # block
-        except Exception:
-            pass
-            
-        import contextlib
-        import stat
-        with contextlib.suppress(Exception):
-            os.chmod(prep_path, stat.S_IWRITE)
-            os.remove(prep_path)
-        if prepared_records:
-            df = pa.Table.from_pylist(prepared_records)
-            self.con.execute(f"COPY (SELECT * FROM df) TO '{prep_path}' (FORMAT PARQUET)")
-        else:
-            self.con.execute(f"COPY (SELECT '' as id, '' as external_id, '' as source_system, '' as entity_type, '' as raw_fields, '' as normalized_fields, '' as quality_flags LIMIT 0) TO '{prep_path}' (FORMAT PARQUET)")
-            
-        # Write SUCCESS for HOP-11
-        success_path = _artifact_path(ctx_prep, "_SUCCESS.json")
-        with contextlib.suppress(Exception):
-            os.chmod(success_path, stat.S_IWRITE)
-        with open(success_path, "w") as f:
-            json.dump({"status": "LOCAL_READY"}, f)
-            
-        # TC-IMM-01
-        try:
-            os.chmod(prep_path, 0o444)
-            os.chmod(success_path, 0o444)
-        except Exception:
-            pass
-            
-        count = len(prepared_records)
-        # Metrics json log
-        print(json.dumps({"ts": time.time(), "level": "INFO", "run_id": self.run_id, "stage": "PREPARE", "attempt_id": self.attempt_id, "event": "prepare_rows_total", "count": count}))
+        count = self.con.execute(f"SELECT COUNT(*) FROM read_parquet('{prep_path}')").fetchone()[0]
         self.stage_results.append(StageResult("PREPARE", self.run_id, self.attempt_id, True, int((time.monotonic() - t0)*1000), {"record_count": count}))
 
         # ---------------------------------------------------------
@@ -214,27 +274,34 @@ class StageRunner:
         norm_final = _artifact_path(ctx_norm, "normalized.parquet")
         
         if count > 0:
-            # Bỏ qua bước parse JSON và chạy standardize bằng Python vì dữ liệu đã được
-            # chuẩn hóa sẵn ở bước import (từ Postgres). 
-            # DuckDB tạo bảng tạm và lưu trực tiếp thành normalized.parquet
-            self.con.execute(f"CREATE TEMP TABLE norm1 AS SELECT * FROM read_parquet('{prep_path}')")
+            reader = pq.ParquetFile(prep_path)
+            writer = None
+            for batch in reader.iter_batches(batch_size=50000):
+                pydicts = batch.to_pylist()
+                for r in pydicts:
+                    # Imported normalized fields define the selected snapshot,
+                    # exactly as on the small path; never normalize it again.
+                    if json.loads(r["normalized_fields"] or "{}"):
+                        continue
+                    raw = json.loads(r["raw_fields"]) if r["raw_fields"] else {}
+                    nf, flags = standardize(raw, r.get("entity_type", "UNKNOWN"))
+                    r["normalized_fields"] = json.dumps(nf)
+                    r["quality_flags"] = json.dumps(flags)
+                out_table = pa.Table.from_pylist(pydicts)
+                if writer is None:
+                    writer = pq.ParquetWriter(norm_tmp, out_table.schema)
+                writer.write_table(out_table)
+            if writer: writer.close()
+            
+            # Pass 2: Aggregate to assign SHARED
+            # In a real environment, DuckDB would aggregate values here.
+            self.con.execute(f"CREATE TEMP TABLE norm1 AS SELECT * FROM read_parquet('{norm_tmp}')")
             self.con.execute(f"COPY norm1 TO '{norm_final}' (FORMAT PARQUET)")
         else:
             self.con.execute(f"COPY (SELECT * FROM read_parquet('{prep_path}')) TO '{norm_final}' (FORMAT PARQUET)")
+            self.con.execute(f"CREATE TEMP TABLE norm1 AS SELECT * FROM read_parquet('{norm_final}')")
         
         self.stage_results.append(StageResult("NORMALIZE", self.run_id, self.attempt_id, True, int((time.monotonic() - t0)*1000), {"record_count": count}))
-
-        # Load all records into memory once for STG-03, STG-04, STG-06
-        self._all_records = self.con.execute(
-            f"SELECT id, external_id, source_system, entity_type, "
-            f"raw_fields, normalized_fields, quality_flags FROM read_parquet('{norm_final}')"
-        ).df().to_dict('records')
-        for r in self._all_records:
-            r["raw_fields"] = json.loads(r["raw_fields"]) if r["raw_fields"] else {}
-            r["normalized_fields"] = json.loads(r["normalized_fields"]) if r["normalized_fields"] else {}
-            if isinstance(r.get("quality_flags"), str):
-                r["quality_flags"] = json.loads(r["quality_flags"]) if r["quality_flags"] else {}
-        self._by_id = {r["id"]: r for r in self._all_records}
 
         # ---------------------------------------------------------
         # STG-03: BUILD_CANDIDATES
@@ -243,48 +310,11 @@ class StageRunner:
         t0 = time.monotonic()
         cand_path = _artifact_path(ctx_build, "candidates.parquet")
         
-        self.con.execute("DROP TABLE IF EXISTS cand_blocks")
-        self.con.execute("""
-            CREATE TEMP TABLE cand_blocks (left_id VARCHAR, right_id VARCHAR, reason VARCHAR);
-        """)
-        
-        if count > 0:
-            # Exact blocking in DuckDB
-            self.con.execute("""
-                INSERT INTO cand_blocks
-                WITH names AS (
-                    SELECT id, json_extract_string(normalized_fields, '$.name') as name 
-                    FROM norm1 WHERE json_extract_string(normalized_fields, '$.name') != ''
-                ),
-                counts AS (SELECT name, COUNT(*) as c FROM names GROUP BY name HAVING c > 1 AND c <= 60)
-                SELECT a.id as left_id, b.id as right_id, 'exact_name' as reason
-                FROM names a JOIN names b ON a.name = b.name JOIN counts c ON a.name = c.name WHERE a.id < b.id
-            """)
-            
-            # TF-IDF
-            try:
-                from masterone.mdm.pipeline.tfidf_blocking import tfidf_candidates
-                tfidf_res = tfidf_candidates(self._all_records)
-                if tfidf_res:
-                    tfidf_rows = [{"left_id": l, "right_id": r, "reason": list(rs)[0]} for (l,r), rs in tfidf_res.items() if rs]
-                    if tfidf_rows:
-                        df = pa.Table.from_pylist(tfidf_rows)
-                        self.con.execute("INSERT INTO cand_blocks SELECT * FROM df")
-            except ImportError:
-                pass
-            
-            self.con.execute(f"""
-                COPY (
-                    SELECT left_id, right_id, list(DISTINCT reason) as reasons 
-                    FROM cand_blocks 
-                    GROUP BY left_id, right_id
-                ) TO '{cand_path}' (FORMAT PARQUET)
-            """)
-            cand_count = self.con.execute(f"SELECT COUNT(*) FROM read_parquet('{cand_path}')").fetchone()[0]
-        else:
-            cand_count = 0
-            
-        self.stage_results.append(StageResult("BUILD_CANDIDATES", self.run_id, self.attempt_id, True, int((time.monotonic() - t0)*1000), {"candidate_count": cand_count}))
+        candidate_result = self.build_candidates(norm_final, cand_path, config=candidate_config)
+        cand_count = len(candidate_result.pairs)
+        self.stage_results.append(StageResult(
+            'BUILD_CANDIDATES', self.run_id, self.attempt_id, True,
+            int((time.monotonic() - t0)*1000), candidate_result.metrics))
 
         # ---------------------------------------------------------
         # STG-04: SCORE
@@ -293,73 +323,10 @@ class StageRunner:
         t0 = time.monotonic()
         score_path = _artifact_path(ctx_score, "scored.parquet")
         
-        scored_pairs = []
-        insufficient_count = 0
-        import hashlib as _hl
-        
-        # Splink Model integration mocked for matching.py backward compat
-        try:
-            import splink
-            splink_active = True
-        except ImportError:
-            splink_active = False
-
-        if cand_count > 0:
-            candidate_ids = set()
-            for row in self.con.execute("SELECT DISTINCT left_id as id FROM cand_blocks UNION SELECT DISTINCT right_id as id FROM cand_blocks").fetchall():
-                candidate_ids.add(row[0])
-            by_id = {k: self._by_id[k] for k in candidate_ids}
-                
-            from masterone.mdm.pipeline.matching import value_frequencies
-            frequencies = value_frequencies(list(by_id.values()))
-            
-            reader = pq.ParquetFile(cand_path)
-            from concurrent.futures import ProcessPoolExecutor
-            import os
-            
-            SCORE_CHUNK = 5000
-            all_candidates = []
-            for batch in reader.iter_batches(batch_size=50000):
-                all_candidates.extend(batch.to_pylist())
-
-            chunks = [all_candidates[i:i+SCORE_CHUNK] for i in range(0, len(all_candidates), SCORE_CHUNK)]
-
-            # Process startup + worker state transfer cost more than scoring below
-            # this size (measured: slower on ~11k candidates, faster on ~20k).
-            if len(all_candidates) < int(os.environ.get("MDM_SCORE_PARALLEL_MIN", SCORE_PARALLEL_MIN)):
-                for chunk in chunks:
-                    res, insuff = _score_chunk(chunk, by_id, frequencies, negative_pairs, policy_version, self.run_id)
-                    scored_pairs.extend(res)
-                    insufficient_count += insuff
-            else:
-                with ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, 4),
-                                         initializer=_init_score_worker,
-                                         initargs=(by_id, frequencies, negative_pairs, policy_version, self.run_id)) as pool:
-                    futures = [pool.submit(_score_chunk_worker, chunk) for chunk in chunks]
-                    for f in futures:
-                        res, insuff = f.result()
-                        scored_pairs.extend(res)
-                        insufficient_count += insuff
-                    
-            if scored_pairs:
-                # Stringify a copy for Parquet persistence; scored_pairs stays as Python dicts
-                parquet_rows = []
-                for p in scored_pairs:
-                    pr = dict(p)
-                    for k in ["blocking_reasons", "field_evidence", "comparisons", "matched_subgroups", "normalization_tags"]:
-                        if k in pr:
-                            pr[k] = json.dumps(pr[k])
-                    parquet_rows.append(pr)
-                pq.write_table(pa.Table.from_pylist(parquet_rows), score_path)
-            else:
-                schema = pa.schema([('id', pa.string()), ('left_id', pa.string()), ('right_id', pa.string())])
-                pq.write_table(pa.Table.from_arrays([[], [], []], schema=schema), score_path)
-        else:
-            by_id = {}
-            schema = pa.schema([('id', pa.string()), ('left_id', pa.string()), ('right_id', pa.string())])
-            pq.write_table(pa.Table.from_arrays([[], [], []], schema=schema), score_path)
-
-        self.stage_results.append(StageResult("SCORE", self.run_id, self.attempt_id, True, int((time.monotonic() - t0)*1000), {"scored_pairs": len(scored_pairs)}))
+        scoring_metrics = self.score_candidates(norm_final, cand_path, score_path, scoring_config, negative_pairs)
+        ctx_score.config_hash = scoring_metrics["config_hash"]
+        self.stage_results.append(StageResult("SCORE", self.run_id, self.attempt_id, True,
+            int((time.monotonic() - t0)*1000), scoring_metrics))
 
         # ---------------------------------------------------------
         # STG-05: DECIDE
@@ -368,22 +335,55 @@ class StageRunner:
         t0 = time.monotonic()
         decide_path = _artifact_path(ctx_decide, "decisions.parquet")
         
-        if scored_pairs:
-            # scored_pairs are already Python dicts — no parse-back needed
-            enrich_pairs_with_semantic(scored_pairs, by_id)
-            # Sort in Python to avoid Parquet round-trip for ordering
-            decisions_sorted = sorted(scored_pairs, key=lambda p: (-(p.get("match_weight") or 0), p["id"]))
-            # Write decide_path Parquet (stringified) for STG-07 DuckDB ingestion
-            decide_rows = []
-            for p in decisions_sorted:
-                pr = dict(p)
+        # SCORE contains every candidate. Filtering and enrichment belong here.
+        # The existing decision/cluster consumer still materializes decisions;
+        # it does not keep an additional full list of numerical SCORE results.
+        from masterone.config import get_settings
+        from masterone.mdm.pipeline.cluster_policy import enabled as cluster_enabled
+        from masterone.mdm.pipeline.decision_store import DecisionStore
+        # Optional semantic enrichment retains its existing global budget/cache.
+        disk_decisions = cluster_enabled() and not get_settings().semantic_address_enabled
+        self.decision_store = DecisionStore(self.output_dir) if disk_decisions else None
+        decision_pairs = []
+        by_id = {}
+        insufficient_count = 0
+        for batch in iter_score_batches(score_path, self.scoring_engine.config.batch_size):
+            hydrated = self.scoring_engine.snapshot.get_records({rid for r in batch for rid in (r.left_id, r.right_id)})
+            for scored in batch:
+                result_pair = self.scoring_engine.decide(scored, hydrated)
+                if result_pair["decision"] == "INSUFFICIENT_EVIDENCE":
+                    insufficient_count += 1
+                    continue
+                pair_id = sha256(f"{self.run_id}:{scored.left_id}:{scored.right_id}:{policy_version}".encode()).hexdigest()
+                payload = {"id": pair_id, **result_pair}
+                if disk_decisions:
+                    self.decision_store.add(payload)
+                else:
+                    decision_pairs.append(payload)
+                    for rid in (scored.left_id, scored.right_id):
+                        by_id[rid] = hydrated[rid]
+        if disk_decisions:
+            self.decision_store.seal()
+            self.decision_store.write_parquet(decide_path, self.scoring_engine.config.batch_size)
+            decisions_sorted = self.decision_store
+        elif decision_pairs:
+            enrich_pairs_with_semantic(decision_pairs, by_id)
+            for p in decision_pairs:
                 for k in ["blocking_reasons", "field_evidence", "comparisons", "matched_subgroups", "normalization_tags"]:
-                    if k in pr:
-                        pr[k] = json.dumps(pr[k])
-                decide_rows.append(pr)
-            pq.write_table(pa.Table.from_pylist(decide_rows), decide_path)
+                    p[k] = json.dumps(p[k])
+            dec_table = pa.Table.from_pylist(decision_pairs)
+            self.con.execute(f"COPY (SELECT * FROM dec_table ORDER BY match_weight DESC NULLS LAST, left_id ASC, right_id ASC) TO '{decide_path}' (FORMAT PARQUET)")
+            
+            # Keep nullable contract fields as None. Pandas converts SQL NULL
+            # into NaN, which the strict serving adapter correctly rejects.
+            decisions_sorted = pq.read_table(decide_path).to_pylist()
+            for p in decisions_sorted:
+                for k in ["blocking_reasons", "field_evidence", "comparisons", "matched_subgroups", "normalization_tags"]:
+                    if isinstance(p.get(k), str):
+                        p[k] = json.loads(p[k])
         else:
             decisions_sorted = []
+        del decision_pairs, by_id
             
         self.stage_results.append(StageResult("DECIDE", self.run_id, self.attempt_id, True, int((time.monotonic() - t0)*1000), {"pair_count": len(decisions_sorted)}))
 
@@ -392,15 +392,35 @@ class StageRunner:
         # ---------------------------------------------------------
         ctx_cluster = self._ctx("CLUSTER")
         t0 = time.monotonic()
-        by_id_full = self._by_id
+        columns = {row[0] for row in self.con.execute("DESCRIBE norm1").fetchall()}
+        projection = "id, external_id, source_system, entity_type, raw_fields, normalized_fields, quality_flags"
+        if "source_updated_at" in columns:
+            projection += ", source_updated_at"
+        record_cursor = self.con.execute("SELECT " + projection + " FROM norm1")
+        names = [column[0] for column in record_cursor.description]
+        def record_rows():
+            while rows := record_cursor.fetchmany(2048):
+                for row in rows:
+                    yield dict(zip(names, row))
+        all_recs_raw = record_rows()
+        by_id_full = {}
+        for r in all_recs_raw:
+            r["raw_fields"] = json.loads(r["raw_fields"]) if r["raw_fields"] else {}
+            r["normalized_fields"] = json.loads(r["normalized_fields"]) if r["normalized_fields"] else {}
+            if "quality_flags" in r and isinstance(r["quality_flags"], str):
+                r["quality_flags"] = json.loads(r["quality_flags"]) if r["quality_flags"] else {}
+            by_id_full[r["id"]] = r
 
-        clusters = build_proposals(list(by_id_full.values()), decisions_sorted, self.run_id, policy_version, negative_pairs=negative_pairs)
-
-        # Build dict index once for O(1) lookup instead of O(n) linear scan per case
-        decisions_by_id = {item["id"]: item for item in decisions_sorted}
+        clusters = build_proposals(list(by_id_full.values()), decisions_sorted, self.run_id, policy_version, negative_pairs=negative_pairs,
+                                   execution_blocked_pairs=execution_blocked_pairs)
+        
         review_cases = []
+        pairs_by_id = None if disk_decisions else {}
+        if pairs_by_id is not None:
+            for item in decisions_sorted:
+                pairs_by_id.setdefault(item["id"], item)
         for case in clusters["review_cases"]:
-            pair = decisions_by_id.get(case["pair_ids"][0])
+            pair = decisions_sorted.get_id(case["pair_ids"][0]) if disk_decisions else pairs_by_id.get(case["pair_ids"][0])
             if pair is None: continue
             classification = classify_pair(pair, by_id_full)
             if classification is None: continue
@@ -415,72 +435,36 @@ class StageRunner:
         ctx_mat = self._ctx("MATERIALIZE")
         t0 = time.monotonic()
         
-        if not return_data and self.db_url:
-            pg_url = self.db_url.replace("+psycopg", "").replace("+psycopg2", "")
-            try:
-                self.con.execute(f"ATTACH '{pg_url}' AS pg (TYPE postgres);")
-            except Exception:
-                pass
-                
-            if scored_pairs:
-                self.con.execute(f"""
-                    INSERT INTO pg.mdm_resolution_pairs (
-                        id, run_id, left_record_id, right_record_id, blocking_reasons, field_evidence, 
-                        score, pair_decision, decision_reason, triage_status, triage_reason, primary_group, 
-                        subgroup, signature, normalization_tags, policy_id, policy_version, user_decision, revision
-                    )
-                    SELECT 
-                        id, '{self.run_id}', left_id, right_id, CAST(blocking_reasons AS JSON), 
-                        CASE WHEN decision = 'NON_MATCH' THEN '[]'::JSON ELSE CAST(field_evidence AS JSON) END, 
-                        score, decision, reason, triage_status, triage_reason, primary_group, 
-                        subgroup, signature, CAST(normalization_tags AS JSON), policy_id, policy_version, 'UNDECIDED', 1
-                    FROM read_parquet('{decide_path}')
-                """)
-
-            if clusters["proposals"]:
-                prop_rows = []
-                for p in clusters["proposals"]:
-                    prop_rows.append({
-                        "id": p["id"], "run_id": self.run_id, "member_record_ids": json.dumps(p["member_record_ids"]),
-                        "golden_fields": json.dumps(p["golden_fields"]), "entity_type": "UNKNOWN",
-                        "status": p["status"], "origin": "AUTO", "revision": p.get("revision", 1),
-                        "decision_reason": None
-                    })
-                prop_df = pa.Table.from_pylist(prop_rows)
-                self.con.execute("""
-                    INSERT INTO pg.mdm_resolution_proposals (
-                        id, run_id, member_record_ids, golden_fields, entity_type, status, origin, revision, decision_reason
-                    )
-                    SELECT id, run_id, CAST(member_record_ids AS JSON), CAST(golden_fields AS JSON), entity_type, status, origin, revision, decision_reason
-                    FROM prop_df
-                """)
-
-            if review_cases:
-                case_rows = []
-                for c in review_cases:
-                    case_rows.append({
-                        "id": c["id"], "run_id": self.run_id, "pair_ids": json.dumps(c["pair_ids"]),
-                        "member_record_ids": json.dumps(c["member_record_ids"]), "primary_group": c["primary_group"],
-                        "subgroup": c["subgroup"], "signature_hash": c.get("signature_hash", ""),
-                        "triage_reason": c["triage_reason"], "status": "OPEN", "revision": 1
-                    })
-                case_df = pa.Table.from_pylist(case_rows)
-                self.con.execute("""
-                    INSERT INTO pg.mdm_resolution_review_cases (
-                        id, run_id, pair_ids, member_record_ids, primary_group, subgroup, signature_hash, triage_reason, status, revision
-                    )
-                    SELECT id, run_id, CAST(pair_ids AS JSON), CAST(member_record_ids AS JSON), primary_group, subgroup, signature_hash, triage_reason, status, revision
-                    FROM case_df
-                """)
-        
         output["pairs"] = decisions_sorted
         output["candidate_count"] = cand_count
+        output["candidate_metrics"] = candidate_result.metrics
+        output["scoring_metrics"] = scoring_metrics
+        output["scoring_artifact"] = score_path
         output["insufficient_count"] = insufficient_count
         output["llm_stats"] = {}
+        output["streaming"] = {"mode": "serial", "reason": serial_reason}
         
+        if not return_data and self.db_url:
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import Session
+
+            from masterone.mdm.resolution_persistence import persist_snapshot
+            engine = create_engine(self.db_url)
+            try:
+                with Session(engine) as db, db.begin():
+                    persist_snapshot(db, self.run_id, output)
+            finally:
+                engine.dispose()
+
         self.stage_results.append(StageResult("MATERIALIZE", self.run_id, self.attempt_id, True, int((time.monotonic() - t0)*1000), {}))
 
         return output
 
     def total_duration_ms(self) -> int:
         return sum(s.duration_ms for s in self.stage_results)
+
+    def close_decisions(self):
+        store = getattr(self, "decision_store", None)
+        if store is not None:
+            store.close()
+            self.decision_store = None

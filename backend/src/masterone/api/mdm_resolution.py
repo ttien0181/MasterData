@@ -7,8 +7,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
-from fastapi.responses import RedirectResponse, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi.responses import RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -19,11 +19,10 @@ from masterone.auth.security import (
     require_capability,
     require_mutation_capability,
 )
-from masterone.mdm.benchmark import run_benchmark
-from masterone.mdm.pipeline.blocking import generate_candidates
-from masterone.mdm.pipeline.policy_engine import simulate_policy, POLICY_FILE_VERSION, _DEFAULT_YAML_PATH
 from masterone.config import get_settings
 from masterone.db.session import get_session
+from masterone.mdm.benchmark import run_benchmark
+from masterone.mdm.engine_adapter import EngineResultAdapter, FrontendJSONRoute, api_engine_context
 from masterone.mdm.gemini_explanation import explain_cohort
 from masterone.mdm.models import (
     ResolutionAuditEvent,
@@ -36,9 +35,12 @@ from masterone.mdm.models import (
     ResolutionProposal,
     ResolutionRecord,
     ResolutionReviewCase,
+    ResolutionRun,
     ResolutionTask,
 )
 from masterone.mdm.ownership import owned_run
+from masterone.mdm.pipeline.blocking import generate_candidates
+from masterone.mdm.pipeline.policy_engine import _DEFAULT_YAML_PATH, POLICY_FILE_VERSION, simulate_policy
 from masterone.mdm.resolution_analytics import session_analytics
 from masterone.mdm.resolution_items import (
     _review_groups,
@@ -58,7 +60,7 @@ from masterone.mdm.resolution_split import execute_split, list_merge_events, pre
 from masterone.mdm.schemas import ResolutionOverviewRead, task_read
 from masterone.storage.r2 import get_store
 
-router = APIRouter(prefix="/mdm/runs", tags=["MDM resolution"])
+router = APIRouter(prefix="/mdm/runs", tags=["MDM resolution"], dependencies=[Depends(api_engine_context)], route_class=FrontendJSONRoute)
 
 
 @router.get("/{run_id}/analytics")
@@ -178,6 +180,16 @@ def _csv_bytes(snapshot: ResolutionExport) -> bytes:
 
 
 def _csv_response(snapshot: ResolutionExport):
+    if snapshot.csv_bytes is None and snapshot.r2_key:
+        from masterone.mdm.export_stream import artifact_key, artifact_store
+        store = (artifact_store(get_settings(), snapshot.r2_key)
+                 if snapshot.r2_key.startswith("local:") else get_store(get_settings()))
+        if store is None:
+            raise HTTPException(503, "Export storage unavailable")
+        return StreamingResponse(store.iter_chunks(artifact_key(snapshot.r2_key)),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="masterone-{snapshot.run_id[:8]}-{snapshot.id[:8]}.csv"',
+                     "X-Export-Id": snapshot.id})
     return Response(_csv_bytes(snapshot), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="masterone-{snapshot.run_id[:8]}-{snapshot.id[:8]}.csv"',
                              "X-Export-Id": snapshot.id})
@@ -187,11 +199,13 @@ def _csv_sample(snapshot: ResolutionExport, limit: int = 10) -> list[dict[str, s
     if snapshot.csv_bytes is not None:
         return list(islice(csv.DictReader(StringIO(snapshot.csv_bytes.decode("utf-8-sig"))), limit))
     if snapshot.r2_key:
-        store = get_store(get_settings())
+        from masterone.mdm.export_stream import artifact_key, artifact_store
+        store = (artifact_store(get_settings(), snapshot.r2_key)
+                 if snapshot.r2_key.startswith("local:") else get_store(get_settings()))
         if store is not None:
             with TemporaryDirectory(prefix="masterone-export-compare-") as temp_dir:
                 path = Path(temp_dir) / "snapshot.csv"
-                store.download_file(snapshot.r2_key, path)
+                store.download_file(artifact_key(snapshot.r2_key), path)
                 with path.open("r", encoding="utf-8-sig", newline="") as stream:
                     return list(islice(csv.DictReader(stream), limit))
     raise HTTPException(500, "Export data unavailable")
@@ -199,12 +213,17 @@ def _csv_sample(snapshot: ResolutionExport, limit: int = 10) -> list[dict[str, s
 
 @router.post("/{run_id}/exports")
 def post_export(run_id: str, request: ExportRequest, db: Session = Depends(get_session),
-                auth: CurrentSession = Depends(require_mutation_capability("export_data"))):
+                auth: CurrentSession = Depends(require_mutation_capability("export_data")),
+                execute_request_id: str | None = Header(default=None, min_length=1, max_length=80,
+                                                       alias="Idempotency-Key")):
     run = owned_run(db, run_id, auth.user.id)
     if run.policy_version == "person-linh-v1":
         raise HTTPException(409, "Hãy xem trước và xác nhận bản gộp trước khi xuất CSV")
+    from uuid import NAMESPACE_URL, uuid5
+    export_id = (str(uuid5(NAMESPACE_URL, f"export:{run_id}:{auth.user.id}:{execute_request_id}"))
+                 if execute_request_id else None)
     return _csv_response(create_export(db, run_id, auth.user.id, request.acknowledge_unreviewed,
-                                       request.choices))
+                                       request.choices, export_id=export_id))
 
 
 @router.post("/{run_id}/previews")
@@ -279,9 +298,16 @@ def download_export(run_id: str, export_id: str, db: Session = Depends(get_sessi
     if snapshot is None or snapshot.run_id != run_id:
         raise HTTPException(404, "Không tìm thấy bản xuất")
     # When file is in R2, redirect to presigned URL — avoids pulling bytes through the app server
-    if snapshot.r2_key and snapshot.csv_bytes is None:
+    if snapshot.r2_key and snapshot.csv_bytes is None and not snapshot.r2_key.startswith("local:"):
         r2 = get_store(get_settings())
         if r2 is not None:
+            try:
+                present = r2.exists(snapshot.r2_key)
+            except Exception as error:
+                # Fail closed without exposing SDK credentials/response text.
+                raise HTTPException(503, "Không kiểm tra được file xuất; hãy thử lại") from error
+            if not present:
+                raise HTTPException(409, "File xuất không còn tồn tại; cần tạo lại bản xuất")
             url = r2.presigned_url(snapshot.r2_key, expires_in=300)
             return RedirectResponse(url, status_code=302)
     return _csv_response(snapshot)
@@ -317,50 +343,36 @@ def get_overview(run_id: str, db: Session = Depends(get_session),
                  auth: CurrentSession = Depends(require_capability("read"))):
     run = owned_run(db, run_id, auth.user.id)
     task = db.query(ResolutionTask).filter_by(run_id=run.id).one_or_none()
-    
-    if run.status != "COMPLETED":
-        counts = {
-            "auto": 0, "rejected": 0, "review_cases": 0, "manual": 0,
-            "review": 0, "review_pairs": 0, "hard_blocked": 0, "insufficient": run.insufficient_count or 0,
-            "group_a": 0, "group_c": 0, "group_d": 0, "separate": run.record_count or 0
-        }
-        eligible_merge_group_count = 0
-        estimated_entity_count = run.record_count or 0
-        duplicate_record_count = 0
-        source_counts = {}
-        history_count = 0
-    else:
-        counts = {
-            "auto": db.query(ResolutionProposal).filter(ResolutionProposal.run_id == run_id,
-                                                         ResolutionProposal.status.in_(["AUTO_READY", "REVIEW_APPROVED", "REVIEW_STAGED_CONFLICT"])).count(),
-            "rejected": db.query(ResolutionPair).filter(
-                ResolutionPair.run_id == run_id,
-                or_(ResolutionPair.pair_decision.in_(["NON_MATCH", "NOT_MERGEABLE"]),
-                    ResolutionPair.user_decision == "REJECTED"),
-            ).count(),
-            "review_cases": len(_review_groups(db, run_id)),
-            "manual": db.query(ResolutionProposal).filter_by(run_id=run_id, status="REVIEW_REQUIRED").count(),
-        }
-        counts["review"] = counts["review_cases"] + counts["manual"]
-        counts["review_pairs"] = pending_pairs(db, run_id).count()
-        counts["hard_blocked"] = db.query(ResolutionPair).filter_by(run_id=run_id,
-                                                                      pair_decision="NOT_MERGEABLE").count()
-        counts["insufficient"] = run.insufficient_count
-        counts["group_a"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="A").count()
-        counts["group_c"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="C").count()
-        counts["group_d"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="D").count()
-        counts["separate"] = separate_record_count(db, run_id, run.record_count)
-        eligible_merge_group_count = db.query(ResolutionProposal).filter(
-            ResolutionProposal.run_id == run_id,
-            ResolutionProposal.status.in_(["AUTO_READY", "REVIEW_APPROVED"]),
-        ).count()
-        estimated_entity_count = counts["separate"] + eligible_merge_group_count
-        duplicate_record_count = max(0, run.record_count - estimated_entity_count)
-        source_counts = {source: count for source, count in db.query(ResolutionRecord.source_system,
-                        func.count(ResolutionRecord.id)).filter_by(run_id=run_id).group_by(
-                        ResolutionRecord.source_system).all()}
-        history_count = db.query(ResolutionExport).filter_by(run_id=run_id).count()
-
+    counts = {
+        "auto": db.query(ResolutionProposal).filter(ResolutionProposal.run_id == run_id,
+                                                     ResolutionProposal.status.in_(["AUTO_READY", "REVIEW_APPROVED", "REVIEW_STAGED_CONFLICT"])).count(),
+        "rejected": db.query(ResolutionPair).filter(
+            ResolutionPair.run_id == run_id,
+            or_(ResolutionPair.pair_decision.in_(["NON_MATCH", "NOT_MERGEABLE"]),
+                ResolutionPair.user_decision == "REJECTED"),
+        ).count(),
+        "review_cases": len(_review_groups(db, run_id)),
+        "manual": db.query(ResolutionProposal).filter_by(run_id=run_id, status="REVIEW_REQUIRED").count(),
+    }
+    counts["review"] = counts["review_cases"] + counts["manual"]
+    counts["review_pairs"] = pending_pairs(db, run_id).count()
+    counts["hard_blocked"] = db.query(ResolutionPair).filter_by(run_id=run_id,
+                                                                  pair_decision="NOT_MERGEABLE").count()
+    counts["insufficient"] = run.insufficient_count
+    counts["group_a"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="A").count()
+    counts["group_c"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="C").count()
+    counts["group_d"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="D").count()
+    counts["separate"] = separate_record_count(db, run_id, run.record_count)
+    eligible_merge_group_count = db.query(ResolutionProposal).filter(
+        ResolutionProposal.run_id == run_id,
+        ResolutionProposal.status.in_(["AUTO_READY", "REVIEW_APPROVED"]),
+    ).count()
+    estimated_entity_count = counts["separate"] + eligible_merge_group_count
+    duplicate_record_count = max(0, run.record_count - estimated_entity_count)
+    source_counts = {source: count for source, count in db.query(ResolutionRecord.source_system,
+                    func.count(ResolutionRecord.id)).filter_by(run_id=run_id).group_by(
+                    ResolutionRecord.source_system).all()}
+    history_count = db.query(ResolutionExport).filter_by(run_id=run_id).count()
     return {"run_id": run.id, "status": run.status, "phase": task.phase if task else run.phase,
             "processed_count": task.processed_count if task else 0,
             "total_count": task.total_count if task else run.record_count,
@@ -372,28 +384,6 @@ def get_overview(run_id: str, db: Session = Depends(get_session),
             "eligible_merge_group_count": eligible_merge_group_count,
             "counts": counts,
             "task": task_read(task) if task else None}
-
-
-@router.websocket("/{run_id}/overview/ws")
-async def overview_ws(
-    websocket: WebSocket,
-    run_id: str,
-    db: Session = Depends(get_session),
-    auth: CurrentSession = Depends(require_capability("read")),
-):
-    await websocket.accept()
-    try:
-        while True:
-            db.rollback() # Clear stale session state
-            data = await asyncio.to_thread(get_overview, run_id, db, auth)
-            await websocket.send_json(data)
-            await asyncio.sleep(1)
-    except WebSocketDisconnect:
-        pass
-    except Exception as exc:
-        import logging
-        logging.exception("WebSocket error in overview_ws")
-        await websocket.close(code=1011)
 
 
 @router.get("/{run_id}/audit")
@@ -590,7 +580,7 @@ def get_golden_record(run_id: str, proposal_id: str,
     proposal = db.get(ResolutionProposal, proposal_id)
     if proposal is None or proposal.run_id != run_id:
         raise HTTPException(404, 'Proposal not found')
-    gf = proposal.golden_fields or {}
+    gf = EngineResultAdapter.golden(proposal.golden_fields)
     member_records = []
     for rid in proposal.member_record_ids:
         rec = db.get(ResolutionRecord, rid)
@@ -610,7 +600,10 @@ def put_golden_record(run_id: str, proposal_id: str, request: GoldenRecordOverri
                       db: Session = Depends(get_session),
                       auth: CurrentSession = Depends(require_mutation_capability("edit_golden"))):
     owned_run(db, run_id, auth.user.id)
-    proposal = db.get(ResolutionProposal, proposal_id)
+    # Serialize with manual merge and generation publication before reading
+    # the proposal/override, so a confirmed edit cannot land on stale members.
+    db.query(ResolutionRun).filter_by(id=run_id).with_for_update().one()
+    proposal = db.query(ResolutionProposal).filter_by(id=proposal_id, run_id=run_id).with_for_update().one_or_none()
     if proposal is None or proposal.run_id != run_id:
         raise HTTPException(404, 'Proposal not found')
     if proposal.status not in ('AUTO_READY', 'REVIEW_APPROVED', 'REVIEW_REQUIRED'):
@@ -622,8 +615,17 @@ def put_golden_record(run_id: str, proposal_id: str, request: GoldenRecordOverri
     if request.fields:
         gf['_golden_override'] = request.fields
     else:
-        gf.pop('_golden_override', None)
+        # A prior manual merge can materialize the override into base fields.
+        # Explicit clearing must restore survivorship, not retain that value.
+        from masterone.mdm.pipeline.golden import build_golden
+        from masterone.mdm.pipeline.golden_v2 import golden_payload
+        records = db.query(ResolutionRecord).filter(
+            ResolutionRecord.run_id == run_id,
+            ResolutionRecord.id.in_(proposal.member_record_ids)).all()
+        gf = build_golden(sorted(proposal.member_record_ids),
+                          {row.id: golden_payload(row) for row in records})
     proposal.golden_fields = gf
+    proposal.revision += 1
     db.add(ResolutionAuditEvent(
         run_id=run_id, actor_user_id=auth.user.id, proposal_id=proposal_id,
         action='GOLDEN_RECORD_OVERRIDE',

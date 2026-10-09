@@ -32,15 +32,11 @@ def test_database_full_keeps_upload_ready_and_can_retry(client, monkeypatch, tmp
         engine = db.get_bind()
     event.listen(engine, "before_cursor_execute", fail_insert)
     try:
-        if failure_table == "mdm_resolution_runs":
-            with pytest.raises(Exception):
-                client.post(f"{prefix}/commit")
-        else:
-            failed = client.post(f"{prefix}/commit")
-            assert failed.status_code == 201, failed.text
+        failed = client.post(f"{prefix}/commit")
     finally:
         event.remove(engine, "before_cursor_execute", fail_insert)
-
+    assert failed.status_code == 507, failed.text
+    assert "không cần upload lại" in failed.json()["detail"]
     restored = client.get(prefix).json()
     assert restored["status"] == "READY"
     assert restored["files"][0]["received_size"] == len(payload)
@@ -179,8 +175,15 @@ def test_three_csv_files_are_processed_and_exported_as_one_run(client, monkeypat
     stored_objects = {}
 
     class FakeR2:
-        def upload_bytes(self, data, key, _content_type):
-            stored_objects[key] = data
+        def upload_file(self, path, key, _content_type):
+            with open(path, "rb") as stream:
+                stored_objects[key] = stream.read()
+
+        def iter_chunks(self, key):
+            yield stored_objects[key]
+
+        def write_manifest(self, key, payload):
+            stored_objects[key] = payload
 
         def download_bytes(self, key):
             return stored_objects[key]
@@ -189,7 +192,7 @@ def test_three_csv_files_are_processed_and_exported_as_one_run(client, monkeypat
             with open(path, "wb") as stream:
                 stream.write(stored_objects[key])
 
-    monkeypatch.setattr("masterone.mdm.resolution_items.get_store", lambda _settings: FakeR2())
+    monkeypatch.setattr("masterone.mdm.export_stream.get_store", lambda _settings: FakeR2())
     monkeypatch.setattr("masterone.api.mdm_resolution.get_store", lambda _settings: FakeR2())
     exported = client.post(f"{prefix}/previews/{preview.json()['preview_id']}/execute",
                            json={"execute_request_id": "three-file-export"})

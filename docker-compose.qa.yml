@@ -1,0 +1,132 @@
+# Isolated, local-only rehearsal. Never loads the developer's .env.
+# docker compose --env-file .env.qa.local -p masterone-qa -f docker-compose.qa.yml up -d --build
+x-runtime: &runtime
+  APP_ENV: test
+  MDM_DATABASE_PROFILE: local
+  MDM_DATABASE_URL_LOCAL: postgresql+psycopg://qa:qa-local-only@database:5432/masterone_qa
+  MDM_DATABASE_URL: postgresql+psycopg://qa:qa-local-only@database:5432/masterone_qa
+  DATABASE_URL: postgresql+psycopg://qa:qa-local-only@database:5432/masterone_qa
+  AUTH_CSRF_SECRET: ${AUTH_CSRF_SECRET:?Generate .env.qa.local first}
+  CORS_ORIGINS: http://localhost:13000,http://127.0.0.1:13000
+  R2_ENDPOINT_URL: http://storage:9000
+  R2_PRESIGN_ENDPOINT_URL: http://127.0.0.1:19000
+  R2_ACCESS_KEY_ID: qa-local-access
+  R2_SECRET_ACCESS_KEY: qa-local-secret-only
+  R2_BUCKET: masterone-qa
+  OPENAI_API_KEY: ""
+  OPENROUTER_API_KEY: ""
+  GEMINI_API_KEY: ""
+  GEMINI_API_KEY_1: ""
+  GEMINI_API_KEY_2: ""
+  GEMINI_API_KEY_3: ""
+  LLM_ENABLED: "false"
+  LLM_SEMANTIC_ENABLED: "false"
+  LLM_EXPLANATION_ENABLED: "false"
+  SEMANTIC_ADDRESS_ENABLED: "false"
+  LANGCHAIN_TRACING_V2: "false"
+  LANGSMITH_TRACING: "false"
+  AWS_EC2_METADATA_DISABLED: "true"
+  UPLOAD_STAGING_DIR: /app/data/upload-staging
+  EXPORT_ARTIFACT_DIR: /app/data/export-artifacts
+  WORK_DIR: /app/data/work
+  MDM_ENGINE_V2_ENABLED: ${QA_ENGINE_V2:-false}
+  DECISION_SEMANTICS_V2_ENABLED: ${QA_ENGINE_V2:-false}
+  CLUSTER_SAFETY_V2_ENABLED: ${QA_ENGINE_V2:-false}
+  GENERATION_STAGING_ENABLED: ${QA_ENGINE_V2:-false}
+  PIPELINE_RESUME_ENABLED: ${QA_RESUME:-false}
+  STREAM_PREPARE_NORMALIZE_ENABLED: ${QA_STREAMING:-false}
+  STREAM_NORMALIZE_BUILD_ENABLED: ${QA_STREAMING:-false}
+  STREAM_BUILD_SCORE_ENABLED: ${QA_STREAMING:-false}
+  STREAM_SCORE_DECIDE_ENABLED: ${QA_STREAMING:-false}
+  STREAM_DECIDE_MATERIALIZE_ENABLED: ${QA_STREAMING:-false}
+
+services:
+  database:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: masterone_qa
+      POSTGRES_USER: qa
+      POSTGRES_PASSWORD: qa-local-only
+    ports: ["127.0.0.1:15432:5432"]
+    volumes: ["qa_postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qa -d masterone_qa"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  storage:
+    # Server-mode S3 emulator; volatile state, not a durability certificate.
+    image: motoserver/moto:5.2.3
+    environment:
+      MOTO_PORT: "9000"
+    ports: ["127.0.0.1:19000:9000"]
+    restart: unless-stopped
+  migrate:
+    image: masterone-qa-backend
+    build: {context: ., dockerfile: Dockerfile}
+    environment: *runtime
+    entrypoint: ["python", "-c"]
+    command:
+      - |
+        import time, boto3
+        from botocore.exceptions import EndpointConnectionError
+        from masterone.config import get_settings
+        from masterone.mdm.migrate import upgrade_database
+        s = get_settings()
+        client = boto3.client('s3', endpoint_url=s.r2_endpoint_url, aws_access_key_id=s.r2_access_key_id, aws_secret_access_key=s.r2_secret_access_key, region_name='us-east-1')
+        for attempt in range(30):
+            try:
+                buckets = client.list_buckets()['Buckets']
+                break
+            except EndpointConnectionError:
+                if attempt == 29: raise
+                time.sleep(1)
+        if not any(b['Name'] == s.r2_bucket for b in buckets):
+            client.create_bucket(Bucket=s.r2_bucket)
+        upgrade_database(s.active_mdm_database_url)
+    depends_on:
+      database: {condition: service_healthy}
+      storage: {condition: service_started}
+  backend:
+    image: masterone-qa-backend
+    build: {context: ., dockerfile: Dockerfile}
+    environment: *runtime
+    ports: ["127.0.0.1:18001:8001"]
+    volumes: ["qa_runtime:/app/data"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/ready')"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+  worker:
+    image: masterone-qa-backend
+    command: ["python", "-m", "masterone.mdm.resolution_worker"]
+    environment: *runtime
+    volumes: ["qa_runtime:/app/data"]
+    depends_on:
+      backend: {condition: service_healthy}
+    restart: unless-stopped
+    healthcheck: {disable: true}
+  frontend:
+    image: masterone-qa-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args: {NEXT_PUBLIC_API_BASE_URL: "http://127.0.0.1:18001"}
+    ports: ["127.0.0.1:13000:3000"]
+    environment: {NODE_ENV: production, HOSTNAME: "0.0.0.0"}
+    depends_on:
+      backend: {condition: service_healthy}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+volumes:
+  qa_postgres:
+  qa_runtime:

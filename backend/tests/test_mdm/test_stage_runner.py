@@ -1,5 +1,3 @@
-import os
-os.environ['SOURCE_MAPPING_VERSION'] = '1.0'
 """Tests for TASK-8.1 (StageRunner) and TASK-10.1/10.2 (E2E + memory)."""
 
 import pytest

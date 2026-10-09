@@ -13,7 +13,9 @@ from masterone.mdm.models import (
     ResolutionReviewCase,
     ResolutionRun,
 )
+from masterone.mdm.pipeline.decision_semantics import require_manual_merge
 from masterone.mdm.pipeline.golden import build_golden
+from masterone.mdm.pipeline.golden_v2 import golden_payload, merge_existing_golden
 from masterone.mdm.resolution_items import ELIGIBLE, _internal_pairs, _is_blocked, _records, _split_blocked_proposal
 
 
@@ -59,19 +61,20 @@ def decide_review_pair(db: Session, run_id: str, pair_id: str, decision: str, re
                     changed = True
         if any(_is_blocked(other) for other in _internal_pairs(db, run_id, members)):
             raise HTTPException(409, "Không thể gộp: nhóm liên quan có cặp đã xác định Không gộp")
+        require_manual_merge(db, run_id, members)
         staged = db.query(ResolutionProposal).filter_by(run_id=run_id, status="REVIEW_STAGED_CONFLICT").all()
         if any(members & set(proposal.member_record_ids) for proposal in staged):
             raise HTTPException(409, "Cần xử lý cụm xung đột liên quan trước khi xác nhận cặp")
         rows = _records(db, members)
-        payload = {row.id: {"id": row.id, "external_id": row.external_id,
-                            "source_system": row.source_system, "raw_fields": row.raw_fields} for row in rows}
+        payload = {row.id: golden_payload(row) for row in rows}
         proposal_id = sha256(f"{run_id}:pair:{pair.id}:{revision}".encode()).hexdigest()
         for proposal in proposals:
             if members & set(proposal.member_record_ids):
                 proposal.status = "SUPERSEDED"
                 proposal.revision += 1
         db.add(ResolutionProposal(id=proposal_id, run_id=run_id, member_record_ids=sorted(members),
-            golden_fields=build_golden(sorted(members), payload), status="REVIEW_APPROVED",
+            golden_fields=build_golden(sorted(members), payload,
+                existing_golden=merge_existing_golden(proposals, members)), status="REVIEW_APPROVED",
             origin="REVIEW", decision_reason="USER_PAIR_APPROVED"))
     pair.user_decision = "ACCEPTED" if decision == "merge" else "REJECTED"
     pair.revision += 1

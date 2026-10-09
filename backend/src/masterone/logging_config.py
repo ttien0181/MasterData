@@ -33,13 +33,13 @@ def _mask_pii(text: str) -> str:
 
 class _PIIFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
-        record.msg = _mask_pii(str(record.msg))
-        if record.args:
-            try:
-                record.msg = record.msg % record.args
-            except Exception:
-                pass
-            record.args = ()
+        # Render lazy args before masking; args may contain the PII.
+        try:
+            rendered = record.getMessage()
+        except (TypeError, ValueError):
+            rendered = "LOG_FORMAT_ERROR"
+        record.msg = _mask_pii(rendered)
+        record.args = ()
         return True
 
 
@@ -59,7 +59,11 @@ class _JSONFormatter(logging.Formatter):
             if hasattr(record, key):
                 payload[key] = getattr(record, key)
         if record.exc_info:
-            payload["exc_info"] = self.formatException(record.exc_info)
+            # SQL/provider exception strings may contain params or credentials.
+            import traceback
+            payload["error_type"] = record.exc_info[0].__name__
+            payload["frames"] = [{"function": frame.name, "line": frame.lineno}
+                                 for frame in traceback.extract_tb(record.exc_info[2])]
         return json.dumps(payload, ensure_ascii=False, default=str)
 
 
@@ -69,14 +73,17 @@ def configure_logging(level: int = logging.INFO, json_output: bool = True) -> No
     Call once at application startup (main.py / lifespan).
     """
     handler = logging.StreamHandler(sys.stdout)
+    handler._masterone_handler = True
     if json_output:
         handler.setFormatter(_JSONFormatter())
     handler.addFilter(_PIIFilter())
 
     root = logging.getLogger()
     root.setLevel(level)
-    # Remove any default handlers installed by uvicorn / FastAPI before ours
-    root.handlers.clear()
+    # Replace only our handler; retain host/test capture handlers.
+    for existing in list(root.handlers):
+        if getattr(existing, "_masterone_handler", False):
+            root.removeHandler(existing)
     root.addHandler(handler)
 
     # Silence noisy third-party loggers

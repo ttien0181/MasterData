@@ -365,6 +365,7 @@ def apply_policy(
     match_weight: float,
     nf_left: dict,
     nf_right: dict,
+    *, policies: dict[str, SubgroupPolicy] | None = None,
 ) -> PolicyResult:
     """Evaluate all subgroup policies for a pair and pick the most conservative eligible one."""
     if primary_group == "A":
@@ -376,7 +377,7 @@ def apply_policy(
     else:
         return PolicyResult(False, "", 0, "UNKNOWN_GROUP", [], "")
 
-    policies = get_policies()
+    policies = get_policies() if policies is None else policies
     matched: list[str] = []
     for sg in priority:
         pol = policies.get(sg)

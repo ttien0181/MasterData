@@ -9,19 +9,18 @@ from sqlalchemy import case as sql_case
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from masterone.config import get_settings
 from masterone.mdm.models import (
     ResolutionAuditEvent,
-    ResolutionExport,
     ResolutionPair,
     ResolutionProposal,
     ResolutionRecord,
     ResolutionReviewCase,
     ResolutionRun,
 )
+from masterone.mdm.pipeline.decision_semantics import persisted_eligibility, require_manual_merge
 from masterone.mdm.pipeline.golden import build_golden
+from masterone.mdm.pipeline.golden_v2 import golden_payload, merge_existing_golden
 from masterone.mdm.pipeline.matching import score_pair
-from masterone.storage.r2 import export_key, get_store
 
 FIELDS = ("name", "phone", "email", "address")
 ELIGIBLE = ("AUTO_READY", "REVIEW_APPROVED")
@@ -29,7 +28,7 @@ STAGED_CONFLICT = "REVIEW_STAGED_CONFLICT"
 
 
 def _is_blocked(pair):
-    return pair.pair_decision in {"NON_MATCH", "NOT_MERGEABLE"} or pair.user_decision == "REJECTED"
+    return not persisted_eligibility(pair).manual_allowed
 
 
 def _covered_record_ids(proposals):
@@ -179,11 +178,11 @@ def list_items(db: Session, run_id: str, bucket: str, offset: int, limit: int,
     elif bucket == "no_merge":
         query = db.query(ResolutionPair).filter(ResolutionPair.run_id == run_id,
             or_(ResolutionPair.pair_decision.in_(["NON_MATCH", "NOT_MERGEABLE"]),
-                ResolutionPair.user_decision == "REJECTED"))
+                ResolutionPair.user_decision.in_(["REJECTED", "NON_MATCH"])))
         total = query.count()
         rows = query.order_by(ResolutionPair.id).offset(offset).limit(limit).all()
         entries = [{"id": row.id, "bucket": bucket, "kind": "pair",
-                    "origin": "REVIEW" if row.user_decision == "REJECTED" else "AUTO",
+                    "origin": "REVIEW" if row.user_decision in {"REJECTED", "NON_MATCH"} else "AUTO",
                     "member_record_ids": [row.left_record_id, row.right_record_id],
                     "pair_count": 1, "score": row.score, "reason": row.triage_reason} for row in rows]
     elif bucket == "review":
@@ -214,7 +213,7 @@ def list_items(db: Session, run_id: str, bucket: str, offset: int, limit: int,
         if bucket == "review":
             pairs = _internal_pairs(db, run_id, entry["member_record_ids"])
             entry["can_merge"] = not any(pair.pair_decision in {"NON_MATCH", "NOT_MERGEABLE"}
-                                         or pair.user_decision == "REJECTED"
+                                         or pair.user_decision in {"REJECTED", "NON_MATCH"}
                                          for pair in pairs)
     return {"total": total, "items": entries}
 
@@ -248,9 +247,9 @@ def get_item(db: Session, run_id: str, bucket: str, item_id: str, signature_hash
     elif bucket == "no_merge":
         row = db.get(ResolutionPair, item_id)
         if row is None or row.run_id != run_id or not (row.pair_decision in {"NON_MATCH", "NOT_MERGEABLE"}
-                                                       or row.user_decision == "REJECTED"):
+                                                       or row.user_decision in {"REJECTED", "NON_MATCH"}):
             raise HTTPException(404, "Item không còn ở tab Không gộp")
-        members, kind, origin = [row.left_record_id, row.right_record_id], "pair", "REVIEW" if row.user_decision == "REJECTED" else "AUTO"
+        members, kind, origin = [row.left_record_id, row.right_record_id], "pair", "REVIEW" if row.user_decision in {"REJECTED", "NON_MATCH"} else "AUTO"
         meta = {"reason": row.triage_reason, "score": row.score,
                 "field_evidence": row.field_evidence}
     elif bucket == "review":
@@ -279,6 +278,8 @@ def get_item(db: Session, run_id: str, bucket: str, item_id: str, signature_hash
                     if has_conflict else None}
     else:
         raise HTTPException(422, "Tab không hợp lệ")
+    if len(members) > 200:
+        raise HTTPException(413, "Review detail exceeds 200 records; use pair review queue")
     records = _records(db, members)
     if bucket == "no_merge" and not meta["field_evidence"]:
         by_id = {record.id: record for record in records}
@@ -293,15 +294,16 @@ def get_item(db: Session, run_id: str, bucket: str, item_id: str, signature_hash
     options = _options(records)
     choices, missing = _choice_state(options, origin)
     records_by_id = {record.id: record for record in records}
-    pair_details = [{"id": pair.id,
-                     "left_external_id": records_by_id[pair.left_record_id].external_id,
-                     "right_external_id": records_by_id[pair.right_record_id].external_id,
-                     "primary_group": pair.primary_group, "subgroup": pair.subgroup,
-                     "score": pair.score, "decision": pair.pair_decision,
-                     "reason": pair.triage_reason,
-                     "field_evidence": meta["field_evidence"] if bucket == "no_merge" and pair.id == item_id
-                     else pair.field_evidence}
-                    for pair in _internal_pairs(db, run_id, members)]
+    from masterone.mdm.engine_adapter import EngineResultAdapter
+    adapter = EngineResultAdapter()
+    if "field_evidence" in meta:
+        meta["field_evidence"] = adapter.evidence(meta["field_evidence"])
+    detail_pairs = db.query(ResolutionPair).filter(ResolutionPair.run_id == run_id,
+        ResolutionPair.left_record_id.in_(members), ResolutionPair.right_record_id.in_(members)).order_by(ResolutionPair.id).limit(2001).all()
+    if len(detail_pairs) > 2000:
+        raise HTTPException(413, "Review detail exceeds 2000 pairs; use pair review queue")
+    pair_details = [adapter.pair_detail(pair, records_by_id,
+        meta["field_evidence"] if bucket == "no_merge" and pair.id == item_id else None) for pair in detail_pairs]
     return {"id": item_id, "bucket": bucket, "kind": kind, "origin": origin,
             "member_record_ids": list(members), "member_count": len(members),
             "records": [{"id": record.id, "external_id": record.external_id,
@@ -339,8 +341,7 @@ def _split_blocked_proposal(db, proposal, rejected_pairs, actor_user_id, exclude
             continue
         preserved.append(set(component))
         rows = _records(db, component)
-        payload = {row.id: {"id": row.id, "external_id": row.external_id,
-                            "source_system": row.source_system, "raw_fields": row.raw_fields} for row in rows}
+        payload = {row.id: golden_payload(row) for row in rows}
         new_id = sha256(f"{proposal.id}:split:{_hash_members(component)}".encode()).hexdigest()
         db.add(ResolutionProposal(id=new_id, run_id=proposal.run_id,
             member_record_ids=sorted(component), golden_fields=build_golden(sorted(component), payload),
@@ -371,6 +372,8 @@ def transition_review(db: Session, run_id: str, item_ids: list[str], decision: s
     for item_id in item_ids:
         entry = groups[item_id]
         members = set(entry["member_record_ids"])
+        if decision == "merge":
+            require_manual_merge(db, run_id, members)
         if entry["kind"] == "deferred":
             proposal = db.get(ResolutionProposal, item_id)
             if decision == "no_merge":
@@ -407,12 +410,11 @@ def transition_review(db: Session, run_id: str, item_ids: list[str], decision: s
             continue
         if any(_is_blocked(pair) for pair in pairs):
             records = _records(db, members)
-            payload = {row.id: {"id": row.id, "external_id": row.external_id,
-                                "source_system": row.source_system, "raw_fields": row.raw_fields} for row in records}
+            payload = {row.id: golden_payload(row) for row in records}
             staged_id = sha256(f"{run_id}:staged:{_hash_members(members)}".encode()).hexdigest()
             if db.get(ResolutionProposal, staged_id):
                 raise HTTPException(409, "Item đã được đưa sang Gộp; hãy tải lại")
-            golden = build_golden(sorted(members), payload)
+            golden = build_golden(sorted(members), payload, existing_golden=merge_existing_golden(proposals, members))
             golden["staged_case_ids"] = [case.id for case in cases]
             db.add(ResolutionProposal(id=staged_id, run_id=run_id,
                 member_record_ids=sorted(members), golden_fields=golden,
@@ -438,15 +440,15 @@ def transition_review(db: Session, run_id: str, item_ids: list[str], decision: s
             case.status = "APPROVED"
             case.revision += 1
         records = _records(db, members)
-        payload = {row.id: {"id": row.id, "external_id": row.external_id,
-                            "source_system": row.source_system, "raw_fields": row.raw_fields} for row in records}
+        payload = {row.id: golden_payload(row) for row in records}
         run = db.get(ResolutionRun, run_id)
         proposal_id = sha256(f"{run_id}:{run.policy_version}:review:{_hash_members(members)}".encode()).hexdigest()
         proposal = db.get(ResolutionProposal, proposal_id)
         if proposal:
             raise HTTPException(409, "Item đã được duyệt; hãy tải lại")
         db.add(ResolutionProposal(id=proposal_id, run_id=run_id,
-            member_record_ids=sorted(members), golden_fields=build_golden(sorted(members), payload),
+            member_record_ids=sorted(members), golden_fields=build_golden(sorted(members), payload,
+                existing_golden=merge_existing_golden(proposals, members)),
             status="REVIEW_APPROVED", origin="REVIEW", decision_reason="USER_REVIEW_APPROVED"))
         db.flush()
         db.add(ResolutionAuditEvent(run_id=run_id, actor_user_id=actor_user_id,
@@ -507,155 +509,15 @@ def resolve_staged_conflict(db: Session, run_id: str, item_id: str, actor_user_i
 
 
 def export_readiness(db: Session, run_id: str, submitted_choices: dict | None = None):
-    proposals = db.query(ResolutionProposal).filter(ResolutionProposal.run_id == run_id,
-                                                     ResolutionProposal.status.in_(ELIGIBLE)).order_by(ResolutionProposal.id).all()
-    missing = []
-    blockers = []
-    owner = {}
-    submitted_choices = submitted_choices or {}
-
-    def blocker(proposal, kind, message, fields=None):
-        result = {"item_id": proposal.id, "kind": kind, "message": message,
-                  "label": proposal.golden_fields.get("fields", {}).get("name", {}).get("value", "Khách hàng")}
-        if fields:
-            result["fields"] = fields
-        return result
-
-    proposal_by_id = {proposal.id: proposal for proposal in proposals}
-    for proposal in proposals:
-        members = set(proposal.member_record_ids)
-        overlap = {owner[record_id] for record_id in members if record_id in owner}
-        if overlap:
-            blockers.append(blocker(proposal, "OVERLAP", "Cụm có bản ghi trùng với cụm khác; cần kiểm tra lại."))
-        for record_id in members:
-            owner[record_id] = proposal.id
-        options = _options(_records(db, members))
-        selected = submitted_choices.get(proposal.id, {})
-        if not isinstance(selected, dict) or _valid_choices(selected, options) != selected:
-            raise HTTPException(422, "Lựa chọn nguồn của item không hợp lệ")
-        _, fields = _choice_state(options, proposal.origin, selected)
-        if fields:
-            missing.append({"item_id": proposal.id, "fields": fields})
-            blockers.append(blocker(proposal, "MISSING_CHOICES", "Chọn giá trị cho các trường khác nhau.", fields))
-    pending = len(_review_groups(db, run_id)) + db.query(ResolutionProposal).filter_by(
-        run_id=run_id, status="REVIEW_REQUIRED").count()
-    staged = db.query(ResolutionProposal).filter_by(run_id=run_id, status=STAGED_CONFLICT).all()
-    blockers.extend(blocker(proposal, "STAGED_CONFLICT", "Cụm có cặp Không gộp; cần tách cụm an toàn.")
-                    for proposal in staged)
-    blocked_items = set()
-    negative_pairs = db.query(ResolutionPair).filter(
-        ResolutionPair.run_id == run_id,
-        or_(ResolutionPair.pair_decision.in_(["NON_MATCH", "NOT_MERGEABLE"]),
-            ResolutionPair.user_decision == "REJECTED")).all()
-    for pair in negative_pairs:
-        proposal_id = owner.get(pair.left_record_id)
-        if proposal_id and proposal_id == owner.get(pair.right_record_id) and _is_blocked(pair):
-            blocked_items.add(proposal_id)
-    blockers.extend(blocker(proposal_by_id[item_id], "NEGATIVE_LINK",
-                            "Cụm chứa cặp đã xác nhận Không gộp; cần tách trước khi xuất.")
-                    for item_id in sorted(blocked_items))
-    return {"merge_count": len(proposals), "pending_review_count": pending,
-            "staged_conflict_count": len(staged),
-            "incomplete_count": len(missing), "incomplete_items": missing,
-            "blockers": blockers, "can_export": not blockers}
+    from masterone.mdm.export_stream import export_readiness as streamed_readiness
+    return streamed_readiness(db, run_id, submitted_choices)
 
 
 def create_export(db: Session, run_id: str, actor_user_id: str, acknowledge_unreviewed: bool,
-                  submitted_choices: dict | None = None, *, commit: bool = True):
-    readiness = export_readiness(db, run_id, submitted_choices)
-    if not readiness["can_export"]:
-        raise HTTPException(409, "Còn cụm cần xử lý trước khi xuất CSV")
-    if readiness["staged_conflict_count"]:
-        raise HTTPException(409, "Còn cụm xung đột ở tab Gộp; hãy tách cụm trước khi xuất CSV")
-    if readiness["incomplete_count"]:
-        raise HTTPException(409, "Cần chọn giá trị cho mọi trường khác nhau trước khi xuất CSV")
-    if readiness["pending_review_count"] and not acknowledge_unreviewed:
-        raise HTTPException(409, "Còn item Cần review; xác nhận xuất CSV với các bản ghi đó ở dạng riêng lẻ")
-    records = db.query(ResolutionRecord).filter_by(run_id=run_id).order_by(ResolutionRecord.id).all()
-    by_id = {row.id: row for row in records}
-    occupied = set()
-    rows = []
-    columns = ["master_record_id", "full_name", "phone_number", "email_address", "raw_address", "source_record_ids",
-               "source_systems", "record_count", "resolution_status", "review_pending"]
-    def append_group(group_id, members, values, status, pending=False):
-        if not members <= set(by_id) or occupied & members:
-            raise HTTPException(409, "Nguồn bị thiếu hoặc trùng trong bản xuất")
-        occupied.update(members)
-        sources = sorted({by_id[record_id].source_system for record_id in members})
-        rows.append({"master_record_id": group_id,
-                     "full_name": values.get("name", ""), "phone_number": values.get("phone", ""),
-                     "email_address": values.get("email", ""), "raw_address": values.get("address", ""),
-                     "source_record_ids": "|".join(sorted(by_id[record_id].external_id for record_id in members)),
-                     "source_systems": "|".join(sources), "record_count": len(members),
-                     "resolution_status": status, "review_pending": "true" if pending else "false"})
-    proposals = db.query(ResolutionProposal).filter(ResolutionProposal.run_id == run_id,
-                                                     ResolutionProposal.status.in_(ELIGIBLE)).order_by(ResolutionProposal.id).all()
-    for proposal in proposals:
-        members = set(proposal.member_record_ids)
-        # §22: use survivorship result from golden_fields as base; steward submitted_choices override specific fields
-        gf_fields = proposal.golden_fields.get("fields", {}) if proposal.golden_fields else {}
-        submitted = (submitted_choices or {}).get(proposal.id, {})
-        values = {}
-        for field in FIELDS:
-            if field in submitted:
-                # Steward explicitly chose a source record — use its raw value
-                chosen_rec = by_id.get(submitted[field])
-                values[field] = str(chosen_rec.raw_fields.get(field, "") if chosen_rec else "").strip()
-            elif field in gf_fields:
-                values[field] = gf_fields[field].get("value", "") or ""
-            else:
-                # fallback: first non-empty raw value among member records
-                values[field] = next(
-                    (str(by_id[rid].raw_fields.get(field, "")).strip()
-                     for rid in proposal.member_record_ids
-                     if by_id.get(rid) and str(by_id[rid].raw_fields.get(field, "")).strip()),
-                    ""
-                )
-        append_group(proposal.id, members, values, "MERGED")
-    review_members = {record_id for members, _ in _review_groups(db, run_id) for record_id in members}
-    for record in records:
-        if record.id not in occupied:
-            append_group(record.id, {record.id},
-                         {field: record.raw_fields.get(field, "") for field in FIELDS},
-                         "UNMERGED", record.id in review_members)
-    if len(occupied) != len(records):
-        raise HTTPException(409, "Bản xuất chưa bao phủ toàn bộ bản ghi đầu vào")
-    output = StringIO(newline="")
-    writer = csv.DictWriter(output, fieldnames=columns)
-    writer.writeheader()
-    writer.writerows(rows)
-    csv_data = ("\ufeff" + output.getvalue()).encode("utf-8")
-    snapshot = ResolutionExport(run_id=run_id, actor_user_id=actor_user_id,
-        csv_bytes=csv_data, row_count=len(rows),
-        merged_group_count=len(proposals),
-        pending_review_count=readiness["pending_review_count"])
-    db.add(snapshot)
-    db.flush()
-    db.add(ResolutionAuditEvent(
-        run_id=run_id, actor_user_id=actor_user_id, action="CSV_EXPORTED",
-        details={"export_id": snapshot.id, "row_count": len(rows),
-                 "merged_group_count": len(proposals)},
-    ))
-    if commit:
-        db.commit()
-    else:
-        db.flush()
-    # Upload to R2 and clear csv_bytes from DB (best-effort \u2014 keeps DB from bloating)
-    settings = get_settings()
-    r2 = get_store(settings)
-    if r2 is not None:
-        try:
-            key = export_key(run_id, snapshot.id)
-            r2.upload_bytes(csv_data, key, "text/csv; charset=utf-8")
-            snapshot.csv_bytes = None
-            snapshot.r2_key = key
-            if commit:
-                db.commit()
-            else:
-                db.flush()
-        except Exception:
-            pass  # R2 unavailable \u2192 csv_bytes stays in DB as fallback
-    return snapshot
+                  submitted_choices: dict | None = None, *, commit: bool = True, export_id=None):
+    from masterone.mdm.export_stream import create_export as streamed_export
+    return streamed_export(db, run_id, actor_user_id, acknowledge_unreviewed,
+                           submitted_choices, commit=commit, export_id=export_id)
 
 
 def source_csv(db: Session, run_id: str):

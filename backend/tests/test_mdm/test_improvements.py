@@ -7,7 +7,7 @@ import pytest
 
 def test_settings_has_all_llm_fields():
     from masterone.config import Settings
-    s = Settings(_env_file=None, llm_enabled=True, openrouter_api_key="test-key")
+    s = Settings(llm_enabled=True, openrouter_api_key="test-key")
     assert s.llm_enabled is True
     assert s.openrouter_api_key == "test-key"
     assert s.llm_semantic_model == "google/gemini-2.5-flash"
@@ -19,7 +19,7 @@ def test_settings_has_all_llm_fields():
 def test_llm_settings_mapping():
     from masterone.config import Settings
     from masterone.llm.config import LLMSettings
-    s = Settings(_env_file=None, llm_enabled=False)
+    s = Settings(llm_enabled=False)
     ls = LLMSettings(
         enabled=s.llm_enabled,
         semantic_enabled=s.llm_semantic_enabled,
@@ -50,13 +50,12 @@ def test_production_config_fails_without_required_fields():
     from pydantic import ValidationError
     from masterone.config import Settings
     with pytest.raises((ValidationError, ValueError)):
-        Settings(_env_file=None, app_env="production", database_url="", auth_csrf_secret="")
+        Settings(app_env="production", database_url="", auth_csrf_secret="")
 
 
 def test_production_config_passes_with_required_fields():
     from masterone.config import Settings
     s = Settings(
-        _env_file=None,
         app_env="production",
         database_url="postgresql+psycopg://user:pass@db/test",
         auth_csrf_secret="a" * 32,
@@ -66,7 +65,7 @@ def test_production_config_passes_with_required_fields():
 
 def test_development_config_passes_without_required_fields():
     from masterone.config import Settings
-    s = Settings(_env_file=None, app_env="development", database_url="", auth_csrf_secret="")
+    s = Settings(app_env="development", database_url="", auth_csrf_secret="")
     assert s.app_env == "development"
 
 

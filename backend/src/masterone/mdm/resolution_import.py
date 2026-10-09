@@ -9,6 +9,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import BinaryIO
+from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import func, insert
@@ -16,51 +17,19 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
 from masterone.config import get_settings
+from masterone.mdm.input_schema import InputMappingError, input_error, resolve_source_schema
 from masterone.mdm.models import ResolutionAuditEvent, ResolutionFile, ResolutionRecord, ResolutionRun
 from masterone.mdm.pipeline.matching import POLICY_VERSION
 from masterone.mdm.pipeline.standardization import standardize
 from masterone.storage.r2 import get_store, source_file_key
 
-import os
-from concurrent.futures import ProcessPoolExecutor
-
 MAX_FILES_PER_RUN = 10
-INSERT_BATCH_SIZE = 5000
+INSERT_BATCH_SIZE = 1000
 # Python's csv default field limit is 128 KiB. File and row counts are not capped;
 # rows are streamed into bounded insert batches below.
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
 
-LINH_COLUMNS = {"record_id", "source", "name", "phone", "email", "address"}
-LEGACY_COLUMNS = {"id", "source_system", "full_name"}
-LEGACY_FIELDS = {"full_name": "name", "phone_number": "phone",
-                 "email_address": "email", "raw_address": "address"}
-CRM_COLUMNS = {"contact_id", "source_system", "contact_name"}
-CRM_FIELDS = {"contact_name": "name", "mobile": "phone", 
-              "email": "email", "mailing_address": "address",
-              "birth_date": "dob", "government_id": "government_id",
-              "government_id_type": "government_id_type"}
-BILL_COLUMNS = {"debtor_code", "source_system", "legal_name"}
-BILL_FIELDS = {"legal_name": "name", "contact_number": "phone",
-               "email": "email", "invoice_address": "address",
-               "dob": "dob", "government_id": "government_id",
-               "government_id_type": "government_id_type"}
-ERP_COLUMNS = {"MA_KH", "source_system", "HO_TEN"}
-ERP_FIELDS = {"HO_TEN": "name", "DIEN_THOAI": "phone",
-              "email": "email", "DIA_CHI": "address",
-              "NGAY_SINH": "dob", "government_id": "government_id",
-              "government_id_type": "government_id_type"}
-ALLOWED_SOURCES = {"CRM", "ERP", "BILL", "CSV"}
 CORE_RAW_FIELDS = {"name", "phone", "email", "address", "dob", "government_id", "government_id_type"}
-
-
-def _standardize_batch(rows):
-    """Worker function cho multiprocessing."""
-    results = []
-    for row in rows:
-        raw = row["raw_fields"]
-        normalized, quality_flags = standardize(raw, entity_type=row["entity_type"])
-        results.append({**row, "normalized_fields": normalized, "quality_flags": quality_flags})
-    return results
 
 
 @dataclass(frozen=True)
@@ -74,29 +43,11 @@ class ParsedFile:
     raw_bytes: bytes
 
 
-def _validate_headers(filename: str, fieldnames: list[str] | None) -> tuple[set[str], str, list[str]]:
-    headers = set(fieldnames or [])
-    schema_type = ""
-    if LINH_COLUMNS <= headers:
-        schema_type = "LINH"
-    elif CRM_COLUMNS <= headers:
-        schema_type = "CRM"
-    elif BILL_COLUMNS <= headers:
-        schema_type = "BILL"
-    elif ERP_COLUMNS <= headers:
-        schema_type = "ERP"
-    elif LEGACY_COLUMNS <= headers:
-        schema_type = "LEGACY"
-
-    if (not filename.lower().endswith(".csv") or "pairs.csv" in filename.lower()
-            or not schema_type):
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            f"{filename} cần các cột {', '.join(sorted(LINH_COLUMNS))} hoặc cấu trúc chuẩn tương đương",
-        )
-    reserved = {"record_id", "id", "contact_id", "debtor_code", "MA_KH", "source", "source_system"} | CORE_RAW_FIELDS | {"entity_id"}
-    extra_columns = [column for column in (fieldnames or []) if column not in reserved]
-    return headers, schema_type, extra_columns
+def _validate_headers(filename, fieldnames):
+    if not filename.lower().endswith(".csv") or "pairs.csv" in filename.lower():
+        input_error("INVALID_INPUT_SCHEMA", "Chọn file records.csv")
+    mapping = resolve_source_schema(fieldnames)
+    return set(fieldnames), mapping, mapping.unknown_fields
 
 
 @contextmanager
@@ -110,8 +61,8 @@ def _csv_reader(stream: BinaryIO, filename: str):
             dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
         except csv.Error:
             dialect = csv.excel
-            
-        reader = csv.DictReader(text, dialect=dialect)
+
+        reader = csv.DictReader(text, dialect=dialect, strict=True)
         headers, schema_type, extra_columns = _validate_headers(filename, reader.fieldnames)
         yield reader, headers, schema_type, extra_columns
     except UnicodeDecodeError as exc:
@@ -127,65 +78,28 @@ def _csv_reader(stream: BinaryIO, filename: str):
         stream.seek(0)
 
 
-def _normalized_row(filename: str, line: int, source_row: dict, schema_type: str,
-                    extra_columns: list[str]) -> dict:
+def _normalized_row(filename, line, source_row, schema_type, extra_columns):
     if None in source_row or any(value is None for value in source_row.values()):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"{filename} sai số cột ở dòng {line}")
-        
-    if schema_type == "LINH":
-        external_id = source_row.get("record_id")
-        source = source_row.get("source")
-        name = source_row.get("name")
-    elif schema_type == "CRM":
-        external_id = source_row.get("contact_id")
-        source = source_row.get("source_system")
-        name = source_row.get("contact_name")
-    elif schema_type == "BILL":
-        external_id = source_row.get("debtor_code")
-        source = source_row.get("source_system")
-        name = source_row.get("legal_name")
-    elif schema_type == "ERP":
-        external_id = source_row.get("MA_KH")
-        source = source_row.get("source_system")
-        name = source_row.get("HO_TEN")
-    else:
-        external_id = source_row.get("id")
-        source = source_row.get("source_system")
-        name = source_row.get("full_name")
-
-    external_id = (external_id or "").strip()
-    source = (source or "").strip().upper()
-    name = (name or "").strip()
-    entity_type = (source_row.get("entity_type") or "PERSON").strip().upper()
-    if not external_id or not name or source not in ALLOWED_SOURCES:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
-                            f"{filename} có dữ liệu bắt buộc sai ở dòng {line}")
-
-    if schema_type == "LINH":
-        raw = {field: (source_row.get(field) or "").strip() for field in ("name", "phone", "email", "address")}
-        for optional in ("dob", "government_id", "government_id_type"):
-            if optional in source_row:
-                raw[optional] = (source_row.get(optional) or "").strip()
-    elif schema_type == "CRM":
-        raw = {target: (source_row.get(column) or "").strip()
-               for column, target in CRM_FIELDS.items() if column in source_row}
-    elif schema_type == "BILL":
-        raw = {target: (source_row.get(column) or "").strip()
-               for column, target in BILL_FIELDS.items() if column in source_row}
-    elif schema_type == "ERP":
-        raw = {target: (source_row.get(column) or "").strip()
-               for column, target in ERP_FIELDS.items() if column in source_row}
-    else:
-        raw = {target: (source_row.get(column) or "").strip()
-               for column, target in LEGACY_FIELDS.items() if column in source_row}
-               
+        input_error("CSV_PARSE_ERROR", "Sai số cột CSV", source_row_number=line - 1)
+    mapping = schema_type
+    values = {field: source_row[column] for field, column in mapping.fields.items()}
+    external_id = values["source_record_id"].strip()
+    source = values["source_system"].strip().upper()
+    missing = [field for field in mapping.required_fields if not values[field].strip()]
+    if missing or source not in mapping.allowed_sources or len(external_id) > 200:
+        input_error("INVALID_INPUT_RECORD", "Dữ liệu bắt buộc không hợp lệ",
+                    source_row_number=line - 1, missing_fields=missing)
     return {
         "external_id": external_id,
         "source_system": source,
-        "entity_type": entity_type,
-        "raw_fields": raw,
-        "benchmark_entity_id": (source_row.get("entity_id") or "").strip() or None,
-        "extra_fields": {column: (source_row.get(column) or "").strip() for column in extra_columns},
+        "entity_type": (values.get("entity_type") or "PERSON").strip().upper(),
+        "raw_fields": {field: value for field, value in values.items() if field in CORE_RAW_FIELDS},
+        "original_fields": dict(source_row),
+        "mapping_provenance": mapping.provenance(),
+        "lineage": {"record_id": str(uuid4()), "source_system": source, "source_record_id": external_id,
+                    "source_file": filename, "source_row_number": line - 1},
+        "benchmark_entity_id": (values.get("ground_truth") or "").strip() or None,
+        "extra_fields": {column: source_row[column] for column in extra_columns},
     }
 
 
@@ -203,12 +117,13 @@ async def parse_upload(upload: UploadFile) -> ParsedFile:
     upload.file.seek(0)
     rows: list[dict] = []
     source_counts: dict[str, int] = {}
-    seen: set[str] = set()
+    seen: set[tuple[str, str]] = set()
     for row in _iter_normalized(upload.file, filename):
-        if row["external_id"] in seen:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
-                                f"{filename} lặp id {row['external_id']}")
-        seen.add(row["external_id"])
+        identity = (row["source_system"], row["external_id"])
+        if identity in seen:
+            input_error("DUPLICATE_SOURCE_ID", "ID bị lặp trong cùng nguồn",
+                        source_row_number=row["lineage"]["source_row_number"])
+        seen.add(identity)
         rows.append(row)
         source = row["source_system"]
         source_counts[source] = source_counts.get(source, 0) + 1
@@ -226,9 +141,7 @@ async def create_resolution_run(db: Session, uploads: list[UploadFile], owner_us
 
 def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, BinaryIO]],
                                        owner_user_id: str, name: str | None = None,
-                                       upload_session_id: str | None = None,
-                                       known_hashes: list[str] | None = None,
-                                       existing_run: ResolutionRun | None = None) -> tuple[ResolutionRun, dict]:
+                                       upload_session_id: str | None = None) -> tuple[ResolutionRun, dict]:
     if not files:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Chọn ít nhất một file records.csv")
     if len(files) > MAX_FILES_PER_RUN:
@@ -237,9 +150,9 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
     if normalized_name and len(normalized_name) > 255:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Tên phiên tối đa 255 ký tự")
 
-    if upload_session_id and existing_run is None:
+    if upload_session_id:
         existing = db.query(ResolutionRun).filter_by(upload_session_id=upload_session_id).one_or_none()
-        if existing and existing.status != "IMPORTING":
+        if existing:
             stored_files = db.query(ResolutionFile).filter_by(run_id=existing.id).order_by(
                 ResolutionFile.filename).all()
             counts = dict(db.query(ResolutionRecord.source_system, func.count(ResolutionRecord.id))
@@ -249,77 +162,82 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
                               "files": [{"filename": row.filename, "row_count": row.row_count,
                                          "sha256": row.sha256} for row in stored_files]}
 
-    run = existing_run or ResolutionRun(owner_user_id=owner_user_id, upload_session_id=upload_session_id,
+    run = ResolutionRun(owner_user_id=owner_user_id, upload_session_id=upload_session_id,
                         name=normalized_name, record_count=0,
                         file_count=len(files), policy_version=POLICY_VERSION)
-    if existing_run is None:
-        db.add(run)
+    db.add(run)
     total_rows = 0
     source_counts: dict[str, int] = {}
     file_profiles = []
+    r2 = None
+    uploaded_keys: list[str] = []
+
+    def compensate_uploads():
+        # Keys belong exclusively to this uncommitted UUID run. Never remove
+        # staging receipts: they remain available for an explicit retry.
+        for key in uploaded_keys:
+            try:
+                r2.delete(key)
+            except Exception as error:
+                logging.error("SOURCE_COMPENSATION_FAILED run_id=%s error_type=%s",
+                              run.id, type(error).__name__)
     try:
         db.flush()
         r2 = get_store(get_settings())
-        for i, (original_name, stream) in enumerate(files):
+        for original_name, stream in files:
             filename = original_name.replace("\\", "/").rsplit("/", 1)[-1] or "records.csv"
-            if known_hashes and i < len(known_hashes) and known_hashes[i]:
-                digest = known_hashes[i]
-            else:
-                file_hash = hashlib.sha256()
-                stream.seek(0)
-                while block := stream.read(1024 * 1024):
-                    file_hash.update(block)
-                digest = file_hash.hexdigest()
+            file_hash = hashlib.sha256()
+            stream.seek(0)
+            while block := stream.read(1024 * 1024):
+                file_hash.update(block)
+            digest = file_hash.hexdigest()
             file_row = ResolutionFile(run_id=run.id, filename=filename[:255], sha256=digest, row_count=0)
             db.add(file_row)
             db.flush()
             file_rows = 0
             batch = []
-
-            WORKER_BATCH = 2000
-            workers = min(os.cpu_count() or 4, 4)
-
-            def _iter_chunks(s, fname, chunk_size):
-                chunk = []
-                for row in _iter_normalized(s, fname):
-                    chunk.append(row)
-                    if len(chunk) >= chunk_size:
-                        yield chunk
-                        chunk = []
-                if chunk:
-                    yield chunk
-
-            with ProcessPoolExecutor(max_workers=workers) as pool:
-                for result_batch in pool.map(_standardize_batch, _iter_chunks(stream, filename, WORKER_BATCH)):
-                    for row in result_batch:
-                        batch.append({
-                            "run_id": run.id, "file_id": file_row.id, "external_id": row["external_id"],
-                            "source_system": row["source_system"], "entity_type": row["entity_type"],
-                            "benchmark_entity_id": row["benchmark_entity_id"],
-                            "raw_fields": row["raw_fields"], "normalized_fields": row["normalized_fields"], "quality_flags": row["quality_flags"],
-                            "extra_fields": row["extra_fields"],
-                        })
-                        file_rows += 1
-                        total_rows += 1
-                        source = row["source_system"]
-                        source_counts[source] = source_counts.get(source, 0) + 1
-                        if len(batch) >= INSERT_BATCH_SIZE:
-                            db.execute(insert(ResolutionRecord), batch)
-                            batch.clear()
+            for row in _iter_normalized(stream, filename):
+                raw = row["raw_fields"]
+                normalized, quality_flags = standardize(
+                    {field: value.strip() for field, value in raw.items()}, entity_type=row["entity_type"])
+                record_id = row["lineage"]["record_id"]
+                lineage = {**row["lineage"], "record_id": record_id, "source_file_id": file_row.id,
+                           "source_file_sha256": digest}
+                batch.append({
+                    "id": record_id,
+                    "original_fields": row["original_fields"],
+                    "mapping_provenance": row["mapping_provenance"], "lineage": lineage,
+                    "run_id": run.id, "file_id": file_row.id, "external_id": row["external_id"],
+                    "source_system": row["source_system"], "entity_type": row["entity_type"],
+                    "benchmark_entity_id": row["benchmark_entity_id"],
+                    "raw_fields": raw, "normalized_fields": normalized, "quality_flags": quality_flags,
+                    "extra_fields": row["extra_fields"],
+                })
+                file_rows += 1
+                total_rows += 1
+                source = row["source_system"]
+                source_counts[source] = source_counts.get(source, 0) + 1
+                if len(batch) >= INSERT_BATCH_SIZE:
+                    db.execute(insert(ResolutionRecord), batch)
+                    batch.clear()
             if batch:
                 db.execute(insert(ResolutionRecord), batch)
             if file_rows == 0:
                 raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"{filename} không có bản ghi")
             file_row.row_count = file_rows
             if r2 is not None:
+                key = source_file_key(run.id, file_row.id, filename)
+                uploaded_keys.append(key)
                 try:
                     stream.seek(0)
-                    key = source_file_key(run.id, file_row.id, filename)
                     r2.upload_stream(stream, key, "text/csv; charset=utf-8")
                     file_row.r2_key = key
-                except Exception:
-                    logging.exception("R2 source upload failed for run %s file %s", run.id, filename)
-            file_profiles.append({"filename": filename, "row_count": file_rows, "sha256": digest})
+                except Exception as error:
+                    logging.error("SOURCE_UPLOAD_FAILED run_id=%s error_type=%s",
+                                  run.id, type(error).__name__)
+                    raise HTTPException(502, "Source object storage unavailable; import was not committed") from None
+            file_profiles.append({"filename": filename, "row_count": file_rows, "sha256": digest,
+                                  "mapping_report": row["mapping_provenance"]})
             stream.seek(0)
         run.record_count = total_rows
         db.add(ResolutionAuditEvent(
@@ -332,10 +250,12 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
         db.refresh(run)
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
-                            "ID bản ghi bị trùng trong cùng một phiên") from exc
+        compensate_uploads()
+        raise InputMappingError("IMPORT_CONSTRAINT_VIOLATION",
+                                "ID bị lặp trong cùng nguồn hoặc file bị trùng trong phiên") from exc
     except DBAPIError as exc:
         db.rollback()
+        compensate_uploads()
         if getattr(exc.orig, "sqlstate", None) == "53100":
             raise HTTPException(
                 status.HTTP_507_INSUFFICIENT_STORAGE,
@@ -347,6 +267,7 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
         raise
     except Exception:
         db.rollback()
+        compensate_uploads()
         raise
     profile = {"row_count": total_rows, "file_count": len(files), "source_counts": source_counts,
                "files": file_profiles}

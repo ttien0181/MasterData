@@ -8,7 +8,7 @@ from alembic.config import Config
 
 from masterone.config import get_settings
 
-HEAD = "0020_phase5_entities_and_edges"
+HEAD = "0025_pipeline_checkpoints"
 
 
 def alembic_config(url: str, config_path: str | Path | None = None) -> Config:
@@ -35,6 +35,18 @@ def alembic_config(url: str, config_path: str | Path | None = None) -> Config:
 
 def upgrade_database(url: str) -> None:
     command.upgrade(alembic_config(url), "head")
+
+
+def validate_current(engine) -> None:
+    """Read-only startup/readiness gate; never mutate a production schema."""
+    from sqlalchemy import inspect, text
+
+    if not inspect(engine).has_table("alembic_version"):
+        raise RuntimeError("Database schema missing; run masterone.mdm.migrate explicitly")
+    with engine.connect() as connection:
+        revisions = set(connection.execute(text("SELECT version_num FROM alembic_version")).scalars())
+    if revisions != {HEAD}:
+        raise RuntimeError("Database schema out of date; run masterone.mdm.migrate explicitly")
 
 
 def require_current(engine) -> None:

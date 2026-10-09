@@ -3,7 +3,7 @@
 import hashlib
 import tempfile
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi import Path as PathParam
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -13,7 +13,7 @@ from masterone.db.session import get_session
 from masterone.mdm.models import ResolutionUploadSession
 from masterone.mdm.upload_sessions import (
     MAX_UPLOAD_CHUNK_BYTES,
-
+    commit_upload_session,
     create_upload_session,
     delete_upload_session,
     get_upload_file,
@@ -161,20 +161,11 @@ def validate_draft(
 @router.post("/{session_id}/commit", response_model=RunCommitResponse, status_code=status.HTTP_201_CREATED)
 def commit_draft(
     session_id: str,
-    background_tasks: BackgroundTasks,
-    request: Request,
     db: Session = Depends(get_session),
     auth: CurrentSession = Depends(require_mutation_capability("create_run")),
 ):
-    from masterone.mdm.upload_sessions import prepare_commit_upload_session, execute_commit_upload_session
     session = owned_upload_session(db, session_id, auth.user.id)
-    run, profile = prepare_commit_upload_session(db, session, auth.user.id)
-    
-    background_tasks.add_task(
-        execute_commit_upload_session,
-        run.id, session.id, auth.user.id, request.app.state.session_factory
-    )
-    
+    run, profile = commit_upload_session(db, session, auth.user.id)
     return {"run_id": run.id, "status": run.status, "profile": profile}
 
 

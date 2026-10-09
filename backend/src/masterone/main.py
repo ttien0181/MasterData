@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 #
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from masterone.api.auth import router as auth_router
 from masterone.api.mdm_resolution import router as mdm_resolution_router
@@ -15,30 +16,32 @@ from masterone.auth import models as auth_models  # noqa: F401 - registers auth 
 from masterone.config import LOCAL_DEV_ORIGIN_REGEX, get_settings
 from masterone.db.session import create_database
 from masterone.mdm import models as mdm_models  # noqa: F401 - registers SQLAlchemy models
-from masterone.mdm.migrate import require_current
-from masterone.mdm.resolution_worker import ResolutionWorker
+from masterone.mdm.input_schema import InputMappingError
+from masterone.mdm.migrate import require_current, validate_current
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from masterone.logging_config import configure_logging
+    configure_logging()
     settings = get_settings()
     if settings.app_env == "production" and len(settings.auth_csrf_secret) < 32:
         raise RuntimeError("AUTH_CSRF_SECRET must be at least 32 characters in production")
     engine, factory = create_database(settings.active_mdm_database_url)
-    require_current(engine)
+    try:
+        if settings.app_env == "production":
+            validate_current(engine)
+        else:
+            require_current(engine)
+    except BaseException:
+        engine.dispose()
+        raise
     app.state.engine = engine
     app.state.session_factory = factory
-    worker = None
-    if settings.app_env != "test":
-        worker = ResolutionWorker(factory, concurrency=settings.mdm_worker_concurrency)
-        worker.start()
-        app.state.resolution_worker = worker
     print(f"Starting {settings.app_name} in {settings.app_env} mode")
     try:
         yield
     finally:
-        if worker is not None:
-            worker.close()
         engine.dispose()
     print("Shutting down...")
 
@@ -51,6 +54,14 @@ app = FastAPI(
 )
 
 settings = get_settings()
+
+
+@app.exception_handler(InputMappingError)
+async def input_mapping_error_handler(_request, exc: InputMappingError):
+    return JSONResponse(status_code=exc.status_code,
+                        content={"detail": exc.detail, "error_report": exc.report})
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip().rstrip("/") for origin in settings.cors_origins.split(",") if origin.strip()],
@@ -70,3 +81,36 @@ app.include_router(auth_router, prefix="/api/v1")
 @app.get("/health")
 async def health():
     return {"status": "ok", "env": settings.app_env}
+
+
+@app.get("/ready")
+def readiness():
+    """Dependency readiness, separate from process liveness; safe error codes."""
+    import boto3
+    from botocore.config import Config
+
+    checks = {"database": "unavailable", "storage": "disabled"}
+    engine = getattr(app.state, "engine", None)
+    if engine is not None:
+        try:
+            validate_current(engine)
+            checks["database"] = "ok"
+        except Exception:
+            # A dependency probe reports failure, never fakes a healthy state.
+            checks["database"] = "unavailable"
+    if settings.r2_enabled:
+        client = None
+        try:
+            client = boto3.client("s3", endpoint_url=settings.r2_endpoint_url,
+                aws_access_key_id=settings.r2_access_key_id, aws_secret_access_key=settings.r2_secret_access_key,
+                region_name="auto", config=Config(connect_timeout=2, read_timeout=2, retries={"total_max_attempts": 1}))
+            client.head_bucket(Bucket=settings.r2_bucket)
+            checks["storage"] = "ok"
+        except Exception:
+            checks["storage"] = "unavailable"
+        finally:
+            if client is not None:
+                client.close()
+    ready = checks["database"] == "ok" and checks["storage"] in {"ok", "disabled"}
+    return JSONResponse(status_code=200 if ready else 503,
+                        content={"status": "ready" if ready else "not_ready", "checks": checks})
