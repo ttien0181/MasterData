@@ -33,6 +33,18 @@ def _score_chunk(chunk, by_id, frequencies, negative_pairs, policy_version, run_
                         "blocking_reasons": reasons, **result})
     return results, insufficient
 
+_WORKER_STATE = {}
+
+def _init_score_worker(by_id, frequencies, negative_pairs, policy_version, run_id):
+    _WORKER_STATE.update(by_id=by_id, frequencies=frequencies, negative_pairs=negative_pairs,
+                         policy_version=policy_version, run_id=run_id)
+
+def _score_chunk_worker(chunk):
+    s = _WORKER_STATE
+    return _score_chunk(chunk, s["by_id"], s["frequencies"], s["negative_pairs"],
+                        s["policy_version"], s["run_id"])
+
+
 @dataclass
 class StageContext:
     run_id: str
@@ -311,10 +323,10 @@ class StageRunner:
 
             chunks = [all_candidates[i:i+SCORE_CHUNK] for i in range(0, len(all_candidates), SCORE_CHUNK)]
 
-            with ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, 4)) as pool:
-                futures = [pool.submit(_score_chunk, chunk, by_id, frequencies,
-                                       negative_pairs, policy_version, self.run_id)
-                           for chunk in chunks]
+            with ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, 4),
+                                     initializer=_init_score_worker,
+                                     initargs=(by_id, frequencies, negative_pairs, policy_version, self.run_id)) as pool:
+                futures = [pool.submit(_score_chunk_worker, chunk) for chunk in chunks]
                 for f in futures:
                     res, insuff = f.result()
                     scored_pairs.extend(res)

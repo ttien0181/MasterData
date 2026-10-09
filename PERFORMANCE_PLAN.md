@@ -512,8 +512,8 @@ Giữ nguyên thứ tự `for f in futures:` để kết quả có thứ tự x�
 
 | Task | Stage | Trước (s) | Sau (s) | Hash khớp | Test mdm | Quyết định |
 |------|-------|-----------|---------|-----------|----------|------------|
-| P2-1 | CLUSTER | _ | _ | _ | _ | _ |
-| P2-2 | SCORE   | _ | _ | _ | _ | _ |
+| P2-1 | CLUSTER | 0.686 | 0.515 | Có | 302 passed | Áp dụng |
+| P2-2 | SCORE   | 9.344 | 3.467 | Có | 302 passed | Áp dụng |
 
 Số của Nam (CLUSTER 60.17s → 1.69s) chỉ là tham chiếu, không được dùng thay cho số đo của chính bạn.
 
