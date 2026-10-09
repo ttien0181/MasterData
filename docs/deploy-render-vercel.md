@@ -23,14 +23,14 @@ Set these environment variables in Render:
 | `CORS_ORIGINS` | Exact production frontend origin, e.g. `https://your-app.vercel.app` (no trailing slash) |
 | `AUTH_CSRF_SECRET` | Stable random secret, at least 32 characters |
 | `MDM_DATABASE_PROFILE` | `neon` (the code uses this profile for any hosted PostgreSQL, including Supabase) |
-| `MDM_DATABASE_URL` | Supabase connection string using the `postgresql+psycopg://` scheme and `sslmode=require` |
+| `MDM_DATABASE_URL` | Supabase **Session pooler** connection string (IPv4, port `5432`) using `postgresql+psycopg://` and `sslmode=require` |
 | `R2_ENDPOINT_URL` | `https://<account-id>.r2.cloudflarestorage.com` |
 | `R2_ACCESS_KEY_ID` | R2 access key ID |
 | `R2_SECRET_ACCESS_KEY` | R2 secret access key |
 | `R2_BUCKET` | Bucket name |
 | `LLM_ENABLED` | `false` unless OpenRouter is configured |
 
-Get the database URL from Supabase **Connect**. Use the direct connection if Render can reach its IPv6 address; otherwise choose the **Session pooler** on port `5432`. Replace `postgresql://` with `postgresql+psycopg://` and add `?sslmode=require` (or `&sslmode=require` if the URL already has query parameters). Percent-encode special characters in the password. Do not use the transaction pooler on port `6543` with the current database driver configuration. Set `OPENROUTER_API_KEY` if `LLM_ENABLED=true`.
+Get the database URL from Supabase **Connect → Session pooler**. Render does not provide outbound IPv6, so the default Supabase direct URL (`db.<project-ref>.supabase.co`) fails with `Network is unreachable`. The session pooler URL uses a host like `aws-...pooler.supabase.com`, port `5432`, and a username like `postgres.<project-ref>`; copy the exact host and username from your Supabase dashboard. Replace `postgresql://` with `postgresql+psycopg://` and add `?sslmode=require` (or `&sslmode=require` if the URL already has query parameters). Percent-encode special characters in the password. Do not use the transaction pooler on port `6543` with the current database driver configuration. Set `OPENROUTER_API_KEY` if `LLM_ENABLED=true`.
 
 The backend upgrades the database schema when it starts. Do not rely on the repository's development `.env.example` values for production.
 
