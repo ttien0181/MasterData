@@ -347,10 +347,10 @@ class StageRunner:
         decision_pairs = []
         by_id = {}
         insufficient_count = 0
-        for batch in iter_score_batches(score_path, self.scoring_engine.config.batch_size):
-            hydrated = self.scoring_engine.snapshot.get_records({rid for r in batch for rid in (r.left_id, r.right_id)})
-            for scored in batch:
-                result_pair = self.scoring_engine.decide(scored, hydrated)
+        score_rows = pq.ParquetFile(score_path).metadata.num_rows
+        for batch, hydrated, decisions in self.scoring_engine.decided_batches(
+                iter_score_batches(score_path, self.scoring_engine.config.batch_size), score_rows):
+            for scored, result_pair in zip(batch, decisions):
                 if result_pair["decision"] == "INSUFFICIENT_EVIDENCE":
                     insufficient_count += 1
                     continue

@@ -273,6 +273,23 @@ def _score_rule_batch(candidates, records, frequencies, negative_pairs, identity
     return results
 
 
+def _decide_rule(result, records, policies):
+    evidence = {**json.loads(result.evidence_json), "score": result.rule_score,
+                "match_weight": result.rule_score, "_raw_weight": result.raw_rule_score}
+    payload = matching.decide_rule_result(evidence, records[result.left_id],
+        records[result.right_id], set(result.blocking_reasons), policies=policies)
+    return {**payload, "left_id": result.left_id, "right_id": result.right_id,
+            "rule_score": result.rule_score, "match_probability": result.match_probability,
+            "splink_match_weight": result.splink_match_weight,
+            "scoring_model_version": result.model_version, "scoring_model_hash": result.model_hash,
+            "scoring_config_hash": result.config_hash}
+
+
+def _decide_rule_batch(results, records, policies):
+    """Worker-side DECIDE for one batch; shares _decide_rule with the serial path."""
+    return [_decide_rule(r, records, policies) for r in results]
+
+
 class ScoringEngine:
     def __init__(self, snapshot, config=None, *, negative_pairs=None):
         self.snapshot, self.config = snapshot, config or ScoringConfig()
@@ -496,15 +513,32 @@ class ScoringEngine:
     def decide(self, result, records):
         """Existing policy uses rule_score only; probabilities are shadow outputs."""
         self._check_decision_semantics()
-        evidence = {**json.loads(result.evidence_json), "score": result.rule_score,
-                    "match_weight": result.rule_score, "_raw_weight": result.raw_rule_score}
-        payload = matching.decide_rule_result(evidence, records[result.left_id],
-            records[result.right_id], set(result.blocking_reasons), policies=self.policies)
-        return {**payload, "left_id": result.left_id, "right_id": result.right_id,
-                "rule_score": result.rule_score, "match_probability": result.match_probability,
-                "splink_match_weight": result.splink_match_weight,
-                "scoring_model_version": result.model_version, "scoring_model_hash": result.model_hash,
-                "scoring_config_hash": result.config_hash}
+        return _decide_rule(result, records, self.policies)
+
+    def decided_batches(self, batches, expected_count):
+        """Yield (batch, hydrated, decisions) in input order. Large rule-mode inputs decide
+        in worker processes; hydration and the semantics check stay in this process."""
+        workers = int(os.environ.get("MDM_SCORE_WORKERS", min(os.cpu_count() or 1, 4)))
+        if self.config.mode != "rule" or workers <= 1 or expected_count < int(
+                os.environ.get("MDM_SCORE_PARALLEL_MIN", SCORE_PARALLEL_MIN)):
+            for batch in batches:
+                hydrated = self.snapshot.get_records({rid for r in batch for rid in (r.left_id, r.right_id)})
+                yield batch, hydrated, [self.decide(r, hydrated) for r in batch]
+            return
+        from collections import deque
+        from concurrent.futures import ProcessPoolExecutor
+        pending = deque()
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            for batch in batches:
+                self._check_decision_semantics()
+                hydrated = self.snapshot.get_records({rid for r in batch for rid in (r.left_id, r.right_id)})
+                pending.append((batch, hydrated, pool.submit(_decide_rule_batch, batch, hydrated, self.policies)))
+                if len(pending) > 2 * workers:
+                    yield_batch, yield_hydrated, future = pending.popleft()
+                    yield yield_batch, yield_hydrated, future.result()
+            while pending:
+                yield_batch, yield_hydrated, future = pending.popleft()
+                yield yield_batch, yield_hydrated, future.result()
 
     def _check_decision_semantics(self):
         from masterone.mdm.pipeline.decision_semantics import enabled
