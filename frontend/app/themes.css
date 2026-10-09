@@ -1,0 +1,177 @@
+/* Shared design tokens. Theme colors and reusable scales live here. */
+:root {
+  --chart-automatic: var(--green);
+  --chart-review: var(--amber);
+  --chart-separate: #94a3b8;
+  --chart-source-secondary: #38bdf8;
+  --chart-source-tertiary: #7dd3fc;
+  --color-mo-cyan: #0891b2;
+  --color-mo-dark: #0e7490;
+  --color-mo-screen: #0f2137;
+  --color-mo-eye: #22d3ee;
+  --color-mo-gold: #f5b400;
+  --color-mo-light: #e0f7fb;
+}
+
+:root, html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #e7eef5;
+  --bg-subtle: #f3f7fb;
+  --surface: #ffffff;
+  --surface-hover: #f3f7fb;
+  --surface-card: #ffffff;
+  --glass: rgba(255, 255, 255, .78);
+  --glass-strong: rgba(255, 255, 255, .9);
+  --glass-sidebar: rgba(239, 246, 255, .83);
+  --ink: #0f2137;
+  --ink-2: #334155;
+  --ink-3: #64748b;
+  --ink-4: #64748b;
+  --line: #e0e8f1;
+  --line-strong: #cbd5e1;
+  --line-subtle: #edf2f7;
+  --primary: #0891b2;
+  --primary-hover: #0e7490;
+  --primary-bg: #e0f7fb;
+  --primary-border: #b8eaf2;
+  --blue: var(--primary);
+  --blue-hover: var(--primary-hover);
+  --blue-bg: var(--primary-bg);
+  --blue-border: var(--primary-border);
+  --green: #059669;
+  --green-hover: #065f46;
+  --green-bg: #e8f8f1;
+  --green-border: #a7f3d0;
+  --amber: #d97706;
+  --amber-hover: #854d0e;
+  --amber-bg: #fff6e3;
+  --amber-border: #fbdca0;
+  --red: #e11d48;
+  --red-hover: #9f1239;
+  --red-bg: #fff1f3;
+  --red-border: #fecdd3;
+  --purple: #693ca9;
+  --purple-bg: #eee7fb;
+  --purple-border: #cab4e9;
+  --source-crm: #035b86;
+  --source-erp: #67349e;
+  --source-bill: #096346;
+  --radius-lg: 12px;
+  --radius: 10px;
+  --radius-sm: 8px;
+  --radius-xs: 6px;
+  --shadow-xs: 0 2px 8px rgb(21 42 82 / 5%);
+  --shadow-sm: 0 8px 24px rgb(21 42 82 / 9%);
+  --shadow-md: 0 22px 55px rgb(21 42 82 / 16%);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b1526;
+  --bg-subtle: #172b48;
+  --surface: #152844;
+  --surface-hover: #203a5a;
+  --surface-card: #152844;
+  --glass: rgba(13, 25, 47, .78);
+  --glass-strong: rgba(13, 25, 47, .94);
+  --glass-sidebar: rgba(9, 22, 42, .84);
+  --ink: #edf3ff;
+  --ink-2: #dae5f7;
+  --ink-3: #b5c6df;
+  --ink-4: #a2b5d1;
+  --line: rgba(222, 236, 255, .2);
+  --line-strong: rgba(222, 236, 255, .32);
+  --line-subtle: rgba(222, 236, 255, .12);
+  --primary: #22d3ee;
+  --primary-hover: #67e8f9;
+  --primary-bg: #164e63;
+  --primary-border: #0e7490;
+  --blue: var(--primary);
+  --blue-hover: var(--primary-hover);
+  --blue-bg: var(--primary-bg);
+  --blue-border: var(--primary-border);
+  --green: #80e5b3;
+  --green-hover: #a4efca;
+  --green-bg: #123b34;
+  --green-border: #367a5f;
+  --amber: #ffd282;
+  --amber-hover: #ffe0a4;
+  --amber-bg: #51391f;
+  --amber-border: #89632d;
+  --red: #ff9398;
+  --red-hover: #ffb2b6;
+  --red-bg: #512730;
+  --red-border: #a24e5a;
+  --purple: #c8a8ff;
+  --purple-bg: #3c2b60;
+  --purple-border: #7656a7;
+  --source-crm: #83d7ff;
+  --source-erp: #d1b7ff;
+  --source-bill: #8cebc4;
+  --shadow-xs: 0 2px 8px rgb(0 0 0 / 12%);
+  --shadow-sm: 0 8px 24px rgb(0 0 0 / 20%);
+  --shadow-md: 0 22px 55px rgb(0 0 0 / 35%);
+}
+
+
+:root, html[data-theme="light"] {
+  --color-on-primary: #ffffff;
+  --color-brand-mark: var(--blue-bg);
+  --color-brand-mark-ink: var(--blue);
+  --color-avatar: var(--blue-bg);
+  --color-avatar-ink: var(--blue);
+  --color-nav-hover: var(--surface-hover);
+  --color-nav-active: var(--blue-bg);
+  --color-highlight: #fff0a6;
+  --color-highlight-ink: #63420a;
+  --color-waiting: #6caaeb;
+  --color-review: #75b99d;
+  --color-overlay: rgb(5 16 34 / 46%);
+  --color-primary-shadow: rgb(8 145 178 / 18%);
+  --color-focus-shadow: rgb(8 145 178 / 18%);
+  --shadow-pagination: 0 -8px 28px rgb(20 42 82 / 8%);
+  --shadow-dialog: 0 25px 90px rgb(20 42 82 / 24%);
+  --shadow-auth-card: 0 16px 50px rgb(24 24 27 / 5%);
+  --auth-backdrop: radial-gradient(circle at 10% 10%, #dbeafe, transparent 32%), radial-gradient(circle at 90% 90%, #ede9fe, transparent 34%);
+  --page-backdrop: radial-gradient(ellipse 66% 65% at 3% 4%, rgb(124 176 255 / 70%), transparent 72%),
+    radial-gradient(ellipse 59% 64% at 92% 42%, rgb(255 174 213 / 66%), transparent 72%),
+    radial-gradient(ellipse 72% 65% at 37% 105%, rgb(142 225 205 / 60%), transparent 75%);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --layout-shell-width: 254px;
+  --layout-shell-width-collapsed: 76px;
+  --layout-header-height: 72px;
+  --layout-header-gutter: 34px;
+  --layout-content-gutter: 36px;
+  --shadow-landing-primary: 0 10px 40px rgb(8 145 178 / 15%);
+}
+
+html[data-theme="dark"] {
+  --color-on-primary: #0b1526;
+  --color-brand-mark: var(--blue-bg);
+  --color-brand-mark-ink: var(--blue);
+  --color-avatar: var(--blue-bg);
+  --color-avatar-ink: var(--blue);
+  --color-nav-hover: var(--surface-hover);
+  --color-nav-active: var(--blue-bg);
+  --color-highlight: #5a4318;
+  --color-highlight-ink: #fff1bd;
+  --color-waiting: #6caaeb;
+  --color-review: #75d4b8;
+  --color-overlay: rgb(0 0 0 / 62%);
+  --color-primary-shadow: rgb(0 0 0 / 28%);
+  --color-focus-shadow: rgb(115 183 255 / 22%);
+  --shadow-landing-primary: 0 10px 40px rgb(0 0 0 / 22%);
+  --shadow-pagination: 0 -8px 28px rgb(0 0 0 / 24%);
+  --shadow-dialog: 0 25px 90px rgb(0 0 0 / 48%);
+  --shadow-auth-card: 0 16px 50px rgb(0 0 0 / 36%);
+  --auth-backdrop: radial-gradient(circle at 10% 10%, rgb(29 78 216 / 22%), transparent 32%), radial-gradient(circle at 90% 90%, rgb(109 40 217 / 20%), transparent 34%);
+  --page-backdrop: radial-gradient(ellipse 66% 65% at 3% 4%, rgb(29 78 216 / 58%), transparent 72%),
+    radial-gradient(ellipse 59% 64% at 92% 42%, rgb(157 47 107 / 60%), transparent 72%),
+    radial-gradient(ellipse 72% 65% at 37% 105%, rgb(15 118 110 / 54%), transparent 75%);
+}

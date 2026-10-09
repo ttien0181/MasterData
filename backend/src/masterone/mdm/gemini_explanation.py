@@ -18,24 +18,30 @@ def explain_cohort(payload: dict, settings: Settings) -> dict:
     if not model or any(char in model for char in "?/&#"):
         raise HTTPException(503, "GEMINI_MODEL_INVALID")
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    schema = {"type": "OBJECT", "properties": {
-        "summary_vi": {"type": "STRING"},
-        "attention_fields": {"type": "ARRAY", "items": {"type": "STRING"}},
-        "limitations": {"type": "ARRAY", "items": {"type": "STRING"}},
+    schema = {"type": "object", "properties": {
+        "summary_vi": {"type": "string"},
+        "attention_fields": {"type": "array", "items": {"type": "string"}},
+        "limitations": {"type": "array", "items": {"type": "string"}},
     }, "required": ["summary_vi", "attention_fields", "limitations"]}
-    prompt = ("Giải thích ngắn gọn bằng tiếng Việt các tín hiệu để Data Steward xem xét. "
+    prompt = ("Giải thích ngắn gọn bằng tiếng Việt tự nhiên các thông tin để người dùng xem xét. "
+              "Không nhắc mã phân nhóm hoặc ký hiệu kỹ thuật trong phần giải thích. "
               "Không đề xuất gộp/từ chối, không kết luận thực thể, không bịa dữ liệu. "
               "Score là điểm rule, không phải xác suất. Chỉ dựa trên các số liệu tổng hợp sau: "
               + json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
     request = Request(endpoint, data=json.dumps({
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"responseFormat": {"text": {"mimeType": "application/json", "schema": schema}}},
+        "generationConfig": {"responseFormat": {"text": {"mimeType": "APPLICATION_JSON", "schema": schema}}},
     }).encode(), headers={"Content-Type": "application/json", "x-goog-api-key": settings.gemini_api_key}, method="POST")
     try:
         with urlopen(request, timeout=25) as response:
             body = json.loads(response.read())
     except HTTPError as exc:
-        code = "GEMINI_RATE_LIMIT" if exc.code == 429 else "GEMINI_HTTP_ERROR"
+        if exc.code == 429:
+            code = "GEMINI_RATE_LIMIT"
+        elif exc.code == 503:
+            code = "GEMINI_UNAVAILABLE"
+        else:
+            code = f"GEMINI_HTTP_ERROR_{exc.code}"
         raise HTTPException(502, code) from None
     except (URLError, TimeoutError):
         raise HTTPException(502, "GEMINI_UNAVAILABLE") from None

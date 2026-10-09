@@ -1,6 +1,6 @@
 # Chạy thử MasterOne MDM
 
-Đây là demo local MasterOne cho bài toán khử trùng dữ liệu khách hàng PERSON. Mỗi lần nạp tạo một run độc lập; pipeline so khớp bản ghi trong cùng nguồn và giữa CRM, ERP, BILL. Data Steward kiểm tra các item Cần review, chọn giá trị ở Gộp rồi xuất một CSV cuối cùng cho run.
+Đây là demo local MasterOne cho bài toán khử trùng dữ liệu khách hàng PERSON. Mỗi lần nạp tạo một run độc lập; pipeline so khớp bản ghi trong cùng nguồn và giữa CRM, ERP, BILL. Data Steward kiểm tra các item Cần review, chọn giá trị ở Chờ gộp rồi xuất một CSV cuối cùng cho run.
 
 ## Yêu cầu
 
@@ -26,7 +26,9 @@ npm --prefix frontend ci
 
 `npm ci` dùng `frontend/package-lock.json`; chạy lại sau khi clone mới hoặc khi dependencies thay đổi. Không cần cài lại mỗi lần mở ứng dụng. Giữ `.env` hiện có, không chép đè; chỉnh các biến trong đó nếu cần.
 
-Để bật giải thích review bằng Gemini, đặt `GEMINI_API_KEY` trong `.env`; có thể đổi model bằng `GEMINI_MODEL`. Pipeline không gửi tên, điện thoại, email hoặc địa chỉ sang Gemini; chỉ gửi thống kê nhóm review. Không có key thì các nhóm vẫn xem được hướng dẫn theo rule.
+Để bật giải thích review bằng Gemini, đặt `GEMINI_API_KEY` trong `.env`; có thể đổi model bằng `GEMINI_MODEL`. Mặc định pipeline không gọi Gemini: phần giải thích nhóm chỉ gửi thống kê tổng hợp khi người dùng yêu cầu. Không có key thì các nhóm vẫn xem được hướng dẫn theo rule.
+
+Có thể bật thêm `SEMANTIC_ADDRESS_ENABLED=true` để Gemini so sánh **chỉ địa chỉ** ở một số cặp cần review có liên hệ khớp và cách viết địa chỉ chưa rõ. Đặt `SEMANTIC_ADDRESS_MAX_PAIRS_PER_RUN` (mặc định 100) để giới hạn số cặp gửi trong mỗi run. Dịch vụ bên ngoài sẽ nhận chuỗi địa chỉ của các cặp đủ điều kiện; tên, điện thoại, email và nhãn `entity_id` không được gửi. Kết quả AI không tự chuyển cặp sang gộp; nếu Gemini lỗi hoặc trả dữ liệu không hợp lệ, hệ thống giữ kết quả rule. Màn hình so sánh sẽ báo khi địa chỉ có tín hiệu hỗ trợ từ Gemini.
 
 ## Chạy ứng dụng
 
@@ -42,38 +44,40 @@ Terminal thứ hai chạy frontend:
 npm --prefix frontend run dev
 ```
 
-Mở <http://localhost:3000>, đăng ký tài khoản rồi đăng nhập. API docs ở <http://localhost:8001/docs>. API mặc định là `http://localhost:8001`; đặt `NEXT_PUBLIC_API_BASE_URL` trước khi chạy frontend nếu API dùng địa chỉ khác. Cấu hình `CORS_ORIGINS` phải liệt kê đúng origin frontend, phân cách bằng dấu phẩy. Dùng cùng hostname `localhost` cho frontend và backend khi chạy local để cookie hoạt động nhất quán.
+Mở địa chỉ Next.js in ra khi khởi động (thường là <http://localhost:3000>; nếu cổng này đã dùng, có thể là `localhost:3001`). Trang `/` là landing page; sau khi đăng ký hoặc đăng nhập, không gian làm việc ở `/app`. API docs ở <http://localhost:8001/docs>. Khi chạy local, frontend tự dùng cùng hostname (`localhost` hoặc `127.0.0.1`) để gọi API ở cổng 8001; đặt `NEXT_PUBLIC_API_BASE_URL` trước khi chạy frontend nếu API dùng địa chỉ khác. Backend chỉ chấp nhận các origin loopback theo cổng bất kỳ trong chế độ development; production chỉ chấp nhận các origin liệt kê trong `CORS_ORIGINS`, phân cách bằng dấu phẩy. Dùng cùng hostname cho frontend và backend để cookie hoạt động nhất quán.
 
 Luôn chạy lệnh backend từ **thư mục gốc repo**: `.env`, `backend/alembic.ini` và đường dẫn SQLite tương đối đều được đọc từ đó. SQLite mặc định nằm tại `data/masterone.db`. Khi có migration mới, dừng backend, sao lưu database rồi chạy lại `uv run --python .venv python -m masterone.mdm.migrate` trước khi khởi động. App sẽ báo lỗi nếu schema chưa ở revision mới nhất; nó không tự sửa schema khi khởi động. Trong môi trường production, đặt `AUTH_CSRF_SECRET` là chuỗi bí mật ít nhất 32 ký tự và chạy qua HTTPS.
 
 ## Luồng smoke test
 
 1. Đăng ký và đăng nhập.
-2. Nạp một hoặc nhiều file theo schema của `masterone_test/records.csv`; mỗi hàng có cột `source_system` là CRM, ERP hoặc BILL.
-3. Theo dõi run đến `COMPLETED`; mở ba tab Gộp, Không gộp và Cần review. Mọi item mở cùng một popup so sánh; giá trị giống nhau chỉ hiện một lần.
-4. Trong Cần review, có thể chọn trước giá trị ở trường khác nhau và lưu. Sau đó chuyển item sang Gộp hoặc Không gộp; có checkbox để xử lý nhiều item. Chỉ các liên kết chưa chắc chắn bị từ chối, các liên kết an toàn vẫn được giữ. Nếu item chứa cặp đã xác định là Không gộp thì không thể đưa cả item sang Gộp; popup hiển thị lý do. Có thể đọc hướng dẫn category và yêu cầu Gemini giải thích nếu đã cấu hình.
-5. Trong Gộp, lọc item theo nguồn Tự động/Từ review, mở popup và chọn giá trị cho từng trường khác nhau. Item tự động chọn nguồn đầu tiên; item từ review giữ lựa chọn đã lưu, những trường còn lại cần chọn trước khi xuất.
-6. Bấm **Xuất CSV sau gộp** ở Gộp. Nếu còn item Cần review, xác nhận cảnh báo để xuất; các bản ghi đó được giữ riêng. CSV chứa mỗi bản ghi đầu vào đúng một lần, gồm nhóm đã gộp và bản ghi đơn. Mở Lịch sử để so sánh 10 dòng mẫu trước/sau, tải CSV nguồn tái dựng và tải lại từng bản CSV đã xuất.
-7. Đăng xuất và đăng nhập tài khoản khác; tài khoản thứ hai không xem được run của tài khoản đầu dù biết ID.
+2. Nạp một hoặc nhiều file như cũ. Bộ thử mới nằm ở `masterone_test/crm.csv`, `erp.csv`, `bill.csv`; mỗi file có `record_id,source,name,phone,email,address` và các cột bổ sung. `entity_id` là nhãn đánh giá offline, không đi vào thuật toán. Có thể nạp cả ba file cùng lúc; các bản ghi trùng trong một file cũng được tìm.
+3. Theo dõi run đến `COMPLETED`. Pipeline chuẩn hóa, sinh ứng viên, so sánh theo trạng thái, chấm điểm có điều chỉnh tần suất, áp policy A/C/D, rồi kiểm tra xung đột khi tạo cụm. Tổng quan hiển thị số cụm Chờ gộp và Cần review; mục Dự kiến giữ riêng cho xem các bản ghi chưa nằm trong cụm chờ gộp. Mọi item mở cùng một popup so sánh; giá trị giống nhau chỉ hiện một lần.
+4. Trong Cần review, có thể chọn trước giá trị ở trường khác nhau và lưu. Sau đó đưa item sang Chờ gộp hoặc đánh dấu Không gộp; có checkbox để xử lý nhiều item. Nếu item chứa cặp đã xác định là Không gộp, vẫn có thể đưa sang Chờ gộp nhưng item sẽ ở trạng thái chờ tách; chưa có cặp nào được chấp nhận khi chuyển. Có thể đọc hướng dẫn category và yêu cầu Gemini giải thích nếu đã cấu hình.
+5. Trong Chờ gộp, lọc item theo nguồn Tự động/Từ review, mở popup và chọn giá trị cho từng trường khác nhau. Item tự động chọn nguồn đầu tiên; item từ review giữ lựa chọn đã lưu. Với item chờ tách, bấm **Tách cụm an toàn**: các liên kết chưa quyết định bị từ chối, các nhóm khớp an toàn được giữ; sau đó chọn giá trị trên từng nhóm còn lại. Nếu chưa thể xuất CSV, giao diện liệt kê item và việc cần xử lý.
+6. Bấm **Xem trước CSV kết quả** ở Chờ gộp, kiểm tra số cụm và số dòng dự kiến, rồi xác nhận để tạo CSV. Bản xem trước có hạn 15 phút và phải tạo lại nếu cặp, lựa chọn hoặc chính sách đã thay đổi. Nếu còn item Cần review, xác nhận cảnh báo để xuất; các bản ghi đó được giữ riêng. CSV chứa mỗi bản ghi đầu vào đúng một lần.
+7. Trong Lịch sử, so sánh 10 dòng mẫu trước/sau, tải CSV nguồn tái dựng hoặc bản CSV đã xuất. Với bản CSV mới nhất, bấm **Tách bản ghi**, chọn một bản ghi nguồn trong nhóm, xem trước rồi xác nhận. Một bản CSV mới được tạo; nhóm khác giữ nguyên và các liên kết vừa tách được đánh dấu Không gộp.
+8. Đăng xuất và đăng nhập tài khoản khác; tài khoản thứ hai không xem được run của tài khoản đầu dù biết ID.
 
 Đánh giá nhãn Linh riêng, không đưa nhãn vào sản phẩm:
 
 ```powershell
-uv run --python .venv python scripts\evaluate_linh_resolution.py --data-dir masterone_test --output eval\results\linh-resolution.json
+uv run --python .venv python scripts\evaluate_linh_resolution.py --data-dir masterone_test --output eval\results\linh_policy_v2_selective.json
 ```
 
-Kết quả offline hiện tại được lưu ở `eval/results/linh_pipeline_metrics.json`: blocking recall 99,84% trong cùng nguồn và 99,73% giữa nguồn; pair precision 100%, recall 94,79%, hard-negative false-positive rate 0%; cluster pair precision 100%, recall 90,84%. Đây là kết quả trên benchmark được lấy mẫu, không bảo đảm hiệu quả production. Blocking giới hạn mỗi text block tối đa 60 hồ sơ để giữ tài nguyên ở mức demo; benchmark vẫn giữ blocking recall gần 100%.
+Kết quả offline của policy hiện tại được lưu ở `eval/results/linh_policy_v2_selective.json`. Trên 21.000 bản ghi tổng hợp, blocking tìm thấy 100% cặp trùng cùng nguồn và 99,94% cặp trùng khác nguồn; cluster pair precision 100% và recall 84,59% khi tắt kiểm tra địa chỉ bằng Gemini. Đây là phép đo trên bộ dữ liệu tổng hợp, không bảo đảm hiệu quả với dữ liệu doanh nghiệp thật. Script xuất số liệu riêng cho từng subgroup; không dùng `pairs.csv`.
 
-Mỗi file giới hạn 5 MiB và 5.000 dòng dữ liệu. ID bản ghi không được trùng trong cùng run; nhiều file vẫn được phân giải chung. `pairs.csv` không được nạp qua API. Dữ liệu nguồn được giữ nguyên; mỗi lần xuất tạo một bản CSV snapshot trong lịch sử, có thể tải lại. Chạy đúng một backend worker process cho demo.
+Mỗi file giới hạn 5 MiB và 10.000 dòng dữ liệu. ID bản ghi không được trùng trong cùng run; nhiều file vẫn được phân giải chung. `pairs.csv` không được nạp qua API. Mỗi lần nạp tạo run độc lập, không so với lần nạp cũ. Dữ liệu nguồn được giữ nguyên; mỗi lần xuất hoặc tách tạo một bản CSV snapshot trong lịch sử. Chạy đúng một backend worker process cho demo.
 
-## Import cũ và bảo mật
+Policy hiện dùng trọng số rule có điều chỉnh tần suất, chưa phải xác suất đã calibration và chưa dùng Splink. Bộ dữ liệu hiện không có DOB/CCCD đáng tin cho hard constraint định danh, nên không tự tạo tín hiệu này. Gemini giải thích nhóm review hoặc item khi Data Steward yêu cầu. Nếu bật `SEMANTIC_ADDRESS_ENABLED`, Gemini còn hỗ trợ so sánh địa chỉ trong pipeline với giới hạn số cặp; tín hiệu này không được dùng để tự gộp. Các lần nạp vẫn độc lập như phạm vi demo đã chốt.
 
-Import tồn tại trước migration vẫn ở trong SQLite nhưng chưa có chủ sở hữu nên không hiện trong ứng dụng. Sau khi xác minh chủ sở hữu, dùng lệnh offline sau; mặc định chỉ xem trước, thêm `--apply` để ghi:
+## Lựa chọn trường và bảo mật
 
-```powershell
-uv run --python .venv python -m masterone.mdm.claim_legacy_imports --user-email steward@example.com --import-id UUID_CUA_IMPORT
-uv run --python .venv python -m masterone.mdm.claim_legacy_imports --user-email steward@example.com --import-id UUID_CUA_IMPORT --apply
-```
+Migration `0011` xóa các bảng của hai luồng prototype cũ cùng bảng lựa chọn trên server; `0012` và `0013` thêm policy evidence, preview, merge lineage và selective unmerge. Nếu còn cần dữ liệu trong những bảng cũ, sao lưu SQLite trước khi nâng cấp. File schema trống cho Supabase là `supabase/masterone_schema.sql`; có thể tạo lại từ model bằng `uv run --python .venv python scripts/generate_supabase_schema.py`.
+
+Lựa chọn chưa xuất được lưu trong `localStorage` theo run. Đổi tab hoặc tải lại trang vẫn giữ lựa chọn; xóa dữ liệu trình duyệt hoặc dùng thiết bị khác sẽ mất lựa chọn chưa xuất. Khi xuất CSV, backend kiểm tra lại nguồn được chọn và tất cả trường bắt buộc. CSV đã xuất được lưu trong database để tải lại từ Lịch sử.
+
+Các cặp Không gộp vẫn được giữ để xem và ngăn gộp sai. Với cặp bị loại tự động, bằng chứng chi tiết được tính lại khi mở item; quyết định đã lưu không thay đổi.
 
 Mật khẩu được hash bằng Argon2id. Session token chỉ nằm trong cookie và hash SHA-256 trong database; request thay đổi dữ liệu cần `Origin` hợp lệ và `X-CSRF-Token`. Thử đăng nhập sai bị giới hạn theo email/IP trong 15 phút. Bản này chưa có xác minh email, khôi phục mật khẩu, MFA hay chính sách chống đăng ký tự động; cần bổ sung trước khi mở đăng ký công khai trên Internet.
 

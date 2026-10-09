@@ -1,0 +1,253 @@
+# MDM Auto-Merge Policy — Person entity type
+# version: person-v3  (§4.5.5, §SVC-06)
+# Policy rules govern which semantic subgroups are eligible for auto-merge.
+# Predicates govern how each subgroup is classified from field comparison states.
+#
+# Schema:
+#   subgroups.<id>:
+#     version: int
+#     min_match_weight: float  (999.0 = always REVIEW)
+#     approval_level: STEWARD | SENIOR_STEWARD
+#     allow_llm_evidence: bool  (always false — §25)
+#     required:
+#       <field>: {states: [...], quality: [...], allow_shared: bool, required_tags: [...]}
+#     forbidden:
+#       <field>: [states...]
+#
+#   predicates.<id>:
+#     required_states:   {field: [states...]}  — all must match
+#     forbidden_states:  {field: [states...]}  — none must match
+#     required_tags:     {field: [tags...]}    — all tags must be present
+#     contact_anchors:   [field...]            — any of these must be in contact_matches
+#     needs_name_good:   bool
+#     needs_dob_anchor:  bool
+#     needs_gov_id_anchor: bool
+
+version: "person-v3"
+
+# ── Subgroup merge policies (§17) ────────────────────────────────────────────
+
+subgroups:
+
+  A1:
+    version: 4
+    min_match_weight: 10.5
+    approval_level: STEWARD
+    allow_llm_evidence: false
+    required:
+      phone:
+        states: [EX, NX]
+        quality: [VALID]
+        allow_shared: false
+      name:
+        states: [EX, NX, NA, HS]
+    forbidden:
+      government_id: [CF]
+
+  A2:
+    version: 3
+    min_match_weight: 10.5
+    approval_level: STEWARD
+    allow_llm_evidence: false
+    required:
+      email:
+        states: [EX, NX]
+        quality: [VALID]
+        allow_shared: false
+      name:
+        states: [EX, NX, NA, HS]
+    forbidden:
+      government_id: [CF]
+
+  A3:
+    version: 5
+    min_match_weight: 12.0
+    approval_level: STEWARD
+    allow_llm_evidence: false
+    required:
+      phone:
+        states: [EX, NX]
+        quality: [VALID]
+        allow_shared: false
+      dob:
+        states: [EX]
+      name:
+        states: [EX, NX, NA, HS, MS]
+        required_tags: [GIVEN_NAME_COMPATIBLE]
+    forbidden:
+      government_id: [CF]
+      name: [CF, WS]
+
+  C1:
+    version: 1
+    min_match_weight: 999.0
+    approval_level: STEWARD
+    allow_llm_evidence: false
+    required:
+      email:
+        states: [EX, NX]
+      dob:
+        states: [EX, CL]
+    forbidden: {}
+
+  C2:
+    version: 1
+    min_match_weight: 999.0
+    approval_level: STEWARD
+    allow_llm_evidence: false
+    required:
+      phone:
+        states: [EX, NX]
+      name:
+        states: [EX, NX, NA, HS]
+    forbidden: {}
+
+  C3:
+    version: 1
+    min_match_weight: 999.0
+    approval_level: STEWARD
+    allow_llm_evidence: false
+    required: {}
+    forbidden: {}
+
+  C_MULTI:
+    version: 1
+    min_match_weight: 999.0
+    approval_level: STEWARD
+    allow_llm_evidence: false
+    required: {}
+    forbidden: {}
+
+  D1:
+    version: 1
+    min_match_weight: 999.0
+    approval_level: SENIOR_STEWARD
+    allow_llm_evidence: false
+    required: {}
+    forbidden: {}
+
+  D2:
+    version: 1
+    min_match_weight: 999.0
+    approval_level: SENIOR_STEWARD
+    allow_llm_evidence: false
+    required: {}
+    forbidden: {}
+
+  D3:
+    version: 1
+    min_match_weight: 999.0
+    approval_level: SENIOR_STEWARD
+    allow_llm_evidence: false
+    required: {}
+    forbidden: {}
+
+  D4:
+    version: 1
+    min_match_weight: 999.0
+    approval_level: SENIOR_STEWARD
+    allow_llm_evidence: false
+    required: {}
+    forbidden: {}
+
+  D_MULTI:
+    version: 1
+    min_match_weight: 999.0
+    approval_level: SENIOR_STEWARD
+    allow_llm_evidence: false
+    required: {}
+    forbidden: {}
+
+# ── Subgroup predicates for classification (§STG-05-FR-009, TASK-4.2) ────────
+# Each predicate defines WHEN a pair is classified into a subgroup.
+# SubgroupClassifier evaluates these in priority order within each group.
+# Priority within group: most specific first (e.g. A3 before A1/A2).
+
+predicates:
+
+  # Group A — identity anchors present, all comparisons positive
+  A3_NAME_PHONE_DOB:
+    group: A
+    priority: 10
+    required_states:
+      name: [EX, NX, NA, HS, MS]
+    contact_anchors: [phone]
+    needs_dob_anchor: true
+    forbidden_states:
+      name: [CF, WS]
+
+  A3_NAME_GOV_ID:
+    group: A
+    priority: 11
+    required_states:
+      name: [EX, NX, NA, HS]
+    needs_gov_id_anchor: true
+    needs_name_good: true
+
+  A1_NAME_PHONE:
+    group: A
+    priority: 20
+    contact_anchors: [phone]
+    needs_name_good: true
+
+  A2_NAME_EMAIL:
+    group: A
+    priority: 21
+    contact_anchors: [email]
+    needs_name_good: true
+
+  # Group C — weaker anchors, always REVIEW
+  C1_EMAIL_DOB:
+    group: C
+    priority: 10
+    contact_anchors: [email]
+    needs_dob_anchor: true
+    needs_name_good: false
+
+  C3_GOV_ID_ONLY:
+    group: C
+    priority: 20
+    needs_gov_id_anchor: true
+    needs_name_good: false
+
+  C2_PHONE_NAME:
+    group: C
+    priority: 30
+    contact_anchors: [phone]
+    needs_name_good: true
+
+  C_MULTI:
+    group: C
+    priority: 90
+    min_contact_anchors: 2
+
+  C_NAME_ANCHOR_MISSING:
+    group: C
+    priority: 99
+    contact_anchors: [phone, email]
+
+  # Group D — conflict fields present
+  D_MULTI:
+    group: D
+    priority: 10
+    min_cf_fields: 2
+
+  D1_NAME_PHONE_CONFLICT:
+    group: D
+    priority: 20
+    cf_field: phone
+
+  D2_NAME_CONFLICT:
+    group: D
+    priority: 21
+    cf_field: name
+
+  D4_DOB_CONFLICT:
+    group: D
+    priority: 22
+    cf_field: dob
+
+  D3_IDENTITY_CONFLICT:
+    group: D
+    priority: 23
+    cf_fields: [email, government_id]

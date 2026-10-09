@@ -1,209 +1,132 @@
 # MasterOne
 
-MasterOne là prototype khử trùng dữ liệu khách hàng: nạp nhiều CSV, dò trùng trong và giữa các nguồn, duyệt các item chưa chắc chắn, chọn giá trị chuẩn và xuất một CSV cuối cùng cho toàn bộ run. Backend FastAPI nằm trong `backend/`, frontend Next.js trong `frontend/`. Hướng dẫn chạy và luồng sử dụng ở [MDM_DEV.md](MDM_DEV.md). Repo bắt đầu từ template AI20K; tài liệu mẫu ban đầu vẫn nằm trong `docs/guide/`.
+MasterOne là MVP khử trùng dữ liệu khách hàng. Data Steward nạp nhiều CSV trong một lần chạy, xem các cụm hệ thống đề xuất gộp hoặc cần người duyệt, chọn giá trị chuẩn, xem trước và xuất một CSV kết quả. Hệ thống tìm trùng **trong cùng nguồn và giữa các nguồn**; mỗi lần nạp là một run độc lập.
 
-Technical Guidebook: <https://phoenix.note.transformerlabs.ai/technical-book>
+- Frontend: Next.js trong `frontend/`
+- Backend: FastAPI trong `backend/src/masterone/`
+- Lưu trữ local: SQLite qua SQLAlchemy, quản lý schema bằng Alembic
+- Gemini: giải thích hồ sơ theo yêu cầu; đối chiếu địa chỉ chỉ khi bật cấu hình
 
-## Thành phần trong repo
+Xem [sơ đồ components và luồng dữ liệu](docs/architecture_diagram.md), [bằng chứng 5 ca manual](eval/results/report.md) và [hướng dẫn phát triển chi tiết](MDM_DEV.md).
 
-- **Backend** — package Python `masterone`, FastAPI, auth, MDM, SQLite và Alembic trong `backend/`.
-- **Frontend** — ứng dụng Next.js trong `frontend/` với các tab Gộp, Không gộp, Cần review và Lịch sử CSV.
-- **Docker và CI** — Dockerfile, `docker-compose.yml` và GitHub Actions kiểm tra cả backend lẫn frontend.
-- **AI usage logging** — các hook trong `scripts/` và thư mục cấu hình công cụ tại root; log được gửi khi push theo thiết lập của template.
-- **Technical Guidebook** — tài liệu mẫu của Ban tổ chức trong `docs/guide/`; các ví dụ đường dẫn `src/` trong sách mô tả template ban đầu.
+## Chạy local
 
-## Yêu cầu
+Cần [uv](https://docs.astral.sh/uv/) (quản lý Python 3.11+, không cần cài Python toàn hệ thống), Node.js 22+ và npm. Mở PowerShell ở **thư mục gốc repo**:
 
-- `uv` để quản lý Python 3.11+ và môi trường ảo; không cần cài Python toàn hệ thống
-- Node.js 22 trở lên và npm cho frontend (CI dùng Node.js 22)
-- Git
-- Docker — tuỳ chọn, chỉ cần nếu chạy `docker compose`
-
-## Bắt đầu
-
-### 1. Clone repo của đội
-
-Khi đội được chốt, hệ thống tự sinh repo cho đội từ template này, nằm trong org
-GitHub của khoá bạn đang học và đặt tên theo mã đội. Copy URL ở trang đội trên
-Phoenix rồi clone về:
-
-```bash
-git clone https://github.com/<ORG-CỦA-KHOÁ>/<MÃ-ĐỘI>.git
-cd <MÃ-ĐỘI>
-```
-
-Không cần `rm -rf .git`, `git init` hay `git remote add`: repo sinh từ template
-đã bắt đầu bằng lịch sử riêng của đội và remote trỏ sẵn đúng chỗ. Chưa thấy repo
-của đội thì báo BTC — repo tự tạo nằm ngoài org sẽ không được chấm.
-
-### 2. Cài môi trường
-
-```bash
+```powershell
 uv venv --python 3.11 .venv
 uv pip install --python .venv -r requirements.txt
 npm --prefix frontend ci
-```
-
-Chỉ cần cài lại frontend khi clone mới hoặc khi dependencies thay đổi. Xem [MDM_DEV.md](MDM_DEV.md) để thiết lập và chạy bằng PowerShell trên Windows.
-
-### 3. Cấu hình biến môi trường
-
-```bash
-test -f .env || cp .env.example .env
-```
-
-Trên Windows PowerShell, dùng `if (-not (Test-Path .env)) { Copy-Item .env.example .env }`. Giữ `.env` hiện tại nếu file đã tồn tại.
-
-Mở `.env` và điền `OPENAI_API_KEY`. Riêng `AI_LOG_API_KEY`, mỗi thành viên tự
-tạo key riêng tại [dashboard Phoenix](https://phoenix.note.transformerlabs.ai/api-keys)
-rồi thay vào chỗ `<get-your-api-key-from-dashboard-phoenix>` — giá trị trong
-`.env.example` chỉ là placeholder, để nguyên thì log không vào được hệ thống chấm.
-
-### 4. Cài hook ghi log AI
-
-```bash
-bash scripts/setup_hooks.sh                                    # Linux / macOS / Git Bash
-powershell -ExecutionPolicy Bypass -File scripts\setup_hooks.ps1 # Windows PowerShell
-```
-
-Chạy một lần sau khi clone. Hook ghi lại prompt khi bạn dùng Claude Code, Cursor,
-Codex CLI, Gemini CLI, Antigravity hoặc GitHub Copilot, và cài pre-push hook để
-đẩy log lên server.
-
-### 5. Chạy backend và frontend
-
-Từ thư mục gốc repo, chạy migration lần đầu hoặc sau khi có revision mới, rồi mở hai terminal:
-
-```powershell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 uv run --python .venv python -m masterone.mdm.migrate
 ```
 
-Terminal 1 — backend:
+Mở hai terminal tại thư mục gốc:
 
 ```powershell
+# Terminal 1: API
 uv run --python .venv python -m uvicorn masterone.main:app --reload --port 8001
 ```
 
-Terminal 2 — frontend:
-
 ```powershell
+# Terminal 2: giao diện
 npm --prefix frontend run dev
 ```
 
-Mở ứng dụng tại <http://localhost:3000> và Swagger UI tại <http://localhost:8001/docs>. Backend cũng có thể chạy bằng `make run`; `make test` và `make lint` dùng để kiểm tra — xem `Makefile`.
+Mở <http://localhost:3000> (hoặc cổng Next.js in ra), đăng ký/đăng nhập và vào `/app`. API ở <http://localhost:8001>; tài liệu endpoint ở <http://localhost:8001/docs>. Chạy backend từ thư mục gốc để tìm đúng `.env`, migration và database. Khi có migration mới, dừng backend, sao lưu database, rồi chạy lại lệnh migrate trước khi khởi động.
 
-Chạy các lệnh backend từ thư mục gốc repo để `.env`, `backend/alembic.ini` và `data/masterone.db` được tìm đúng vị trí. Xem [MDM_DEV.md](MDM_DEV.md) để chạy frontend, tạo tài khoản và thử luồng MDM.
+### Biến môi trường
 
+Tạo `.env` từ `.env.example`; **không commit key hoặc file `.env`**.
 
-## Cấu trúc thư mục
-
-```
-backend/
-  pyproject.toml     Python package và dependency duy nhất
-  alembic.ini        Cấu hình migration
-  migrations/        Alembic revisions
-  src/masterone/
-    main.py          FastAPI entry point
-    api/             HTTP routes
-    auth/            User, session, CSRF
-    db/              SQLAlchemy Base và session
-    mdm/             Import, matching, Golden Record
-    agents/           LangGraph agent mẫu
-  tests/             pytest và CSV fixtures
-frontend/            Next.js application
-data/                SQLite local, không commit
-scripts/             Hook ghi log AI + installer
-docs/
-  guide/             Technical Guidebook (nguồn của bản online)
-  architecture_diagram.md
-eval/                Kết quả evaluation
-presentation/        Slide và video Demo Day
-.claude/ .codex/ .cursor/ .gemini/ .agents/ .github/hooks/
-                     Config hook cho từng công cụ
-.github/workflows/   CI
-Dockerfile           Multi-stage build
-docker-compose.yml   Chạy backend bằng Docker
-README_boilerplate.md  Khung README cho dự án của đội
-```
-
-## Technical Guidebook
-
-| Chương | Nội dung | Thời gian |
-|---|---|---|
-| 1 | Lời mở đầu — mục tiêu, cách sử dụng | 15 phút |
-| 2 | Khởi tạo dự án — clone, setup, git workflow | 4 giờ |
-| 3 | Thiết kế kiến trúc — 3-tier, diagram, ADR | 6 giờ |
-| 4 | LangGraph Agent — state, node, edge, tool, RAG | 8 giờ |
-| 5 | FastAPI — routes, validation, error handling, streaming | 6 giờ |
-| 6 | Giao diện — Next.js và Streamlit | 6 giờ |
-| 7 | DevOps — Docker, CI/CD, deploy, logging | 6 giờ |
-| 8 | Kiểm thử — unit test, integration test, RAGAS | 4 giờ |
-| 9 | Demo Day — 10 deliverables, checklist | 2 giờ |
-| 10 | Tài nguyên — khoá học, tài liệu, BMAD method | tham khảo |
-
-Đọc online tại <https://phoenix.note.transformerlabs.ai/technical-book>: đăng
-nhập bằng GitHub (đúng account đã được BTC mời vào org của khoá), chọn tab
-**Technical Book** ở sidebar trái. Bản offline nằm trong `docs/guide/`, mở được
-bằng bất kỳ markdown viewer nào.
-
-## 10 deliverables cho Demo Day
-
-| # | Deliverable | Vị trí | Template lo tới đâu |
-|---|---|---|---|
-| 1 | Source code | `backend/src/masterone/`, `frontend/` | Prototype đang phát triển |
-| 2 | README | copy `README_boilerplate.md` thành `README.md` | Khung sẵn |
-| 3 | Architecture diagram | `docs/architecture_diagram.md` | Khung sẵn |
-| 4 | AI logs | LangSmith (3 biến môi trường) + auto AI usage logging | Cấu hình sẵn |
-| 5 | Live URL | deploy lên Render/Vercel | CI/CD sẵn |
-| 6 | Video demo | `presentation/` | Đội tự làm |
-| 7 | Pitch deck | `presentation/` | Đội tự làm |
-| 8 | Development journal | `JOURNAL.md` | Khung sẵn |
-| 9 | Worklog | `WORKLOG.md` | Khung sẵn |
-| 10 | Evaluation evidence | `eval/` | Đội tự làm |
-
-## Tech stack
-
-| Lớp | Công nghệ |
+| Biến | Công dụng |
 |---|---|
-| Agent | LangGraph + LangChain 0.3 |
-| Backend | FastAPI + Uvicorn, package `masterone` |
-| LLM | OpenAI, mặc định `gpt-4o-mini` (đổi trong `backend/src/masterone/config.py`) |
-| Giao diện | Next.js trong `frontend/` |
-| Lint / test | ruff + pytest 8 |
-| DevOps | Docker + GitHub Actions |
-## AI usage logging
+| `MDM_DATABASE_PROFILE` | Chọn `local` hoặc `neon`; mặc định là `neon`. Đổi biến này rồi khởi động lại backend để chuyển database. |
+| `MDM_DATABASE_URL_LOCAL` | Chuỗi kết nối PostgreSQL cài trên máy, mặc định cổng 5432. Chỉ dùng với profile `local`. |
+| `MDM_DATABASE_URL` | Chuỗi kết nối PostgreSQL cloud, ví dụ Neon. Chỉ dùng với profile `neon`; không commit thông tin đăng nhập. |
+| `CORS_ORIGINS` | Origin frontend được phép trong production; local development chấp nhận origin loopback. |
+| `AUTH_CSRF_SECRET` | Bắt buộc là bí mật ít nhất 32 ký tự khi `APP_ENV=production`. |
+| `GEMINI_API_KEY` | Chỉ cần khi dùng nút giải thích bằng Gemini hoặc bật đối chiếu địa chỉ. |
+| `GEMINI_MODEL` | Model Gemini; mặc định `gemini-3.5-flash-lite`. |
+| `SEMANTIC_ADDRESS_ENABLED` | Mặc định `false`; khi bật, Gemini hỗ trợ so sánh địa chỉ ở một số cặp Cần review, không tự quyết định gộp. |
+| `SEMANTIC_ADDRESS_MAX_PAIRS_PER_RUN`, `SEMANTIC_ADDRESS_TIMEOUT_SECONDS` | Giới hạn số cặp và thời gian chờ khi dùng đối chiếu địa chỉ. |
+| `AI_LOG_API_KEY` | Key ghi log quá trình dùng công cụ AI cho chương trình; tách biệt với `GEMINI_API_KEY` của ứng dụng. |
 
-Mọi prompt được ghi vào `.ai-log/session.jsonl` và tự động gửi lên grading server
-ở bước pre-push.
+`OPENAI_API_KEY` còn trong file mẫu cho agent template; luồng MDM không cần key này. Nếu frontend phải gọi API ở địa chỉ khác, đặt `NEXT_PUBLIC_API_BASE_URL` cho Next.js trước khi chạy (ví dụ trong `frontend/.env.local`).
 
-| Công cụ | Cấu hình | Thời điểm ghi |
-|---|---|---|
-| Claude Code | `.claude/settings.json` | mỗi prompt (`UserPromptSubmit`) |
-| Cursor | `.cursor/hooks.json` | mỗi prompt và khi dừng |
-| OpenAI Codex CLI | `.codex/hooks.json` | mỗi prompt và khi dừng |
-| Gemini CLI | `.gemini/settings.json` | mỗi lượt agent chạy |
-| GitHub Copilot | `.github/hooks/hooks.json` | mỗi prompt và cuối session |
-| Antigravity IDE | `.agents/hooks.json` | mỗi prompt, kèm lần quét lại lúc `git push` |
+#### Chuyển giữa PostgreSQL local và Neon
 
-Dùng ChatGPT hay công cụ web khác thì log thủ công:
+Tạo database/user local bằng pgAdmin hoặc `psql` (thay mật khẩu bằng mật khẩu riêng):
 
-```bash
-bash scripts/_pyrun.sh scripts/log_manual.py --tool chatgpt --prompt "What you asked"
+```sql
+CREATE ROLE masterone WITH LOGIN PASSWORD 'YOUR_LOCAL_PASSWORD';
+CREATE DATABASE masterone OWNER masterone;
 ```
 
-## Đóng góp
+Trong `.env`, đặt `MDM_DATABASE_PROFILE=local` và `MDM_DATABASE_URL_LOCAL=postgresql+psycopg://masterone:YOUR_LOCAL_PASSWORD@localhost:5432/masterone`. Chạy migration một lần bằng `.venv\Scripts\python.exe -m masterone.mdm.migrate`, rồi khởi động lại backend.
 
-Repo này là open source. Đọc [CONTRIBUTING.md](CONTRIBUTING.md) trước khi mở PR.
+Để quay lại Neon, đặt `MDM_DATABASE_PROFILE=neon`, giữ URL Neon trong `MDM_DATABASE_URL`, rồi khởi động lại backend. Mỗi database có tài khoản, run và dữ liệu riêng; đổi profile chỉ đổi nơi backend đọc/ghi, không sao chép dữ liệu giữa hai database.
 
-Nội dung trong `docs/guide/` là nguồn của Technical Book và được đồng bộ lên bản
-online, nên mọi thay đổi ở đó cần review của
-[@AI20K-Build-Phase/book-maintainers](https://github.com/orgs/AI20K-Build-Phase/teams/book-maintainers)
-— xem [.github/CODEOWNERS](.github/CODEOWNERS).
+## Dữ liệu mẫu và luồng sử dụng
 
-Báo lỗ hổng bảo mật theo [SECURITY.md](SECURITY.md), đừng mở public issue.
+Bộ CSV của Linh ở `masterone_test/crm.csv`, `erp.csv`, `bill.csv`. Mỗi file có 7.000 dòng; có thể chọn cả ba cùng lúc. Các cột bắt buộc là `record_id,source,name,phone,email,address`; `source` nhận `CRM`, `ERP` hoặc `BILL`. `record_id` phải duy nhất trong một run. Cột `entity_id`, nếu có, chỉ dùng để đánh giá offline; `pairs.csv` không phải đầu vào ứng dụng. Giới hạn hiện tại: tối đa 10 file/run, 5 MiB và 10.000 dòng/file.
 
-## License
+1. **Nạp dữ liệu:** chọn một hoặc nhiều CSV; backend kiểm tra, lưu bản ghi nguồn và chuẩn hóa trường.
+2. **Phân giải:** worker sinh cặp ứng viên, so sánh bằng rule/policy và tạo cụm. Tổng quan cho biết số item **Chờ gộp** và **Cần review**.
+3. **Duyệt:** mở item Cần review để so sánh, có thể đưa sang Chờ gộp hoặc đánh dấu Không gộp. Nút Gemini chỉ tạo lời giải thích hỗ trợ.
+4. **Chốt giá trị:** trong Chờ gộp, mở item và chọn nguồn cho các trường khác nhau. Item từ review có thể mang theo lựa chọn đã lưu trong trình duyệt.
+5. **Xuất:** xem trước số dòng, xử lý các item bị chặn, xác nhận cảnh báo nếu còn review chưa duyệt, rồi tải CSV. Bản ghi chưa duyệt được giữ riêng. Lịch sử lưu snapshot để tải lại và xem trước/sau.
 
-[MIT](LICENSE) — dùng tự do cho mục đích giáo dục.
+## Ví dụ truy vấn API
 
-123456
+`GET /health` không cần đăng nhập:
+
+```powershell
+Invoke-RestMethod http://localhost:8001/health
+```
+
+Các truy vấn sau cần cookie phiên của tài khoản đã đăng nhập; dùng browser/DevTools hoặc <http://localhost:8001/docs> với phiên phù hợp. Thay `{run_id}` bằng ID run của bạn.
+
+| Yêu cầu | Mục đích |
+|---|---|
+| `GET /api/v1/mdm/runs` | Liệt kê các lần nạp của tài khoản. |
+| `GET /api/v1/mdm/runs/{run_id}/overview` | Lấy trạng thái và số lượng trên Tổng quan. |
+| `GET /api/v1/mdm/runs/{run_id}/categories` | Lấy các nhóm trường hợp Cần review. |
+| `GET /api/v1/mdm/runs/{run_id}/items/review?limit=25` | Xem trang đầu của hàng đợi review. |
+| `GET /api/v1/mdm/runs/{run_id}/items/merge?limit=25` | Xem trang đầu của Chờ gộp. |
+| `GET /api/v1/mdm/runs/{run_id}/exports` | Xem các CSV snapshot trong Lịch sử. |
+
+Các request thay đổi dữ liệu cần cookie phiên, `Origin` hợp lệ và `X-CSRF-Token`; giao diện thực hiện các bước này. Hợp đồng request/response đầy đủ ở Swagger UI.
+
+## Kiểm thử và bằng chứng
+
+```powershell
+uv run --python .venv python -m pytest backend/tests/ -q
+uv run --python .venv python -m ruff check backend/src backend/tests backend/migrations
+npm --prefix frontend test
+npm --prefix frontend run lint
+npm --prefix frontend run build
+```
+
+[Báo cáo manual MVP](eval/results/report.md) liên kết ảnh chụp và CSV kết quả thực tế. Đây là bằng chứng thao tác sản phẩm; test tự động trong `backend/tests/` và `frontend/` kiểm tra hành vi code. Script `scripts/evaluate_linh_resolution.py` dùng để đo thuật toán offline, không thay thế 5 ca manual.
+
+## Phạm vi hiện tại
+
+Các run không so khớp chéo nhau. Điểm matching là trọng số rule có điều chỉnh tần suất, **không phải xác suất đã hiệu chỉnh** và pipeline không dùng Splink. Gemini không tự quyết định gộp. MVP local dùng SQLite và một worker backend; trước khi triển khai Internet công khai cần bổ sung xác minh email, khôi phục mật khẩu, MFA và chính sách chống đăng ký tự động. Không nạp dữ liệu khách hàng thật vào bản demo.
+
+## Cấu trúc repo và log phát triển
+
+- `backend/`: FastAPI, auth, MDM pipeline, migrations và pytest.
+- `frontend/`: Next.js và kiểm thử giao diện.
+- `masterone_test/`: CSV demo của Linh.
+- `docs/architecture_diagram.md`: sơ đồ hệ thống đang chạy.
+- `eval/results/`: bằng chứng manual và CSV xuất.
+- `scripts/`: đánh giá offline và hook ghi log AI.
+
+Nếu đội cần log việc dùng Codex/Claude/Gemini theo yêu cầu chương trình, mỗi thành viên đặt `AI_LOG_API_KEY` của mình trong `.env`, rồi cài hook một lần:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_hooks.ps1
+```
+
+Hướng dẫn đầy đủ cho các hệ điều hành và công cụ khác ở [MDM_DEV.md](MDM_DEV.md) và `scripts/`. Đóng góp theo [CONTRIBUTING.md](CONTRIBUTING.md); dự án dùng [MIT](LICENSE).

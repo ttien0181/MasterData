@@ -173,15 +173,18 @@ def main():
     if not entry:
         sys.exit(0)
 
-    log_dir = Path(os.environ.get("AI_LOG_DIR", ".ai-log"))
+    repo_root = git("git rev-parse --show-toplevel")
+    log_dir = Path(os.environ.get("AI_LOG_DIR", str(Path(repo_root) / ".ai-log")))
     log_dir.mkdir(exist_ok=True)
     log_file = log_dir / "session.jsonl"
 
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-    # Output valid JSON (required by some tools like Gemini)
-    print(json.dumps({"status": "logged"}))
+    # Codex treats an empty successful output as a completed hook. Other
+    # integrations expect a JSON response.
+    if tool != "codex":
+        print(json.dumps({"status": "logged"}))
 
 
 if __name__ == "__main__":

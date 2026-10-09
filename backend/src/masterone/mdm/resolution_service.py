@@ -6,27 +6,43 @@ from uuid import uuid4
 from sqlalchemy.orm import sessionmaker
 
 from masterone.db.base import now_utc
-from masterone.mdm.models import (ResolutionPair, ResolutionProposal, ResolutionRecord,
-                                  ResolutionReviewCase, ResolutionRun, ResolutionTask)
+from masterone.mdm.models import (
+    ResolutionPair,
+    ResolutionProposal,
+    ResolutionRecord,
+    ResolutionReviewCase,
+    ResolutionRun,
+    ResolutionTask,
+)
 from masterone.mdm.pipeline.blocking import generate_candidates
 from masterone.mdm.pipeline.clustering import build_proposals
-from masterone.mdm.pipeline.matching import score_pair
+from masterone.mdm.pipeline.matching import score_pair, value_frequencies
 from masterone.mdm.pipeline.review_grouping import classify_pair
+from masterone.mdm.pipeline.semantic_address import enrich_pairs_with_semantic
 
 
-def _compute(records: list[dict], run_id: str, policy_version: str) -> dict:
+def _compute(records: list[dict], run_id: str, policy_version: str,
+             negative_pairs: frozenset | None = None) -> dict:
     candidate_blocks = generate_candidates(records)
     by_id = {record["id"]: record for record in records}
+    frequencies = value_frequencies(records)
     pairs = []
-    for (left_id, right_id), reasons in candidate_blocks.items():
-        result = score_pair(by_id[left_id], by_id[right_id], reasons)
+    insufficient_count = 0
+    for (left_id, right_id), reasons in sorted(candidate_blocks.items()):
+        result = score_pair(by_id[left_id], by_id[right_id], reasons, frequencies,
+                            negative_pairs=negative_pairs)
+        if result["decision"] == "INSUFFICIENT_EVIDENCE":
+            insufficient_count += 1
+            continue
         pair_id = sha256(f"{run_id}:{left_id}:{right_id}:{policy_version}".encode()).hexdigest()
         pairs.append({"id": pair_id, "left_id": left_id, "right_id": right_id,
                       "blocking_reasons": sorted(reasons), **result})
-    clusters = build_proposals(records, pairs, run_id, policy_version)
+    llm_stats = enrich_pairs_with_semantic(pairs, by_id)
+    clusters = build_proposals(records, pairs, run_id, policy_version, negative_pairs=negative_pairs)
     review_cases = []
+    pairs_by_id = {item["id"]: item for item in pairs}
     for case in clusters["review_cases"]:
-        pair = next((item for item in pairs if item["id"] in case["pair_ids"]), None)
+        pair = pairs_by_id.get(case["pair_ids"][0])
         if pair is None:
             continue
         classification = classify_pair(pair, by_id)
@@ -34,7 +50,8 @@ def _compute(records: list[dict], run_id: str, policy_version: str) -> dict:
             continue
         review_cases.append({**case, **classification})
     return {"pairs": pairs, "proposals": clusters["proposals"], "review_cases": review_cases,
-            "candidate_count": len(candidate_blocks)}
+            "candidate_count": len(candidate_blocks), "insufficient_count": insufficient_count,
+            "llm_stats": llm_stats}
 
 
 def run_pipeline(run_id: str, factory: sessionmaker, progress) -> None:
@@ -46,15 +63,53 @@ def run_pipeline(run_id: str, factory: sessionmaker, progress) -> None:
         task.status = "RUNNING"
         task.phase = "loading"
         task.updated_at = now_utc()
-        records = [{"id": item.id, "external_id": item.external_id, "source_system": item.source_system,
-                    "raw_fields": item.raw_fields, "normalized_fields": item.normalized_fields}
-                   for item in db.query(ResolutionRecord).filter_by(run_id=run_id).all()]
+        record_count = db.query(ResolutionRecord).filter_by(run_id=run_id).count()
         run.status = "RUNNING"
         run.phase = "loading"
+        policy_version = run.policy_version
+        db_url = db.get_bind().url.render_as_string(hide_password=False)
         db.commit()
 
+    if record_count > 10000:
+        progress("blocking", 0, record_count)
+        with factory() as db:
+            negative_pairs: frozenset = frozenset(
+                tuple(sorted((p.left_record_id, p.right_record_id)))
+                for p in db.query(ResolutionPair).filter_by(run_id=run_id, user_decision="NON_MATCH").all()
+            )
+        from masterone.mdm.pipeline.stage_runner import StageRunner
+        runner = StageRunner(run_id=run_id, attempt_id=task.id, db_url=db_url)
+        computed = runner.run_all(records_raw=None, policy_version=policy_version, negative_pairs=negative_pairs, return_data=False)
+        
+        progress("persisting", record_count, record_count)
+        with factory.begin() as db:
+            run = db.get(ResolutionRun, run_id)
+            task = db.query(ResolutionTask).filter_by(run_id=run_id).one()
+            task.status = "COMPLETED"
+            task.phase = "completed"
+            task.processed_count = record_count
+            task.total_count = record_count
+            task.updated_at = now_utc()
+            run.status = "COMPLETED"
+            run.phase = "completed"
+            run.candidate_count = computed.get("candidate_count", 0)
+            run.insufficient_count = computed.get("insufficient_count", 0)
+            run.completed_at = now_utc()
+        return
+
+    with factory() as db:
+        records = [{"id": item.id, "external_id": item.external_id, "source_system": item.source_system,
+                    "entity_type": item.entity_type,
+                    "raw_fields": item.raw_fields, "normalized_fields": item.normalized_fields,
+                    "quality_flags": item.quality_flags}
+                   for item in db.query(ResolutionRecord).filter_by(run_id=run_id).order_by(ResolutionRecord.id).all()]
+        negative_pairs: frozenset = frozenset(
+            tuple(sorted((p.left_record_id, p.right_record_id)))
+            for p in db.query(ResolutionPair).filter_by(run_id=run_id, user_decision="NON_MATCH").all()
+        )
+
     progress("blocking", 0, len(records))
-    computed = _compute(records, run_id, run.policy_version)
+    computed = _compute(records, run_id, policy_version, negative_pairs=negative_pairs)
     progress("persisting", len(records), len(records))
     with factory.begin() as db:
         run = db.get(ResolutionRun, run_id)
@@ -63,9 +118,13 @@ def run_pipeline(run_id: str, factory: sessionmaker, progress) -> None:
             db.add(ResolutionPair(
                 id=pair["id"], run_id=run_id, left_record_id=pair["left_id"],
                 right_record_id=pair["right_id"], blocking_reasons=pair["blocking_reasons"],
-                field_evidence=pair["field_evidence"], score=pair["score"],
+                field_evidence=[] if pair["decision"] == "NON_MATCH" else pair["field_evidence"],
+                score=pair["score"],
                 pair_decision=pair["decision"], decision_reason=pair["reason"],
                 triage_status=pair["triage_status"], triage_reason=pair["triage_reason"],
+                primary_group=pair["primary_group"], subgroup=pair["subgroup"],
+                signature=pair["signature"], normalization_tags=pair["normalization_tags"],
+                policy_id=pair["policy_id"], policy_version=pair["policy_version"],
             ))
         for proposal in computed["proposals"]:
             db.add(ResolutionProposal(id=proposal["id"], run_id=run_id,
@@ -85,6 +144,8 @@ def run_pipeline(run_id: str, factory: sessionmaker, progress) -> None:
         task.updated_at = now_utc()
         run.status = "COMPLETED"
         run.phase = "completed"
+        run.candidate_count = computed["candidate_count"]
+        run.insufficient_count = computed["insufficient_count"]
         run.completed_at = now_utc()
 
 

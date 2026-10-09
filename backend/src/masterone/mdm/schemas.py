@@ -1,9 +1,63 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 Decision = Literal["pending", "accepted", "rejected", "needs_review"]
 FIELD_NAMES = ("name", "phone", "email", "address", "tax_id")
+
+
+class ResolutionTaskRead(BaseModel):
+    task_id: str
+    run_id: str
+    status: str
+    phase: str
+    processed_count: int
+    total_count: int
+    error_code: str | None
+    updated_at: datetime
+
+
+class ResolutionCountsRead(BaseModel):
+    # Keep the public keys; their units differ and must not be summed together.
+    auto: int  # staged merge proposals, not already merged records
+    rejected: int  # pairs
+    review: int  # grouped review items + manual proposals
+    review_cases: int
+    review_pairs: int = 0
+    manual: int
+    hard_blocked: int  # pairs
+    insufficient: int  # pairs
+    group_a: int  # pairs
+    group_c: int  # pairs
+    group_d: int  # pairs
+    separate: int  # estimated source records kept separate
+
+
+class ResolutionOverviewRead(BaseModel):
+    run_id: str
+    status: str
+    phase: str
+    processed_count: int
+    total_count: int
+    record_count: int
+    file_count: int
+    source_counts: dict[str, int]
+    history_count: int
+    candidate_count: int
+    estimated_entity_count: int
+    duplicate_record_count: int
+    eligible_merge_group_count: int
+    counts: ResolutionCountsRead
+    # Additive fields: restored runs can recover task/error without localStorage.
+    task: ResolutionTaskRead | None = None
+
+
+def task_read(task) -> ResolutionTaskRead:
+    return ResolutionTaskRead(task_id=task.id, run_id=task.run_id, status=task.status,
+                              phase=task.phase, processed_count=task.processed_count,
+                              total_count=task.total_count, error_code=task.error_code,
+                              updated_at=task.updated_at)
 
 
 class FieldChoice(BaseModel):

@@ -15,6 +15,8 @@ class User(Base):
     email_normalized: Mapped[str] = mapped_column(String(320), unique=True)
     password_hash: Mapped[str] = mapped_column(String(512))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # §26.1 RBAC roles: VIEWER | STEWARD | SENIOR_STEWARD | POLICY_ADMIN | AUDITOR
+    role: Mapped[str] = mapped_column(String(32), default="VIEWER", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 

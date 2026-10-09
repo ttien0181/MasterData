@@ -1,0 +1,82 @@
+.upload-session-intake { display: grid; gap: 18px; }
+.upload-session-intake > .intake-copy { margin: 0 0 2px; }
+.upload-session-intake .intake-copy h2 { margin-bottom: 7px; }
+.upload-session-intake .intake-copy p:not(.section-kicker) { max-width: 780px; }
+.upload-session-intake .intake-footer { align-items: center; gap: 16px; }
+.upload-session-intake .intake-footer > div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.upload-session-message { padding: 10px 12px; border: 1px solid var(--primary-border); border-radius: 9px; background: var(--primary-bg); color: var(--ink-2); font-size: 12px; }
+.upload-session-name { display: grid; gap: 7px; color: var(--ink-2); font-size: 11px; font-weight: 650; }
+.upload-session-name > div { display: flex; gap: 8px; }
+.upload-session-name input { width: 100%; min-width: 0; height: 42px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); color: var(--ink); font: inherit; font-weight: 450; }
+.upload-session-name input::placeholder { color: var(--ink-4); }
+.upload-drafts { display: grid; gap: 7px; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--glass-strong); }
+.upload-drafts > div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
+.upload-drafts > div strong { color: var(--ink-2); font-size: 11px; }
+.upload-drafts > div span { color: var(--ink-4); font-size: 10px; }
+.upload-drafts > button { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 10px; border: 1px solid var(--line-subtle); border-radius: 8px; background: var(--surface); color: var(--ink-2); text-align: left; }
+.upload-drafts > button:hover:not(:disabled) { border-color: var(--primary-border); background: var(--primary-bg); }
+.upload-drafts > button:disabled { cursor: wait; opacity: .65; }
+.upload-drafts > button span { overflow: hidden; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.upload-drafts > button small { flex: none; color: var(--ink-3); font-size: 10px; }
+.upload-session-workflow { display: grid; gap: 16px; }
+.upload-session-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.upload-session-heading > div { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.upload-session-heading strong { color: var(--ink-2); font-size: 11px; font-weight: 550; }
+.upload-state { padding: 5px 9px; border: 1px solid var(--primary-border); border-radius: 99px; background: var(--primary-bg); color: var(--primary); font-size: 10px; font-weight: 700; }
+.upload-state.state-ready { border-color: var(--green-border); background: var(--green-bg); color: var(--green); }
+.upload-state.state-error { border-color: var(--red-border); background: var(--red-bg); color: var(--red); }
+.upload-state.state-validating { border-color: var(--amber-border); background: var(--amber-bg); color: var(--amber); }
+.upload-session-files { display: grid; gap: 9px; }
+.upload-session-file { display: grid; gap: 9px; min-width: 0; padding: 13px 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--glass-strong); }
+.upload-session-file-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.upload-session-file-head > div { display: grid; gap: 3px; min-width: 0; }
+.upload-session-file-head strong { overflow-wrap: anywhere; color: var(--ink-2); font-size: 11px; }
+.upload-session-file-head small, .upload-local-source { color: var(--ink-3); font-size: 10px; }
+.upload-replace-control { position: relative; flex: none; overflow: hidden; }
+.upload-replace-control input { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; opacity: 0; }
+.upload-file-progress { height: 6px; overflow: hidden; border-radius: 99px; background: var(--line); }
+.upload-file-progress > span { display: block; height: 100%; border-radius: inherit; background: var(--primary); transition: width 120ms linear; }
+.upload-file-error { margin: 0; padding: 8px 10px; border: 1px solid var(--red-border); border-radius: 8px; background: var(--red-bg); color: var(--red); font-size: 11px; line-height: 1.5; }
+.upload-progress-copy { margin: 0; color: var(--ink-3); font-size: 10px; }
+.upload-session-intake .resolution-dropzone > input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; opacity: 0; }
+.sessions-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 210px) minmax(145px, 180px); gap: 10px; max-width: 1440px; margin: 17px auto 0; }
+.sessions-filters label { display: grid; gap: 5px; min-width: 0; color: var(--ink-3); font-size: 10px; font-weight: 650; }
+.sessions-filters input, .sessions-filters select { width: 100%; min-width: 0; height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); font: inherit; font-size: 11px; }
+.sessions-list-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 1px 9px; color: var(--ink-3); font-size: 10px; }
+.sessions-list-summary strong { color: var(--ink-2); font-size: 11px; }
+.sessions-list-summary label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.sessions-list-summary input, .sessions-row-check { accent-color: var(--primary); }
+.sessions-row-wrap { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: center; gap: 7px; }
+.sessions-row-check { width: 15px; height: 15px; justify-self: center; }
+.sessions-row-statuses { display: flex; align-items: center; justify-content: flex-end; gap: 6px; grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.sessions-row-statuses .session-status { white-space: nowrap; }
+.session-status.archived { padding: 3px 7px; border: 1px solid var(--line); border-radius: 99px; background: var(--bg-subtle); color: var(--ink-3); font-size: 9px; }
+.sessions-bulk-bar { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; padding: 9px; border: 1px solid var(--primary-border); border-radius: 9px; background: var(--primary-bg); }
+.sessions-bulk-bar span { margin-right: auto; color: var(--ink-2); font-size: 10px; font-weight: 650; }
+.sessions-bulk-bar .button { min-height: 32px; padding: 6px 9px; font-size: 10px; }
+.sessions-action-error { padding: 8px 10px; border: 1px solid var(--red-border); border-radius: 8px; background: var(--red-bg); color: var(--red); font-size: 11px; }
+.sessions-rename { display: grid; gap: 6px; margin: 14px 0; color: var(--ink-3); font-size: 10px; }
+.sessions-rename > div { display: flex; gap: 7px; }
+.sessions-rename input { width: 100%; min-width: 0; height: 37px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
+.sessions-rename .button { min-height: 37px; }
+
+@media (max-width: 640px) {
+  .upload-session-intake .intake-footer { align-items: stretch; flex-direction: column; }
+  .upload-session-intake .intake-footer > div { display: grid; grid-template-columns: 1fr; }
+  .upload-session-intake .intake-footer > div button { width: 100%; justify-content: center; }
+  .upload-session-heading { align-items: flex-start; flex-direction: column; }
+  .upload-session-name > div { align-items: stretch; flex-direction: column; }
+  .upload-session-name > div .button { justify-content: center; }
+  .upload-session-file-head { align-items: flex-start; flex-direction: column; }
+  .upload-drafts > button { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .sessions-filters { grid-template-columns: 1fr 1fr; }
+  .sessions-filters .sessions-search { grid-column: 1 / -1; }
+  .sessions-row-wrap { grid-template-columns: 18px minmax(0, 1fr); gap: 4px; }
+  .sessions-row-statuses { grid-column: 1; grid-row: auto; justify-content: flex-start; flex-wrap: wrap; }
+  .sessions-row-statuses .session-status { font-size: 9px; }
+  .sessions-rename > div { flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .upload-file-progress > span { transition: none; }
+}

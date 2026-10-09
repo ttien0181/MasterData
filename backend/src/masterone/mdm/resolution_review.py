@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from masterone.db.base import now_utc
-from masterone.mdm.models import (ResolutionEntity, ResolutionPair, ResolutionProposal,
+from masterone.mdm.models import (ResolutionPair, ResolutionProposal,
                                   ResolutionAuditEvent, ResolutionRecord, ResolutionReviewCase, ResolutionRun)
 from masterone.mdm.pipeline.golden import build_golden
 
@@ -19,8 +19,8 @@ def decide_pair(db: Session, pair: ResolutionPair, decision: str, expected_revis
                 actor_user_id: str) -> dict:
     if pair.revision != expected_revision:
         raise HTTPException(409, "Cặp đã thay đổi; hãy tải lại trước khi quyết định")
-    if pair.pair_decision == "NON_MATCH" and decision == "ACCEPTED":
-        raise HTTPException(409, "Quyết định NON_MATCH của thuật toán cần xử lý ngoài demo này")
+    if pair.pair_decision in {"NOT_MERGEABLE", "NON_MATCH"} and decision == "ACCEPTED":
+        raise HTTPException(409, "Quyết định NOT_MERGEABLE của thuật toán cần xử lý ngoài demo này")
     if pair.user_decision != "UNDECIDED" and pair.user_decision != "DEFERRED":
         raise HTTPException(409, "Quyết định cặp đã được chốt")
     previous = pair.user_decision
@@ -45,8 +45,56 @@ def decide_pair(db: Session, pair: ResolutionPair, decision: str, expected_revis
     return {"pair_id": pair.id, "user_decision": pair.user_decision, "revision": pair.revision}
 
 
+def _requires_four_eyes(case: ResolutionReviewCase) -> bool:
+    """Group D cases require two independent reviewers (§SVC-02-FR-006)."""
+    return case.primary_group == "D"
+
+
+def submit_first_review(db: Session, case: ResolutionReviewCase, decision: str,
+                        accepted_pair_ids: list[str], actor_user_id: str,
+                        expected_revision: int) -> dict:
+    """Record first reviewer's decision for Group D; transitions to PENDING_SECOND_REVIEW."""
+    if case.revision != expected_revision or case.status != "OPEN":
+        raise HTTPException(409, "Nhóm review đã thay đổi; hãy tải lại")
+    if not _requires_four_eyes(case):
+        raise HTTPException(422, "submit_first_review chỉ dùng cho Group D")
+    case.first_reviewer_id = actor_user_id
+    case.first_decision = decision
+    case.first_decided_at = now_utc()
+    case.status = "PENDING_SECOND_REVIEW"
+    case.revision += 1
+    db.add(ResolutionAuditEvent(run_id=case.run_id, actor_user_id=actor_user_id,
+        action="REVIEW_CASE_FIRST_DECISION",
+        details={"case_id": case.id, "decision": decision,
+                 "accepted_pair_ids": sorted(accepted_pair_ids), "revision": case.revision}))
+    db.commit()
+    return {"case_id": case.id, "status": case.status, "revision": case.revision,
+            "message": "Đang chờ reviewer thứ 2 (four-eyes Group D)"}
+
+
 def approve_case(db: Session, case: ResolutionReviewCase, expected_revision: int,
                  accepted_pair_ids: list[str], actor_user_id: str) -> dict:
+    # Four-eyes guard: Group D first submission goes through submit_first_review instead
+    if _requires_four_eyes(case) and case.status == "OPEN":
+        return submit_first_review(db, case, "APPROVED", accepted_pair_ids,
+                                   actor_user_id, expected_revision)
+
+    # Second reviewer for Group D must be different from the first
+    if _requires_four_eyes(case) and case.status == "PENDING_SECOND_REVIEW":
+        if case.first_reviewer_id == actor_user_id:
+            raise HTTPException(403, "Reviewer 2 phải khác Reviewer 1 (four-eyes Group D)")
+        if case.first_decision != "APPROVED":
+            raise HTTPException(409, "Reviewer 1 đã từ chối — không thể approve")
+        case.second_reviewer_id = actor_user_id
+        case.second_decision = "APPROVED"
+        case.second_decided_at = now_utc()
+        case.status = "OPEN"   # re-open to proceed with full approval below
+        case.revision += 1
+        db.add(ResolutionAuditEvent(run_id=case.run_id, actor_user_id=actor_user_id,
+            action="REVIEW_CASE_SECOND_APPROVED",
+            details={"case_id": case.id, "revision": case.revision}))
+        db.commit()
+
     if case.revision != expected_revision or case.status != "OPEN":
         raise HTTPException(409, "Nhóm review đã thay đổi; hãy tải lại")
     pairs_by_id = {pair.id: pair for pair in db.query(ResolutionPair).filter_by(run_id=case.run_id).all()}
@@ -64,7 +112,7 @@ def approve_case(db: Session, case: ResolutionReviewCase, expected_revision: int
                 changed = True
     involved_pairs = [pair for pair in pairs_by_id.values()
                       if pair.left_record_id in member_ids and pair.right_record_id in member_ids]
-    if any(pair.pair_decision == "NON_MATCH" or pair.user_decision == "REJECTED" for pair in involved_pairs):
+    if any(pair.pair_decision in {"NOT_MERGEABLE", "NON_MATCH"} or pair.user_decision == "REJECTED" for pair in involved_pairs):
         raise HTTPException(409, "Có cặp xung đột hoặc đã bị từ chối trong cụm")
     review_pair_ids = {pair.id for pair in involved_pairs if pair.triage_status == "REVIEW"}
     if not review_pair_ids <= set(accepted_pair_ids):
@@ -74,8 +122,7 @@ def approve_case(db: Session, case: ResolutionReviewCase, expected_revision: int
     records = db.query(ResolutionRecord).filter(ResolutionRecord.id.in_(member_ids)).all()
     if len(records) != len(member_ids):
         raise HTTPException(409, "Run thiếu bản ghi thành viên")
-    merged_members = {record_id for entity in db.query(ResolutionEntity).filter_by(run_id=case.run_id).all()
-                      for record_id in entity.member_record_ids}
+    merged_members = set()
     if member_ids.intersection(merged_members):
         raise HTTPException(409, "Một số bản ghi trong review đã được gộp")
     for proposal in proposals:
@@ -121,15 +168,14 @@ def approve_deferred_proposal(db: Session, proposal: ResolutionProposal, expecte
     members = set(proposal.member_record_ids)
     pairs = db.query(ResolutionPair).filter(ResolutionPair.run_id == proposal.run_id,
         ResolutionPair.left_record_id.in_(members), ResolutionPair.right_record_id.in_(members)).all()
-    if any(pair.pair_decision == "NON_MATCH" or pair.user_decision == "REJECTED" for pair in pairs):
+    if any(pair.pair_decision in {"NOT_MERGEABLE", "NON_MATCH"} or pair.user_decision == "REJECTED" for pair in pairs):
         raise HTTPException(409, "Cụm có cặp xung đột hoặc đã bị từ chối")
     if any(pair.pair_decision == "REVIEW" and pair.user_decision != "ACCEPTED" for pair in pairs):
         raise HTTPException(409, "Cần xử lý các cặp còn mơ hồ trước")
     records = db.query(ResolutionRecord).filter(ResolutionRecord.id.in_(members)).all()
     if len(records) != len(members):
         raise HTTPException(409, "Run thiếu bản ghi thành viên")
-    merged_members = {record_id for entity in db.query(ResolutionEntity).filter_by(run_id=proposal.run_id).all()
-                      for record_id in entity.member_record_ids}
+    merged_members = set()
     if members.intersection(merged_members):
         raise HTTPException(409, "Một số bản ghi trong cụm đã được gộp")
     for other in db.query(ResolutionProposal).filter_by(run_id=proposal.run_id).all():
@@ -187,8 +233,7 @@ def build_merge_preview(db: Session, run_id: str, owner_user_id: str,
         if seen & members:
             raise HTTPException(409, "Các cụm được chọn đang chồng lấn")
         seen.update(members)
-    merged_members = {record_id for entity in db.query(ResolutionEntity).filter_by(run_id=run_id).all()
-                      for record_id in entity.member_record_ids}
+    merged_members = set()
     if seen & merged_members:
         raise HTTPException(409, "Một số bản ghi đã được gộp trước đó")
     token = str(uuid4())

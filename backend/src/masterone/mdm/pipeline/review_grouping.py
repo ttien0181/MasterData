@@ -1,33 +1,83 @@
+"""Stable review cohorts from comparison state and policy, never from UI labels.
+
+Groups are derived from field evidence per architecture §13:
+  D — at least one CF field (non-hard conflict)
+  A — strong anchors, no conflict
+  C — missing required anchor, no conflict
+"""
+
 from hashlib import sha256
 
-GROUPS = ("CONSTRAINT_OR_CLUSTER_RISK", "SINGLE_MAJOR_CONFLICT", "SHARED_VALUE",
-          "VIETNAM_VARIANT", "SPARSE_EVIDENCE", "MODEL_DISAGREEMENT")
+
+def _derive_group(pair: dict) -> tuple[str, str]:
+    """Re-derive primary_group + subgroup from field_evidence / comparisons (§15.1)."""
+    comparisons = pair.get("comparisons", {})
+    if not comparisons:
+        comparisons = {e["field"]: {"state": e.get("state", "MI")}
+                       for e in pair.get("field_evidence", [])}
+
+    states = {f: v["state"] for f, v in comparisons.items()}
+
+    cf_fields = [f for f, s in states.items() if s == "CF"]
+    if cf_fields:
+        if len(cf_fields) > 1:
+            return "D", "D_MULTI"
+        cf_map = {
+            "phone": "D1_NAME_PHONE_CONFLICT",
+            "name":  "D2_NAME_CONFLICT",
+            "dob":   "D4_DOB_CONFLICT",
+            "email": "D3_IDENTITY_CONFLICT",
+            "government_id": "D3_IDENTITY_CONFLICT",
+        }
+        return "D", cf_map.get(cf_fields[0], "D_MULTI")
+
+    contact_matches = [f for f in ("phone", "email") if states.get(f) in {"EX", "NX"}]
+    gov_id_anchor   = states.get("government_id") == "EX"
+    name_good       = states.get("name") in {"EX", "NX", "NA", "HS"}
+    name_close      = states.get("name") in {"MS", "WS"}
+    dob_anchor      = states.get("dob") in {"EX", "CL"}
+
+    # Group A
+    if name_good and "phone" in contact_matches:
+        return "A", "A1_NAME_PHONE"
+    if name_good and "email" in contact_matches:
+        return "A", "A2_NAME_EMAIL"
+    if ("phone" in contact_matches and dob_anchor
+            and states.get("name") in {"EX", "NX", "NA", "HS", "MS"}
+            and states.get("name") not in {"CF", "WS"}):
+        return "A", "A3_NAME_PHONE_DOB"
+    if gov_id_anchor and name_good:
+        return "A", "A3_NAME_GOV_ID"
+
+    # Group C
+    if "email" in contact_matches and dob_anchor and not name_good:
+        return "C", "C1_EMAIL_DOB"
+    if gov_id_anchor and not name_good:
+        return "C", "C3_GOV_ID_ONLY"
+    if contact_matches:
+        return "C", "C_MULTI" if len(contact_matches) > 1 else "C_NAME_ANCHOR_MISSING"
+    return "C", "C_NAME_ANCHOR_WEAK" if name_close else "C_NAME_ANCHOR_MISSING"
 
 
 def classify_pair(pair: dict, record_by_id: dict[str, dict]) -> dict | None:
     if pair.get("triage_status") != "REVIEW":
         return None
-    evidence = {item["field"]: item for item in pair.get("field_evidence", [])}
-    left, right = record_by_id[pair["left_id"]], record_by_id[pair["right_id"]]
-    reason = pair.get("triage_reason", "")
-    shared = [field for field in ("phone", "email")
-              if evidence.get(field, {}).get("similarity") == 1.0]
-    different = [field for field in ("name", "phone", "email", "address")
-                 if evidence.get(field, {}).get("similarity", 0) < 0.4
-                 and (left["normalized_fields"].get(field) or right["normalized_fields"].get(field))]
-    if reason in {"CLUSTER_RISK", "CLUSTER_NOT_CONFIRMED"}:
-        group, subgroup = GROUPS[0], "TRANSITIVE_RISK"
-    elif shared:
-        group, subgroup = "SHARED_VALUE", "SHARED_PHONE" if "phone" in shared else "GENERIC_EMAIL"
-    elif len(different) == 1:
-        group, subgroup = "SINGLE_MAJOR_CONFLICT", different[0].upper()
-    elif any(evidence.get(field, {}).get("similarity", 0) >= 0.8 for field in ("name", "address")):
-        group, subgroup = "VIETNAM_VARIANT", "TEXT_VARIANT"
-    elif sum(bool(value) for value in left["normalized_fields"].values()) < 3 or sum(
-        bool(value) for value in right["normalized_fields"].values()) < 3:
-        group, subgroup = "SPARSE_EVIDENCE", "LIMITED_FIELDS"
+
+    # Use stored group if available; otherwise re-derive from evidence (§13)
+    if pair.get("primary_group") and pair.get("subgroup"):
+        group = pair["primary_group"]
+        subgroup = pair["subgroup"]
     else:
-        group, subgroup = "MODEL_DISAGREEMENT", "OTHER_UNCERTAIN"
-    signature = f"mdm-person-review-v1:{group}:{subgroup}"
-    return {"primary_group": group, "subgroup": subgroup,
-            "signature_hash": sha256(signature.encode()).hexdigest(), "reason_codes": [reason]}
+        group, subgroup = _derive_group(pair)
+
+    signature = pair.get("signature") or "|".join(
+        f"{evidence['field']}:{evidence.get('state', 'NC')}"
+        for evidence in pair.get("field_evidence", []))
+    return {
+        "primary_group": group,
+        "subgroup": subgroup,
+        "signature_hash": sha256(
+            f"{pair.get('policy_version', 'v1')}:{group}:{subgroup}:{signature}".encode()
+        ).hexdigest(),
+        "reason_codes": [pair.get("triage_reason", "REVIEW_REQUIRED")],
+    }
