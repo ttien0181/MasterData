@@ -34,6 +34,7 @@ def _score_chunk(chunk, by_id, frequencies, negative_pairs, policy_version, run_
     return results, insufficient
 
 _WORKER_STATE = {}
+SCORE_PARALLEL_MIN = 15000  # candidates; below this SCORE runs in-process
 
 def _init_score_worker(by_id, frequencies, negative_pairs, policy_version, run_id):
     _WORKER_STATE.update(by_id=by_id, frequencies=frequencies, negative_pairs=negative_pairs,
@@ -323,14 +324,22 @@ class StageRunner:
 
             chunks = [all_candidates[i:i+SCORE_CHUNK] for i in range(0, len(all_candidates), SCORE_CHUNK)]
 
-            with ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, 4),
-                                     initializer=_init_score_worker,
-                                     initargs=(by_id, frequencies, negative_pairs, policy_version, self.run_id)) as pool:
-                futures = [pool.submit(_score_chunk_worker, chunk) for chunk in chunks]
-                for f in futures:
-                    res, insuff = f.result()
+            # Process startup + worker state transfer cost more than scoring below
+            # this size (measured: slower on ~11k candidates, faster on ~20k).
+            if len(all_candidates) < int(os.environ.get("MDM_SCORE_PARALLEL_MIN", SCORE_PARALLEL_MIN)):
+                for chunk in chunks:
+                    res, insuff = _score_chunk(chunk, by_id, frequencies, negative_pairs, policy_version, self.run_id)
                     scored_pairs.extend(res)
                     insufficient_count += insuff
+            else:
+                with ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, 4),
+                                         initializer=_init_score_worker,
+                                         initargs=(by_id, frequencies, negative_pairs, policy_version, self.run_id)) as pool:
+                    futures = [pool.submit(_score_chunk_worker, chunk) for chunk in chunks]
+                    for f in futures:
+                        res, insuff = f.result()
+                        scored_pairs.extend(res)
+                        insufficient_count += insuff
                     
             if scored_pairs:
                 # Stringify a copy for Parquet persistence; scored_pairs stays as Python dicts
