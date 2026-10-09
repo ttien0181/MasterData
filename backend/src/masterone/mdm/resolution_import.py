@@ -17,6 +17,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
 from masterone.config import get_settings
+from masterone.mdm.ids import new_ordered_uuid
 from masterone.mdm.input_schema import InputMappingError, input_error, resolve_source_schema
 from masterone.mdm.models import ResolutionAuditEvent, ResolutionFile, ResolutionRecord, ResolutionRun
 from masterone.mdm.pipeline.matching import POLICY_VERSION
@@ -96,7 +97,7 @@ def _normalized_row(filename, line, source_row, schema_type, extra_columns):
         "raw_fields": {field: value for field, value in values.items() if field in CORE_RAW_FIELDS},
         "original_fields": dict(source_row),
         "mapping_provenance": mapping.provenance(),
-        "lineage": {"record_id": str(uuid4()), "source_system": source, "source_record_id": external_id,
+        "lineage": {"record_id": new_ordered_uuid(), "source_system": source, "source_record_id": external_id,
                     "source_file": filename, "source_row_number": line - 1},
         "benchmark_entity_id": (values.get("ground_truth") or "").strip() or None,
         "extra_fields": {column: source_row[column] for column in extra_columns},
