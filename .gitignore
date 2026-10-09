@@ -67,3 +67,11 @@ out/
 .ai-log/
 
 sandbox/
+
+# Local perf scratch (PERFORMANCE_PLAN: không commit)
+scratch/
+/perf_baseline.json
+
+# Local perf scratch (PERFORMANCE_PLAN: không commit)
+scratch/
+/perf_baseline.json
