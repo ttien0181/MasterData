@@ -32,6 +32,12 @@ def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_
     edge_order: list[dict] = []
     edge_seq: int = 0
 
+    from collections import defaultdict
+    incident_pairs = defaultdict(list)
+    for position, pair in enumerate(pairs):
+        incident_pairs[pair["left_id"]].append((position, pair))
+        incident_pairs[pair["right_id"]].append((position, pair))
+
     # §23: sort by match_weight DESC, pair_id ASC
     match_edges = sorted((pair for pair in pairs if pair["decision"] == "MERGEABLE"),
                          key=lambda item: (-item["match_weight"], item["id"]))
@@ -45,10 +51,15 @@ def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_
         combined = members[left_root] | members[right_root]
         has_conflict = any(tuple(sorted((left, right))) in blocked_links
                            for left in members[left_root] for right in members[right_root])
+        
+        smaller = min((members[left_root], members[right_root]), key=len)
+        relevant = {position: item for rid in smaller for position, item in incident_pairs[rid]}
+        
         # Run cluster guards (§21) on the proposed union
         guard_violations = run_cluster_guards(
             frozenset(members[left_root]), frozenset(members[right_root]),
-            by_id, negative_pairs=negative_pairs, pairs=pairs,
+            by_id, negative_pairs=negative_pairs, 
+            pairs=[relevant[position] for position in sorted(relevant)],
         )
         guard_blocked = has_blocking_violation(guard_violations)
         if has_conflict or guard_blocked or len(combined) > MAX_CLUSTER_MEMBERS:
