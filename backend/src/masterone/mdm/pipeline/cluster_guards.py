@@ -38,7 +38,9 @@ def _records_in_clusters(
     right_ids: frozenset[str],
     by_id: dict[str, dict],
 ) -> list[dict]:
-    return [by_id[rid] for rid in left_ids | right_ids if rid in by_id]
+    # Sorted: frozenset order depends on PYTHONHASHSEED and would make the
+    # reported guard reason (first source over threshold) vary between runs.
+    return [by_id[rid] for rid in sorted(left_ids | right_ids) if rid in by_id]
 
 
 # ── §21.1 Unique ID Guard ─────────────────────────────────────────────────────
@@ -93,7 +95,7 @@ def _same_source_guard(records: list[dict]) -> GuardViolation | None:
         src = rec.get("source_system", "")
         if src in _SOURCE_UNIQUE_KEYS:
             source_counts[src] = source_counts.get(src, 0) + 1
-    for src, count in source_counts.items():
+    for src, count in sorted(source_counts.items()):
         if count >= _MAX_SAME_SOURCE_DUPLICATES:
             return GuardViolation(
                 guard="SAME_SOURCE_GUARD",
