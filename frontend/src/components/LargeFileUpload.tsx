@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { putToSignedUrl, type UploadProgress } from "@/lib/largeUpload";
-
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+import { apiBase } from "@/lib/apiBase";
 
 export default function LargeFileUpload({ csrfToken }: { csrfToken: string }) {
   const [file, setFile] = useState<File | null>(null);
@@ -17,7 +16,7 @@ export default function LargeFileUpload({ csrfToken }: { csrfToken: string }) {
     setMessage("");
     try {
       const urlResponse = await fetch(
-        `${apiBase}/api/v1/large-imports/upload-url`,
+        `${apiBase()}/api/v1/large-imports/upload-url`,
         {
           method: "POST",
           credentials: "include",
@@ -34,7 +33,7 @@ export default function LargeFileUpload({ csrfToken }: { csrfToken: string }) {
       if (!urlResponse.ok) throw new Error("Không lấy được quyền upload");
       const { object_name, upload_url } = await urlResponse.json();
       await putToSignedUrl(upload_url, file, setProgress);
-      const complete = await fetch(`${apiBase}/api/v1/large-imports/complete`, {
+      const complete = await fetch(`${apiBase()}/api/v1/large-imports/complete`, {
         method: "POST",
         credentials: "include",
         headers: {
