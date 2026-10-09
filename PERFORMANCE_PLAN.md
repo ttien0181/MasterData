@@ -512,8 +512,23 @@ Giữ nguyên thứ tự `for f in futures:` để kết quả có thứ tự x�
 
 | Task | Stage | Trước (s) | Sau (s) | Hash khớp | Test mdm | Quyết định |
 |------|-------|-----------|---------|-----------|----------|------------|
-| P2-1 | CLUSTER | 0.686 | 0.515 | Có | 302 passed | Áp dụng |
-| P2-2 | SCORE   | 9.344 | 3.467 | Có | 302 passed | Áp dụng |
+Bảng dưới đây thay thế số liệu ghi trước đó (đã kiểm chứng lại độc lập). Trước = commit `dcca773`, sau = HEAD sau khi sửa. Đo trên 2 dataset 10k tổng hợp, 3 lần lặp, `PYTHONHASHSEED` không cố định cho pipeline.
+
+| Task | Dataset | Stage | Trước (ms) | Sau (ms) | Hash khớp | Quyết định |
+|------|---------|-------|-----------|----------|-----------|------------|
+| P2-1 | agent_10k, dupes_10k | CLUSTER | 47–594 (nhiễu) | 94–640 (nhiễu) | Có (nhưng không có merge, xem dưới) | Giữ — không chứng minh được tăng tốc trên dataset này |
+| P2-1 | Đồ thị ngẫu nhiên có merge + guard (8 seed) | `build_proposals` | — | — | Có, khi cố định `PYTHONHASHSEED=0` | Giữ — đã kiểm tra đúng |
+| P2-2 | agent_10k (20.000 pair) | SCORE | 8139–9311 | 3639–5047 | Có | Giữ |
+| P2-2 | dupes_10k (11.250 pair) | SCORE | 1234–1436 | 750–1030 (serial, do ngưỡng) | Có | Giữ với ngưỡng `SCORE_PARALLEL_MIN = 15000` |
+
+**Các điểm đã sửa so với bản agent trước:**
+- Bản pool trước đó chậm hơn trên dataset nhỏ (1.3s → 1.7s). Đã thêm ngưỡng: dưới 15.000 candidate thì SCORE chạy trong process chính. Ngưỡng này chọn giữa 2 điểm đo (11.250 và 20.000), chưa đo ở các mức khác.
+- CLUSTER không xác định giữa các process (đầu ra thay đổi theo `PYTHONHASHSEED`, có sẵn từ trước). Đã sửa trong `cluster_guards.py`: sắp xếp record theo id và duyệt nguồn theo thứ tự tên. Đã kiểm chứng: cùng đầu ra với 3 seed.
+- File scratch đã bị commit trái quy tắc trong `dcca773`/`d0cd77c`. Đã gỡ khỏi git (giữ nguyên file trên đĩa) và thêm vào `.gitignore`.
+
+**Hạn chế còn lại:**
+- Cả hai dataset 10k đều có `proposals = 0`: pipeline không tạo merge nào, nên CLUSTER chưa được kiểm chứng end-to-end. Kiểm chứng P2-1 dựa trên test trực tiếp `build_proposals` (có merge và guard hoạt động).
+- Lợi ích tăng tốc CLUSTER (Nam báo 60s → 1.7s) chưa được tái lập trên feature_4. Cần dataset tạo được merge thật để đo.
 
 Số của Nam (CLUSTER 60.17s → 1.69s) chỉ là tham chiếu, không được dùng thay cho số đo của chính bạn.
 
