@@ -40,19 +40,44 @@ def _build_vectorizer(texts: list[str], min_df: int):
 def _top_k_pairs(ids: list[str], matrix, top_k: int, sim_threshold: float) -> dict[tuple[str, str], set[str]]:
     n = len(ids)
     candidates = defaultdict(set)
-    effective_k = min(top_k, n - 1)
-    if effective_k < 1: return {}
-    for batch_start in range(0, n, _BATCH_SIZE):
-        batch_end = min(batch_start + _BATCH_SIZE, n)
-        batch = matrix[batch_start:batch_end]
-        sim_block = (batch @ matrix.T).toarray()
-        for local_i in range(sim_block.shape[0]):
-            global_i = batch_start + local_i
-            row = sim_block[local_i].copy()
-            row[global_i] = 0.0
-            top_indices = np.argpartition(row, -effective_k)[-effective_k:]
-            for j in top_indices:
-                if row[j] >= sim_threshold:
+    effective_k = min(top_k + 1, n)
+    if effective_k < 2: return {}
+    try:
+        from sklearn.neighbors import NearestNeighbors
+        nn = NearestNeighbors(n_neighbors=effective_k, metric='cosine', algorithm='brute', n_jobs=-1)
+        nn.fit(matrix)
+        distances, indices = nn.kneighbors(matrix)
+        for i in range(n):
+            for j_idx in range(effective_k):
+                j = indices[i, j_idx]
+                if i == j: continue
+                sim = 1.0 - distances[i, j_idx]
+                if sim >= sim_threshold:
+                    left, right = sorted((ids[i], ids[j]))
+                    candidates[(left, right)].add("tfidf_name")
+    except ImportError:
+        # Fallback to dot product with chunking if sklearn not available
+        effective_k = min(top_k, n - 1)
+        for batch_start in range(0, n, _BATCH_SIZE):
+            batch_end = min(batch_start + _BATCH_SIZE, n)
+            batch = matrix[batch_start:batch_end]
+            sim_block = batch * matrix.T
+            for local_i in range(sim_block.shape[0]):
+                global_i = batch_start + local_i
+                row = sim_block[local_i]
+                indices_arr = row.indices
+                data_arr = row.data
+                if len(data_arr) == 0: continue
+                valid_mask = (data_arr >= sim_threshold) & (indices_arr != global_i)
+                valid_indices = indices_arr[valid_mask]
+                valid_data = data_arr[valid_mask]
+                if len(valid_data) == 0: continue
+                if len(valid_data) > effective_k:
+                    top_k_local = np.argpartition(valid_data, -effective_k)[-effective_k:]
+                    best_indices = valid_indices[top_k_local]
+                else:
+                    best_indices = valid_indices
+                for j in best_indices:
                     left, right = sorted((ids[global_i], ids[j]))
                     candidates[(left, right)].add("tfidf_name")
     return dict(candidates)

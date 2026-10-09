@@ -7,6 +7,7 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 COPY backend/pyproject.toml backend/pyproject.toml
 COPY backend/src backend/src
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir ./backend
 
 # ---- Stage 2: Production ----

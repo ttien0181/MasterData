@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
@@ -317,36 +317,50 @@ def get_overview(run_id: str, db: Session = Depends(get_session),
                  auth: CurrentSession = Depends(require_capability("read"))):
     run = owned_run(db, run_id, auth.user.id)
     task = db.query(ResolutionTask).filter_by(run_id=run.id).one_or_none()
-    counts = {
-        "auto": db.query(ResolutionProposal).filter(ResolutionProposal.run_id == run_id,
-                                                     ResolutionProposal.status.in_(["AUTO_READY", "REVIEW_APPROVED", "REVIEW_STAGED_CONFLICT"])).count(),
-        "rejected": db.query(ResolutionPair).filter(
-            ResolutionPair.run_id == run_id,
-            or_(ResolutionPair.pair_decision.in_(["NON_MATCH", "NOT_MERGEABLE"]),
-                ResolutionPair.user_decision == "REJECTED"),
-        ).count(),
-        "review_cases": len(_review_groups(db, run_id)),
-        "manual": db.query(ResolutionProposal).filter_by(run_id=run_id, status="REVIEW_REQUIRED").count(),
-    }
-    counts["review"] = counts["review_cases"] + counts["manual"]
-    counts["review_pairs"] = pending_pairs(db, run_id).count()
-    counts["hard_blocked"] = db.query(ResolutionPair).filter_by(run_id=run_id,
-                                                                  pair_decision="NOT_MERGEABLE").count()
-    counts["insufficient"] = run.insufficient_count
-    counts["group_a"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="A").count()
-    counts["group_c"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="C").count()
-    counts["group_d"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="D").count()
-    counts["separate"] = separate_record_count(db, run_id, run.record_count)
-    eligible_merge_group_count = db.query(ResolutionProposal).filter(
-        ResolutionProposal.run_id == run_id,
-        ResolutionProposal.status.in_(["AUTO_READY", "REVIEW_APPROVED"]),
-    ).count()
-    estimated_entity_count = counts["separate"] + eligible_merge_group_count
-    duplicate_record_count = max(0, run.record_count - estimated_entity_count)
-    source_counts = {source: count for source, count in db.query(ResolutionRecord.source_system,
-                    func.count(ResolutionRecord.id)).filter_by(run_id=run_id).group_by(
-                    ResolutionRecord.source_system).all()}
-    history_count = db.query(ResolutionExport).filter_by(run_id=run_id).count()
+    
+    if run.status != "COMPLETED":
+        counts = {
+            "auto": 0, "rejected": 0, "review_cases": 0, "manual": 0,
+            "review": 0, "review_pairs": 0, "hard_blocked": 0, "insufficient": run.insufficient_count or 0,
+            "group_a": 0, "group_c": 0, "group_d": 0, "separate": run.record_count or 0
+        }
+        eligible_merge_group_count = 0
+        estimated_entity_count = run.record_count or 0
+        duplicate_record_count = 0
+        source_counts = {}
+        history_count = 0
+    else:
+        counts = {
+            "auto": db.query(ResolutionProposal).filter(ResolutionProposal.run_id == run_id,
+                                                         ResolutionProposal.status.in_(["AUTO_READY", "REVIEW_APPROVED", "REVIEW_STAGED_CONFLICT"])).count(),
+            "rejected": db.query(ResolutionPair).filter(
+                ResolutionPair.run_id == run_id,
+                or_(ResolutionPair.pair_decision.in_(["NON_MATCH", "NOT_MERGEABLE"]),
+                    ResolutionPair.user_decision == "REJECTED"),
+            ).count(),
+            "review_cases": len(_review_groups(db, run_id)),
+            "manual": db.query(ResolutionProposal).filter_by(run_id=run_id, status="REVIEW_REQUIRED").count(),
+        }
+        counts["review"] = counts["review_cases"] + counts["manual"]
+        counts["review_pairs"] = pending_pairs(db, run_id).count()
+        counts["hard_blocked"] = db.query(ResolutionPair).filter_by(run_id=run_id,
+                                                                      pair_decision="NOT_MERGEABLE").count()
+        counts["insufficient"] = run.insufficient_count
+        counts["group_a"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="A").count()
+        counts["group_c"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="C").count()
+        counts["group_d"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="D").count()
+        counts["separate"] = separate_record_count(db, run_id, run.record_count)
+        eligible_merge_group_count = db.query(ResolutionProposal).filter(
+            ResolutionProposal.run_id == run_id,
+            ResolutionProposal.status.in_(["AUTO_READY", "REVIEW_APPROVED"]),
+        ).count()
+        estimated_entity_count = counts["separate"] + eligible_merge_group_count
+        duplicate_record_count = max(0, run.record_count - estimated_entity_count)
+        source_counts = {source: count for source, count in db.query(ResolutionRecord.source_system,
+                        func.count(ResolutionRecord.id)).filter_by(run_id=run_id).group_by(
+                        ResolutionRecord.source_system).all()}
+        history_count = db.query(ResolutionExport).filter_by(run_id=run_id).count()
+
     return {"run_id": run.id, "status": run.status, "phase": task.phase if task else run.phase,
             "processed_count": task.processed_count if task else 0,
             "total_count": task.total_count if task else run.record_count,
@@ -358,6 +372,28 @@ def get_overview(run_id: str, db: Session = Depends(get_session),
             "eligible_merge_group_count": eligible_merge_group_count,
             "counts": counts,
             "task": task_read(task) if task else None}
+
+
+@router.websocket("/{run_id}/overview/ws")
+async def overview_ws(
+    websocket: WebSocket,
+    run_id: str,
+    db: Session = Depends(get_session),
+    auth: CurrentSession = Depends(require_capability("read")),
+):
+    await websocket.accept()
+    try:
+        while True:
+            db.rollback() # Clear stale session state
+            data = await asyncio.to_thread(get_overview, run_id, db, auth)
+            await websocket.send_json(data)
+            await asyncio.sleep(1)
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        import logging
+        logging.exception("WebSocket error in overview_ws")
+        await websocket.close(code=1011)
 
 
 @router.get("/{run_id}/audit")

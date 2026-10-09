@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     # Resumable CSV parts use this directory when object storage is disabled.
     upload_staging_dir: str = "./data/upload-staging"
 
+    # Number of resolution pipelines allowed to run concurrently.
+    mdm_worker_concurrency: int = Field(default=2, ge=1, le=16)
+
     @property
     def r2_enabled(self) -> bool:
         return bool(self.r2_endpoint_url and self.r2_access_key_id

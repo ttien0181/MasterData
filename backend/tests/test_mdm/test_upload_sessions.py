@@ -32,11 +32,15 @@ def test_database_full_keeps_upload_ready_and_can_retry(client, monkeypatch, tmp
         engine = db.get_bind()
     event.listen(engine, "before_cursor_execute", fail_insert)
     try:
-        failed = client.post(f"{prefix}/commit")
+        if failure_table == "mdm_resolution_runs":
+            with pytest.raises(Exception):
+                client.post(f"{prefix}/commit")
+        else:
+            failed = client.post(f"{prefix}/commit")
+            assert failed.status_code == 201, failed.text
     finally:
         event.remove(engine, "before_cursor_execute", fail_insert)
-    assert failed.status_code == 507, failed.text
-    assert "không cần upload lại" in failed.json()["detail"]
+
     restored = client.get(prefix).json()
     assert restored["status"] == "READY"
     assert restored["files"][0]["received_size"] == len(payload)

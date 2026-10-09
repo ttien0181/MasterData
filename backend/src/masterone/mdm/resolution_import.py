@@ -21,8 +21,11 @@ from masterone.mdm.pipeline.matching import POLICY_VERSION
 from masterone.mdm.pipeline.standardization import standardize
 from masterone.storage.r2 import get_store, source_file_key
 
+import os
+from concurrent.futures import ProcessPoolExecutor
+
 MAX_FILES_PER_RUN = 10
-INSERT_BATCH_SIZE = 1000
+INSERT_BATCH_SIZE = 5000
 # Python's csv default field limit is 128 KiB. File and row counts are not capped;
 # rows are streamed into bounded insert batches below.
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
@@ -48,6 +51,16 @@ ERP_FIELDS = {"HO_TEN": "name", "DIEN_THOAI": "phone",
               "government_id_type": "government_id_type"}
 ALLOWED_SOURCES = {"CRM", "ERP", "BILL", "CSV"}
 CORE_RAW_FIELDS = {"name", "phone", "email", "address", "dob", "government_id", "government_id_type"}
+
+
+def _standardize_batch(rows):
+    """Worker function cho multiprocessing."""
+    results = []
+    for row in rows:
+        raw = row["raw_fields"]
+        normalized, quality_flags = standardize(raw, entity_type=row["entity_type"])
+        results.append({**row, "normalized_fields": normalized, "quality_flags": quality_flags})
+    return results
 
 
 @dataclass(frozen=True)
@@ -213,7 +226,9 @@ async def create_resolution_run(db: Session, uploads: list[UploadFile], owner_us
 
 def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, BinaryIO]],
                                        owner_user_id: str, name: str | None = None,
-                                       upload_session_id: str | None = None) -> tuple[ResolutionRun, dict]:
+                                       upload_session_id: str | None = None,
+                                       known_hashes: list[str] | None = None,
+                                       existing_run: ResolutionRun | None = None) -> tuple[ResolutionRun, dict]:
     if not files:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Chọn ít nhất một file records.csv")
     if len(files) > MAX_FILES_PER_RUN:
@@ -222,9 +237,9 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
     if normalized_name and len(normalized_name) > 255:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Tên phiên tối đa 255 ký tự")
 
-    if upload_session_id:
+    if upload_session_id and existing_run is None:
         existing = db.query(ResolutionRun).filter_by(upload_session_id=upload_session_id).one_or_none()
-        if existing:
+        if existing and existing.status != "IMPORTING":
             stored_files = db.query(ResolutionFile).filter_by(run_id=existing.id).order_by(
                 ResolutionFile.filename).all()
             counts = dict(db.query(ResolutionRecord.source_system, func.count(ResolutionRecord.id))
@@ -234,45 +249,63 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
                               "files": [{"filename": row.filename, "row_count": row.row_count,
                                          "sha256": row.sha256} for row in stored_files]}
 
-    run = ResolutionRun(owner_user_id=owner_user_id, upload_session_id=upload_session_id,
+    run = existing_run or ResolutionRun(owner_user_id=owner_user_id, upload_session_id=upload_session_id,
                         name=normalized_name, record_count=0,
                         file_count=len(files), policy_version=POLICY_VERSION)
-    db.add(run)
+    if existing_run is None:
+        db.add(run)
     total_rows = 0
     source_counts: dict[str, int] = {}
     file_profiles = []
     try:
         db.flush()
         r2 = get_store(get_settings())
-        for original_name, stream in files:
+        for i, (original_name, stream) in enumerate(files):
             filename = original_name.replace("\\", "/").rsplit("/", 1)[-1] or "records.csv"
-            file_hash = hashlib.sha256()
-            stream.seek(0)
-            while block := stream.read(1024 * 1024):
-                file_hash.update(block)
-            digest = file_hash.hexdigest()
+            if known_hashes and i < len(known_hashes) and known_hashes[i]:
+                digest = known_hashes[i]
+            else:
+                file_hash = hashlib.sha256()
+                stream.seek(0)
+                while block := stream.read(1024 * 1024):
+                    file_hash.update(block)
+                digest = file_hash.hexdigest()
             file_row = ResolutionFile(run_id=run.id, filename=filename[:255], sha256=digest, row_count=0)
             db.add(file_row)
             db.flush()
             file_rows = 0
             batch = []
-            for row in _iter_normalized(stream, filename):
-                raw = row["raw_fields"]
-                normalized, quality_flags = standardize(raw, entity_type=row["entity_type"])
-                batch.append({
-                    "run_id": run.id, "file_id": file_row.id, "external_id": row["external_id"],
-                    "source_system": row["source_system"], "entity_type": row["entity_type"],
-                    "benchmark_entity_id": row["benchmark_entity_id"],
-                    "raw_fields": raw, "normalized_fields": normalized, "quality_flags": quality_flags,
-                    "extra_fields": row["extra_fields"],
-                })
-                file_rows += 1
-                total_rows += 1
-                source = row["source_system"]
-                source_counts[source] = source_counts.get(source, 0) + 1
-                if len(batch) >= INSERT_BATCH_SIZE:
-                    db.execute(insert(ResolutionRecord), batch)
-                    batch.clear()
+
+            WORKER_BATCH = 2000
+            workers = min(os.cpu_count() or 4, 4)
+
+            def _iter_chunks(s, fname, chunk_size):
+                chunk = []
+                for row in _iter_normalized(s, fname):
+                    chunk.append(row)
+                    if len(chunk) >= chunk_size:
+                        yield chunk
+                        chunk = []
+                if chunk:
+                    yield chunk
+
+            with ProcessPoolExecutor(max_workers=workers) as pool:
+                for result_batch in pool.map(_standardize_batch, _iter_chunks(stream, filename, WORKER_BATCH)):
+                    for row in result_batch:
+                        batch.append({
+                            "run_id": run.id, "file_id": file_row.id, "external_id": row["external_id"],
+                            "source_system": row["source_system"], "entity_type": row["entity_type"],
+                            "benchmark_entity_id": row["benchmark_entity_id"],
+                            "raw_fields": row["raw_fields"], "normalized_fields": row["normalized_fields"], "quality_flags": row["quality_flags"],
+                            "extra_fields": row["extra_fields"],
+                        })
+                        file_rows += 1
+                        total_rows += 1
+                        source = row["source_system"]
+                        source_counts[source] = source_counts.get(source, 0) + 1
+                        if len(batch) >= INSERT_BATCH_SIZE:
+                            db.execute(insert(ResolutionRecord), batch)
+                            batch.clear()
             if batch:
                 db.execute(insert(ResolutionRecord), batch)
             if file_rows == 0:

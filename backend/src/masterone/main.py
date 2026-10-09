@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     app.state.session_factory = factory
     worker = None
     if settings.app_env != "test":
-        worker = ResolutionWorker(factory)
+        worker = ResolutionWorker(factory, concurrency=settings.mdm_worker_concurrency)
         worker.start()
         app.state.resolution_worker = worker
     print(f"Starting {settings.app_name} in {settings.app_env} mode")

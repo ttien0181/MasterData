@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass
 
 from fastapi import Depends, HTTPException, Request
+from starlette.requests import HTTPConnection
 from pwdlib import PasswordHash
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -32,7 +33,7 @@ def allowed_origins() -> set[str]:
     return {origin.strip().rstrip("/") for origin in get_settings().cors_origins.split(",") if origin.strip()}
 
 
-def require_origin(request: Request) -> None:
+def require_origin(request: HTTPConnection) -> None:
     origin = request.headers.get("origin", "")
     if origin in allowed_origins():
         return
@@ -48,7 +49,7 @@ def csrf_token(raw_token: str) -> str:
     return hmac.new((secret + raw_token).encode(), b"masterone-csrf-v1", hashlib.sha256).hexdigest()
 
 
-def current_session(request: Request, db: Session = Depends(get_session)) -> CurrentSession:
+def current_session(request: HTTPConnection, db: Session = Depends(get_session)) -> CurrentSession:
     token = request.cookies.get(COOKIE)
     if not token:
         raise HTTPException(401, "Authentication required")
@@ -62,7 +63,7 @@ def current_session(request: Request, db: Session = Depends(get_session)) -> Cur
     return CurrentSession(user=user, session=auth_session, token=token)
 
 
-def require_mutation(request: Request, auth: CurrentSession = Depends(current_session)) -> CurrentSession:
+def require_mutation(request: HTTPConnection, auth: CurrentSession = Depends(current_session)) -> CurrentSession:
     require_origin(request)
     header = request.headers.get("x-csrf-token", "")
     if not hmac.compare_digest(header, csrf_token(auth.token)):

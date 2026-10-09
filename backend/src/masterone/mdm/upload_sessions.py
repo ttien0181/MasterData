@@ -6,9 +6,7 @@ import hashlib
 import logging
 import os
 import shutil
-import sqlite3
 from collections.abc import Sequence
-from contextlib import closing
 from pathlib import Path
 from typing import BinaryIO
 
@@ -304,6 +302,7 @@ def materialize_upload_file(db: Session, session: ResolutionUploadSession,
 def validate_upload_session(db: Session, session: ResolutionUploadSession) -> ResolutionUploadSession:
     if session.status in {"COMMITTED", "CANCELLED", "VALIDATING"}:
         raise HTTPException(status.HTTP_409_CONFLICT, "Không thể validate draft ở trạng thái hiện tại")
+
     session.status = "VALIDATING"
     session.error_message = None
     for file in db.query(ResolutionUploadFile).filter_by(session_id=session.id).all():
@@ -313,50 +312,46 @@ def validate_upload_session(db: Session, session: ResolutionUploadSession) -> Re
         ResolutionUploadFile.position).all()
     replacements = {file.replaces_file_id: file for file in files if file.replaces_file_id}
     current_files = [file for file in files if file.replaces_file_id is None]
-    ids_path = staging_root() / session.id / "validation.sqlite"
-    ids_path.parent.mkdir(parents=True, exist_ok=True)
     checked_file: ResolutionUploadFile | None = None
     replaced_files: list[tuple[ResolutionUploadFile, list[ResolutionUploadPart]]] = []
     try:
-        with closing(sqlite3.connect(ids_path)) as ids_db:
-            with ids_db:
-                ids_db.execute("CREATE TABLE IF NOT EXISTS ids (external_id TEXT PRIMARY KEY)")
-                ids_db.execute("DELETE FROM ids")
-                for original in current_files:
-                    file = replacements.get(original.id, original)
-                    checked_file = file
-                    path = materialize_upload_file(db, session, file)
-                    row_count = 0
-                    source_counts: dict[str, int] = {}
-                    with path.open("rb") as stream:
-                        for row in _iter_normalized(stream, file.filename):
-                            try:
-                                ids_db.execute("INSERT INTO ids (external_id) VALUES (?)", (row["external_id"],))
-                            except sqlite3.IntegrityError as exc:
-                                raise ValueError(f"ID {row['external_id']} bị lặp trong cùng phiên") from exc
-                            row_count += 1
-                            source = row["source_system"]
-                            source_counts[source] = source_counts.get(source, 0) + 1
-                    if row_count == 0:
-                        raise ValueError(f"{file.filename} không có bản ghi")
-                    file.row_count = row_count
-                    file.source_counts = source_counts
-                    file.status = "READY"
-                    file.validation_error = None
-                for original in current_files:
-                    replacement = replacements.get(original.id)
-                    if replacement is None:
-                        continue
-                    old_parts = db.query(ResolutionUploadPart).filter_by(upload_file_id=original.id).all()
-                    original_position = original.position
-                    replaced_files.append((original, old_parts))
-                    db.query(ResolutionUploadPart).filter_by(upload_file_id=original.id).delete(
-                        synchronize_session=False)
-                    db.delete(original)
-                    db.flush()
-                    replacement.replaces_file_id = None
-                    replacement.position = original_position
-                    db.flush()
+        # Use a Python set for duplicate detection — SQLite overhead removed
+        seen: set[str] = set()
+        for original in current_files:
+            file = replacements.get(original.id, original)
+            checked_file = file
+            path = materialize_upload_file(db, session, file)
+            row_count = 0
+            source_counts: dict[str, int] = {}
+            with path.open("rb") as stream:
+                for row in _iter_normalized(stream, file.filename):
+                    eid = row["external_id"]
+                    if eid in seen:
+                        raise ValueError(f"ID {eid} bị lặp trong cùng phiên")
+                    seen.add(eid)
+                    row_count += 1
+                    source = row["source_system"]
+                    source_counts[source] = source_counts.get(source, 0) + 1
+            if row_count == 0:
+                raise ValueError(f"{file.filename} không có bản ghi")
+            file.row_count = row_count
+            file.source_counts = source_counts
+            file.status = "READY"
+            file.validation_error = None
+        for original in current_files:
+            replacement = replacements.get(original.id)
+            if replacement is None:
+                continue
+            old_parts = db.query(ResolutionUploadPart).filter_by(upload_file_id=original.id).all()
+            original_position = original.position
+            replaced_files.append((original, old_parts))
+            db.query(ResolutionUploadPart).filter_by(upload_file_id=original.id).delete(
+                synchronize_session=False)
+            db.delete(original)
+            db.flush()
+            replacement.replaces_file_id = None
+            replacement.position = original_position
+            db.flush()
         session.status = "READY"
         session.error_message = None
     except HTTPException as exc:
@@ -365,17 +360,12 @@ def validate_upload_session(db: Session, session: ResolutionUploadSession) -> Re
         if checked_file:
             checked_file.status = "ERROR"
             checked_file.validation_error = str(exc.detail)
-    except (ValueError, OSError, RuntimeError) as exc:
+    except Exception as exc:
         session.status = "ERROR"
         session.error_message = str(exc)
         if checked_file:
             checked_file.status = "ERROR"
             checked_file.validation_error = str(exc)
-    finally:
-        try:
-            ids_path.unlink(missing_ok=True)
-        except OSError:
-            logging.exception("Could not remove upload validation index %s", ids_path)
     db.commit()
     for old_file, old_parts in replaced_files:
         _delete_part_objects(session, old_file, old_parts)
@@ -383,8 +373,21 @@ def validate_upload_session(db: Session, session: ResolutionUploadSession) -> Re
     return session
 
 
-def commit_upload_session(db: Session, session: ResolutionUploadSession,
-                          owner_user_id: str) -> tuple[ResolutionRun, dict]:
+def _get_or_materialize(db: Session, session: ResolutionUploadSession, file: ResolutionUploadFile) -> Path:
+    path = assembled_file_path(session.id, file.id)
+    if path.exists() and file.sha256:
+        # Stream the hash instead of loading the whole file into RAM at once
+        h = hashlib.sha256()
+        with path.open("rb") as fh:
+            for block in iter(lambda: fh.read(1024 * 1024), b""):
+                h.update(block)
+        if h.hexdigest() == file.sha256:
+            return path
+    return materialize_upload_file(db, session, file)
+
+
+def prepare_commit_upload_session(db: Session, session: ResolutionUploadSession,
+                                  owner_user_id: str) -> tuple[ResolutionRun, dict]:
     run = db.query(ResolutionRun).filter_by(upload_session_id=session.id).one_or_none()
     if run:
         files = db.query(ResolutionFile).filter_by(run_id=run.id).order_by(ResolutionFile.filename).all()
@@ -400,21 +403,66 @@ def commit_upload_session(db: Session, session: ResolutionUploadSession,
         raise HTTPException(status.HTTP_409_CONFLICT, "Kiểm tra và hoàn tất tải file trước khi tạo phiên")
     if session.owner_user_id != owner_user_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Upload draft không tồn tại")
+    
     upload_files = db.query(ResolutionUploadFile).filter_by(session_id=session.id).order_by(
         ResolutionUploadFile.position).all()
-    paths = [(file.filename, materialize_upload_file(db, session, file)) for file in upload_files]
-    streams = []
-    try:
-        streams = [(filename, path.open("rb")) for filename, path in paths]
-        run, profile = create_resolution_run_from_streams(
-            db, streams, owner_user_id, session.name, upload_session_id=session.id)
-        session.status = "COMMITTED"
-        db.commit()
-    finally:
-        for _, stream in streams:
-            stream.close()
-    cleanup_upload_session_storage(db, session)
+    
+    total_rows = sum((f.row_count or 0) for f in upload_files)
+    file_count = len(upload_files)
+    source_counts = {}
+    file_profiles = []
+    for f in upload_files:
+        if f.source_counts:
+            for s, c in f.source_counts.items():
+                source_counts[s] = source_counts.get(s, 0) + c
+        file_profiles.append({"filename": f.filename, "row_count": f.row_count, "sha256": f.sha256})
+
+    run = ResolutionRun(owner_user_id=owner_user_id, upload_session_id=session.id,
+                        name=session.name, record_count=total_rows,
+                        file_count=file_count, policy_version="person-v1", status="IMPORTING", phase="importing")
+    db.add(run)
+    session.status = "COMMITTED"
+    db.commit()
+    db.refresh(run)
+    
+    profile = {"row_count": total_rows, "file_count": file_count, "source_counts": source_counts, "files": file_profiles}
     return run, profile
+
+def execute_commit_upload_session(run_id: str, session_id: str, owner_user_id: str, session_factory):
+    import logging
+    from masterone.mdm.resolution_service import create_task
+    with session_factory() as db:
+        try:
+            session = db.get(ResolutionUploadSession, session_id)
+            run = db.get(ResolutionRun, run_id)
+            if not session or not run or run.status != "IMPORTING":
+                return
+
+            upload_files = db.query(ResolutionUploadFile).filter_by(session_id=session.id).order_by(
+                ResolutionUploadFile.position).all()
+            paths = [(file.filename, _get_or_materialize(db, session, file)) for file in upload_files]
+            streams = []
+            try:
+                streams = [(filename, path.open("rb")) for filename, path in paths]
+                hashes = [f.sha256 for f in upload_files]
+                create_resolution_run_from_streams(
+                    db, streams, owner_user_id, session.name, upload_session_id=session.id, known_hashes=hashes, existing_run=run)
+                db.commit()
+            finally:
+                for _, stream in streams:
+                    stream.close()
+            cleanup_upload_session_storage(db, session)
+            
+            # Start the task automatically
+            create_task(run.id, session_factory)
+        except Exception as exc:
+            logging.exception("Background commit failed for run %s", run_id)
+            db.rollback()
+            if 'run' in locals() and run:
+                db.delete(run)
+            if 'session' in locals() and session:
+                session.status = "READY"
+            db.commit()
 
 
 def cleanup_upload_session_storage(db: Session, session: ResolutionUploadSession) -> None:

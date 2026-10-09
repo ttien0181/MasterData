@@ -112,6 +112,7 @@ def enrich_pairs_with_semantic(pairs: list[dict], by_id: dict[str, dict],
                                settings: Settings | None = None,
                                requester=None) -> dict[str, int]:
     """Use bounded batches; network and schema errors fail closed."""
+    from concurrent.futures import ThreadPoolExecutor
     stats = {"eligible": 0, "checked": 0, "changed": 0, "errors": 0}
     settings = settings or get_settings()
     if not settings.semantic_address_enabled or not settings.gemini_api_key:
@@ -125,36 +126,44 @@ def enrich_pairs_with_semantic(pairs: list[dict], by_id: dict[str, dict],
         stats["eligible"] += 1
         if len(selected) < settings.semantic_address_max_pairs_per_run:
             selected.append((pair, addresses))
-    failures = 0
-    cache: dict[tuple[str, str], str] = {}
-    for start in range(0, len(selected), _BATCH_SIZE):
-        batch = selected[start:start + _BATCH_SIZE]
-        request_data = []
-        representative: dict[tuple[str, str], str] = {}
-        for pair, addresses in batch:
-            key = tuple(sorted(addresses))
-            if key not in cache and key not in representative:
-                representative[key] = pair["id"]
-                request_data.append({"pair_id": pair["id"], "left_address": addresses[0],
-                                     "right_address": addresses[1]})
+            
+    unique_keys = {}
+    for pair, addrs in selected:
+        key = tuple(sorted(addrs))
+        if key not in unique_keys:
+            unique_keys[key] = pair["id"]
+            
+    unique_list = list(unique_keys.items())
+    batches = [unique_list[i:i+_BATCH_SIZE] for i in range(0, len(unique_list), _BATCH_SIZE)]
+    
+    def _fetch_batch(batch_items):
+        request_data = [{"pair_id": pid, "left_address": k[0], "right_address": k[1]} for k, pid in batch_items]
         try:
             received = ask(request_data, settings) if request_data else {}
             expected = {entry["pair_id"] for entry in request_data}
             if set(received) != expected or set(received.values()) - _RESULTS:
                 raise ValueError("Invalid semantic response")
-            for key, pair_id in representative.items():
-                cache[key] = received[pair_id]
-        except Exception as exc:  # optional service must never fail the run
-            stats["errors"] += len(batch)
-            failures += 1
+            return {k: received[pid] for k, pid in batch_items}
+        except Exception as exc:
             log.warning("Semantic address batch skipped: %s", type(exc).__name__)
-            if failures >= _MAX_FAILURES:
-                break
-            time.sleep(min(failures, 2))
-            continue
-        failures = 0
-        for pair, addresses in batch:
+            return None
+
+    cache = {}
+    failures = 0
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        for b_items, res in zip(batches, pool.map(_fetch_batch, batches)):
+            if res is not None:
+                cache.update(res)
+            else:
+                stats["errors"] += len(b_items)
+                failures += 1
+                if failures >= _MAX_FAILURES:
+                    break
+
+    for pair, addresses in selected:
+        key = tuple(sorted(addresses))
+        if key in cache:
             stats["checked"] += 1
-            if _apply(pair, cache[tuple(sorted(addresses))], settings.gemini_model):
+            if _apply(pair, cache[key], settings.gemini_model):
                 stats["changed"] += 1
     return stats
