@@ -28,6 +28,7 @@ from masterone.mdm.models import (
     ResolutionUploadSession,
 )
 from masterone.mdm.resolution_import import MAX_FILES_PER_RUN, _iter_normalized, create_resolution_run_from_streams
+from masterone.mdm.trace import span
 from masterone.storage.r2 import get_store
 
 UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
@@ -243,20 +244,23 @@ def save_upload_part(db: Session, session: ResolutionUploadSession, file: Resolu
     existing = db.query(ResolutionUploadPart).filter_by(upload_file_id=file.id,
                                                          part_number=part_number).one_or_none()
     stream.seek(0)
-    if session.storage_backend == "r2":
-        store = get_store(get_settings())
-        if store is None:
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Object storage hiện không khả dụng")
-        store.upload_stream(stream, remote_part_key(session.id, file.id, part_number), "application/octet-stream")
-    else:
-        destination = local_part_path(session.id, file.id, part_number)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary = destination.with_suffix(".part.tmp")
-        with temporary.open("wb") as output:
-            shutil.copyfileobj(stream, output, length=1024 * 1024)
-            output.flush()
-            os.fsync(output.fileno())
-        os.replace(temporary, destination)
+    with span("upload.store_part", upload_session_id=session.id, file_id=file.id,
+              part_number=part_number, byte_count=byte_size,
+              storage_backend=session.storage_backend):
+        if session.storage_backend == "r2":
+            store = get_store(get_settings())
+            if store is None:
+                raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Object storage hiện không khả dụng")
+            store.upload_stream(stream, remote_part_key(session.id, file.id, part_number), "application/octet-stream")
+        else:
+            destination = local_part_path(session.id, file.id, part_number)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            temporary = destination.with_suffix(".part.tmp")
+            with temporary.open("wb") as output:
+                shutil.copyfileobj(stream, output, length=1024 * 1024)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, destination)
 
     previous_size = existing.byte_size if existing else 0
     if existing:
@@ -338,20 +342,26 @@ def validate_upload_session(db: Session, session: ResolutionUploadSession) -> Re
                 for original in current_files:
                     file = replacements.get(original.id, original)
                     checked_file = file
-                    path = materialize_upload_file(db, session, file)
+                    with span("upload.assemble_file", upload_session_id=session.id,
+                              file_id=file.id, storage_backend=session.storage_backend,
+                              byte_count=file.expected_size):
+                        path = materialize_upload_file(db, session, file)
                     row_count = 0
                     source_counts: dict[str, int] = {}
-                    with path.open("rb") as stream:
-                        for row in _iter_normalized(stream, file.filename):
-                            try:
-                                ids_db.execute("INSERT INTO ids (source_system, external_id) VALUES (?, ?)",
-                                                (row["source_system"], row["external_id"]))
-                            except sqlite3.IntegrityError as exc:
-                                raise InputMappingError("DUPLICATE_SOURCE_ID", "ID bị lặp trong cùng nguồn",
-                                    source_row_number=row["lineage"]["source_row_number"]) from exc
-                            row_count += 1
-                            source = row["source_system"]
-                            source_counts[source] = source_counts.get(source, 0) + 1
+                    with span("upload.validate_file", upload_session_id=session.id,
+                              file_id=file.id) as metrics:
+                        with path.open("rb") as stream:
+                            for row in _iter_normalized(stream, file.filename):
+                                try:
+                                    ids_db.execute("INSERT INTO ids (source_system, external_id) VALUES (?, ?)",
+                                                    (row["source_system"], row["external_id"]))
+                                except sqlite3.IntegrityError as exc:
+                                    raise InputMappingError("DUPLICATE_SOURCE_ID", "ID bị lặp trong cùng nguồn",
+                                        source_row_number=row["lineage"]["source_row_number"]) from exc
+                                row_count += 1
+                                source = row["source_system"]
+                                source_counts[source] = source_counts.get(source, 0) + 1
+                        metrics["record_count"] = row_count
                     if row_count == 0:
                         raise ValueError(f"{file.filename} không có bản ghi")
                     file.row_count = row_count
@@ -418,7 +428,11 @@ def commit_upload_session(db: Session, session: ResolutionUploadSession,
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Upload draft không tồn tại")
     upload_files = db.query(ResolutionUploadFile).filter_by(session_id=session.id).order_by(
         ResolutionUploadFile.position).all()
-    paths = [(file.filename, materialize_upload_file(db, session, file)) for file in upload_files]
+    paths = []
+    for file in upload_files:
+        with span("upload.assemble_for_commit", upload_session_id=session.id,
+                  file_id=file.id, byte_count=file.expected_size):
+            paths.append((file.filename, materialize_upload_file(db, session, file)))
     streams = []
     try:
         streams = [(filename, path.open("rb")) for filename, path in paths]

@@ -5,11 +5,11 @@ import hashlib
 import io
 import logging
 import sys
+import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import BinaryIO
-from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import func, insert
@@ -22,6 +22,7 @@ from masterone.mdm.input_schema import InputMappingError, input_error, resolve_s
 from masterone.mdm.models import ResolutionAuditEvent, ResolutionFile, ResolutionRecord, ResolutionRun
 from masterone.mdm.pipeline.matching import POLICY_VERSION
 from masterone.mdm.pipeline.standardization import standardize
+from masterone.mdm.trace import emit, span
 from masterone.storage.r2 import get_store, source_file_key
 
 MAX_FILES_PER_RUN = 10
@@ -184,6 +185,9 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
                               run.id, type(error).__name__)
     try:
         db.flush()
+        import_started = time.perf_counter()
+        emit("import.records", "started", upload_session_id=upload_session_id,
+             run_id=run.id, file_count=len(files))
         r2 = get_store(get_settings())
         for original_name, stream in files:
             filename = original_name.replace("\\", "/").rsplit("/", 1)[-1] or "records.csv"
@@ -197,6 +201,9 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
             db.flush()
             file_rows = 0
             batch = []
+            parsing_started = time.perf_counter()
+            emit("import.parse_and_insert", "started", upload_session_id=upload_session_id,
+                 run_id=run.id, file_id=file_row.id)
             for row in _iter_normalized(stream, filename):
                 raw = row["raw_fields"]
                 normalized, quality_flags = standardize(
@@ -223,6 +230,9 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
                     batch.clear()
             if batch:
                 db.execute(insert(ResolutionRecord), batch)
+            emit("import.parse_and_insert", "completed", upload_session_id=upload_session_id,
+                 run_id=run.id, file_id=file_row.id, record_count=file_rows,
+                 duration_ms=round((time.perf_counter() - parsing_started) * 1000, 3))
             if file_rows == 0:
                 raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"{filename} không có bản ghi")
             file_row.row_count = file_rows
@@ -230,8 +240,10 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
                 key = source_file_key(run.id, file_row.id, filename)
                 uploaded_keys.append(key)
                 try:
-                    stream.seek(0)
-                    r2.upload_stream(stream, key, "text/csv; charset=utf-8")
+                    with span("import.store_source", upload_session_id=upload_session_id,
+                              run_id=run.id, file_id=file_row.id):
+                        stream.seek(0)
+                        r2.upload_stream(stream, key, "text/csv; charset=utf-8")
                     file_row.r2_key = key
                 except Exception as error:
                     logging.error("SOURCE_UPLOAD_FAILED run_id=%s error_type=%s",
@@ -247,7 +259,9 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
                      "files": [{"filename": item["filename"], "row_count": item["row_count"]}
                                for item in file_profiles]},
         ))
-        db.commit()
+        with span("import.database_commit", upload_session_id=upload_session_id,
+                  run_id=run.id, record_count=total_rows):
+            db.commit()
         db.refresh(run)
     except IntegrityError as exc:
         db.rollback()
@@ -272,4 +286,7 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
         raise
     profile = {"row_count": total_rows, "file_count": len(files), "source_counts": source_counts,
                "files": file_profiles}
+    emit("import.records", "completed", upload_session_id=upload_session_id,
+         run_id=run.id, record_count=total_rows, file_count=len(files),
+         duration_ms=round((time.perf_counter() - import_started) * 1000, 3))
     return run, profile
