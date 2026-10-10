@@ -1,10 +1,18 @@
 from collections import defaultdict
+from collections.abc import Mapping
 from hashlib import sha256
 
 from masterone.mdm.pipeline.cluster_guards import has_blocking_violation, run_cluster_guards
 from masterone.mdm.pipeline.golden import build_golden
 
 MAX_CLUSTER_MEMBERS = 20
+
+
+def _record_map(records):
+    """Accept a list of record dicts or an id -> record mapping such as a lazy RecordView."""
+    if isinstance(records, Mapping):
+        return records
+    return {record["id"]: record for record in records}
 
 
 def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_version: str,
@@ -15,10 +23,24 @@ def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_
     if enabled():
         return _build_safe_proposals(records, pairs, run_id, policy_version,
                                      negative_pairs or frozenset(), execution_blocked_pairs, cluster_policy)
-    by_id = {record["id"]: record for record in records}
-    parent = {record_id: record_id for record_id in by_id}
-    members = {record_id: {record_id} for record_id in by_id}
+    by_id = _record_map(records)
     policy = cluster_policy or load_policy(legacy=True)
+
+    # §23: sort by match_weight DESC, pair_id ASC
+    match_edges = sorted((pair for pair in pairs if pair["decision"] == "MERGEABLE"),
+                         key=lambda item: (-item["match_weight"], item["id"]))
+
+    # find()/members/guards never touch a record outside the endpoints of a MERGEABLE pair --
+    # anything else stays an untouched singleton and is filtered out when proposals are built
+    # below. At scale this set is far smaller than the whole snapshot, so parent/members never
+    # scan the full dataset, and record content is hydrated once in a batch instead of one
+    # SQLite round trip per lookup (the dominant remaining cost once edge bookkeeping was fixed).
+    referenced_ids = {rid for pair in match_edges for rid in (pair["left_id"], pair["right_id"])}
+    parent = {record_id: record_id for record_id in referenced_ids}
+    members = {record_id: {record_id} for record_id in referenced_ids}
+    if hasattr(by_id, "prefetch"):
+        by_id.prefetch(referenced_ids)
+
     # Shared-value guards need only incident edges, not an entire snapshot
     # rescan for every union. Keep original positions, including duplicates.
     incident_pairs = defaultdict(list)
@@ -42,13 +64,13 @@ def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_
 
     accepted = []
     risky = []
-    # edge_order tracks the deterministic sequence of accepted merges (§23 audit)
-    edge_order: list[dict] = []
+    # Per-root accumulated edge history (§23 audit), merged O(1)-ish per union since
+    # clusters are capped at MAX_CLUSTER_MEMBERS. Replaces a flat list that was re-filtered
+    # once per proposal -- O(proposals x total_edges), the dominant CLUSTER cost at scale
+    # (measured: 100k records -> 26s; this pattern scales ~quadratically with record count).
+    edges_by_root: dict = defaultdict(list)
     edge_seq: int = 0
 
-    # §23: sort by match_weight DESC, pair_id ASC
-    match_edges = sorted((pair for pair in pairs if pair["decision"] == "MERGEABLE"),
-                         key=lambda item: (-item["match_weight"], item["id"]))
     for pair in match_edges:
         left_root, right_root = find(pair["left_id"]), find(pair["right_id"])
         if left_root == right_root:
@@ -78,8 +100,8 @@ def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_
                                          for v in guard_violations]
             risky.append(pair)
             continue
-        # Accept the merge — record in edge_order for audit (§23)
-        edge_order.append({
+        # Accept the merge — record in edge history for audit (§23)
+        new_edge = {
             "seq": edge_seq,
             "pair_id": pair["id"],
             "left_id": pair["left_id"],
@@ -87,8 +109,9 @@ def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_
             "score": pair["score"],
             "policy_id": pair.get("policy_id"),
             "decision_subgroup": pair.get("decision_subgroup"),
-        })
+        }
         edge_seq += 1
+        edges_by_root[left_root] = edges_by_root.pop(left_root, []) + edges_by_root.pop(right_root, []) + [new_edge]
         parent[right_root] = left_root
         members[left_root] = combined
         del members[right_root]
@@ -105,14 +128,12 @@ def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_
             pair["triage_reason"] = pair["reason"]
 
     proposals = []
-    for group in sorted(members.values(), key=lambda group: min(group)):
+    for root, group in sorted(members.items(), key=lambda item: min(item[1])):
         if len(group) < 2:
             continue
         member_ids = sorted(group)
         proposal_id = sha256(f"{run_id}:{policy_version}:{','.join(member_ids)}".encode()).hexdigest()
-        # Collect edge_order entries and guard_violations relevant to this proposal
-        proposal_edges = [e for e in edge_order
-                          if e["left_id"] in member_ids and e["right_id"] in member_ids]
+        proposal_edges = sorted(edges_by_root.get(root, []), key=lambda e: e["seq"])
         proposals.append({
             "id": proposal_id, "status": "AUTO_READY", "member_record_ids": member_ids,
             "golden_fields": build_golden(member_ids, by_id), "revision": 1,
@@ -141,8 +162,8 @@ def _build_safe_proposals(records, pairs, run_id, policy_version, cannot_links, 
     if not decision_enabled():
         raise ValueError("Cluster safety v2 requires decision semantics v2")
     policy = policy or load_policy()
-    by_id = {r["id"]: r for r in records}
-    if len(by_id) != len(records):
+    by_id = _record_map(records)
+    if not isinstance(records, Mapping) and len(by_id) != len(records):
         raise ValueError("Duplicate cluster record IDs")
     owned = not isinstance(pairs, DecisionStore)
     store = DecisionStore() if owned else pairs
@@ -163,7 +184,7 @@ def _build_safe_proposals(records, pairs, run_id, policy_version, cannot_links, 
                 rid = parent[rid]
             return rid
 
-        frequencies = value_frequencies(records)
+        frequencies = value_frequencies(by_id.values() if isinstance(records, Mapping) else records)
         sequence = 0
         for pair in store.ordered(matches=True):
             a, b = pair["left_id"], pair["right_id"]

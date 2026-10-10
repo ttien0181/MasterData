@@ -112,6 +112,11 @@ class Settings(BaseSettings):
 
     # Resumable CSV parts use this directory when object storage is disabled.
     upload_staging_dir: str = "./data/upload-staging"
+    # Parallel part downloads from object storage while validating or committing.
+    upload_download_workers: int = Field(default=4, ge=1, le=16)
+    # Validate and commit run in a child process; False runs them inside the request (tests, debugging).
+    import_jobs_inline: bool = False
+    import_jobs_concurrency: int = Field(default=2, ge=1, le=8)
 
     @property
     def r2_enabled(self) -> bool:

@@ -220,6 +220,32 @@ class R2ObjectStore(ObjectStore):
             ExpiresIn=expires_in,
         )
 
+    def presigned_put_url(self, key: str, content_type: str, sha256_base64: str, expires_in: int) -> str:
+        """Presigned PUT that R2 rejects unless the body matches the signed SHA-256 checksum."""
+        return self.presign_client.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": self.bucket, "Key": key, "ContentType": content_type,
+                    "ChecksumSHA256": sha256_base64},
+            ExpiresIn=expires_in,
+        )
+
+    def head_part(self, key: str) -> dict | None:
+        """Size and base64 SHA-256 of a stored object, or None when the key does not exist."""
+        try:
+            head = self.client.head_object(Bucket=self.bucket, Key=key, ChecksumMode="ENABLED")
+        except self.client.exceptions.ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
+                return None
+            raise
+        return {"byte_size": head["ContentLength"], "sha256_base64": head.get("ChecksumSHA256")}
+
+    def list_objects(self, prefix: str):
+        """Yield (key, last_modified) for every object under prefix."""
+        paginator = self.client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
+            for item in page.get("Contents", []):
+                yield item["Key"], item["LastModified"]
+
     def delete(self, key: str) -> None:
         self.client.delete_object(Bucket=self.bucket, Key=key)
 

@@ -10,14 +10,19 @@ from sqlalchemy.orm import Session
 
 from masterone.auth.security import CurrentSession, require_capability, require_mutation_capability
 from masterone.db.session import get_session
-from masterone.mdm.models import ResolutionUploadSession
+from masterone.mdm import import_jobs
+from masterone.mdm.models import ResolutionRun, ResolutionUploadSession
 from masterone.mdm.upload_sessions import (
     MAX_UPLOAD_CHUNK_BYTES,
+    begin_commit,
+    begin_validation,
     commit_upload_session,
+    commit_uploaded_part,
     create_upload_session,
     delete_upload_session,
     get_upload_file,
     owned_upload_session,
+    presign_upload_parts,
     replace_upload_file,
     save_upload_part,
     serialize_upload_session,
@@ -47,10 +52,29 @@ class ReplaceUploadFileRequest(BaseModel):
     size: int = Field(gt=0)
 
 
+PART_SHA256_PATTERN = r"^[0-9a-f]{64}$"
+
+
+class PresignPartSpec(BaseModel):
+    part_number: int = Field(ge=0)
+    byte_size: int = Field(gt=0)
+    sha256: str = Field(pattern=PART_SHA256_PATTERN)
+
+
+class PresignPartsRequest(BaseModel):
+    parts: list[PresignPartSpec] = Field(min_length=1, max_length=32)
+
+
+class CommitPartRequest(BaseModel):
+    byte_size: int = Field(gt=0)
+    sha256: str = Field(pattern=PART_SHA256_PATTERN)
+
+
 class RunCommitResponse(BaseModel):
-    run_id: str
+    # run_id and profile are null (status COMMITTING) while the import job is still running.
+    run_id: str | None
     status: str
-    profile: dict
+    profile: dict | None
 
 
 @router.get("")
@@ -147,26 +171,69 @@ async def upload_draft_part(
     return saved
 
 
-@router.post("/{session_id}/validate")
-def validate_draft(
+@router.post("/{session_id}/files/{file_id}/presign")
+def presign_draft_parts(
     session_id: str,
+    file_id: str,
+    body: PresignPartsRequest,
     db: Session = Depends(get_session),
     auth: CurrentSession = Depends(require_mutation_capability("create_run")),
 ):
     session = owned_upload_session(db, session_id, auth.user.id)
-    session = validate_upload_session(db, session)
+    file = get_upload_file(db, session, file_id)
+    return {"parts": presign_upload_parts(session, file, [item.model_dump() for item in body.parts])}
+
+
+@router.post("/{session_id}/files/{file_id}/parts/{part_number}/commit")
+def commit_draft_part(
+    session_id: str,
+    file_id: str,
+    body: CommitPartRequest,
+    part_number: int = PathParam(ge=0),
+    db: Session = Depends(get_session),
+    auth: CurrentSession = Depends(require_mutation_capability("create_run")),
+):
+    session = owned_upload_session(db, session_id, auth.user.id)
+    file = get_upload_file(db, session, file_id)
+    return commit_uploaded_part(db, session, file, part_number, body.byte_size, body.sha256)
+
+
+@router.post("/{session_id}/validate")
+def validate_draft(
+    session_id: str,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_session),
+    auth: CurrentSession = Depends(require_mutation_capability("create_run")),
+):
+    session = owned_upload_session(db, session_id, auth.user.id)
+    if import_jobs.inline():
+        session = validate_upload_session(db, session)
+        return serialize_upload_session(db, session)
+    # Validation can take minutes for a large draft: mark it, then run it in a job. The client polls the draft.
+    begin_validation(db, session)
+    import_jobs.start("validate", session.id, auth.user.id, import_jobs.database_url(request))
+    response.status_code = status.HTTP_202_ACCEPTED
     return serialize_upload_session(db, session)
 
 
 @router.post("/{session_id}/commit", response_model=RunCommitResponse, status_code=status.HTTP_201_CREATED)
 def commit_draft(
     session_id: str,
+    request: Request,
+    response: Response,
     db: Session = Depends(get_session),
     auth: CurrentSession = Depends(require_mutation_capability("create_run")),
 ):
     session = owned_upload_session(db, session_id, auth.user.id)
-    run, profile = commit_upload_session(db, session, auth.user.id)
-    return {"run_id": run.id, "status": run.status, "profile": profile}
+    already_created = db.query(ResolutionRun.id).filter_by(upload_session_id=session.id).first() is not None
+    if import_jobs.inline() or already_created:
+        run, profile = commit_upload_session(db, session, auth.user.id)
+        return {"run_id": run.id, "status": run.status, "profile": profile}
+    begin_commit(db, session, auth.user.id)
+    import_jobs.start("commit", session.id, auth.user.id, import_jobs.database_url(request))
+    response.status_code = status.HTTP_202_ACCEPTED
+    return {"run_id": None, "status": "COMMITTING", "profile": None}
 
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)

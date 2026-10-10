@@ -230,13 +230,16 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
     const port = window.location.port ? `:${window.location.port === "3000" ? "8001" : window.location.port}` : "";
     const wsUrl = `${protocol}//${window.location.hostname}${port}/api/v1/mdm/runs/${runId}/overview/ws`;
     
-    let ws = new WebSocket(wsUrl);
+    // Only connect() opens sockets; a second socket here would double the server-side loop.
+    let ws: WebSocket | null = null;
     let reconnectTimer = 0;
     let stopped = false;
+    let attempts = 0;
     
     const connect = () => {
       if (stopped) return;
       ws = new WebSocket(wsUrl);
+      ws.onopen = () => { attempts = 0; };
       
       ws.onmessage = (event) => {
         try {
@@ -250,7 +253,10 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
       
       ws.onclose = () => {
         if (!stopped) {
-          reconnectTimer = window.setTimeout(connect, 3000);
+          // Back off 3s, 6s, 12s, ... capped at 30s so a failing server is not hammered.
+          const delay = Math.min(3000 * 2 ** attempts, 30000);
+          attempts += 1;
+          reconnectTimer = window.setTimeout(connect, delay);
         }
       };
       
@@ -264,7 +270,7 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
     return () => {
       stopped = true;
       window.clearTimeout(reconnectTimer);
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
         ws.close();
       }
     };

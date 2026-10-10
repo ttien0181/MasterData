@@ -13,10 +13,15 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     false,
+    inspect,
+    update,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, Session, mapped_column
 
+# The foreign keys below point at "users"; importing it here registers that table in every process.
+from masterone.auth import models as _auth_models  # noqa: F401
 from masterone.db.base import Base, now_utc
 
 
@@ -585,3 +590,45 @@ class LLMRequest(Base):
     output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class ResolutionRunSummary(Base):
+    """Overview figures stored once per run instead of recomputed by every overview request.
+
+    `source_counts` is written at commit and never changes. `payload` holds the review and
+    pipeline figures, computed when the pipeline publishes and again after any write to the
+    run's pairs, proposals or review cases. Those writes bump `version` in the same transaction.
+    """
+    __tablename__ = "mdm_resolution_run_summaries"
+
+    run_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_runs.id", ondelete="CASCADE"), primary_key=True)
+    source_counts: Mapped[dict] = mapped_column(JSON, default=dict)
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    payload_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+
+_SUMMARY_SOURCES = (ResolutionPair, ResolutionProposal, ResolutionReviewCase)
+
+
+@event.listens_for(Session, "before_flush")
+def _note_summary_runs(session, flush_context, instances):
+    # Every ORM write to the tables behind the overview counters marks its run as changed.
+    touched = {obj.run_id for obj in (*session.new, *session.dirty, *session.deleted)
+               if isinstance(obj, _SUMMARY_SOURCES)}
+    if touched:
+        session.info.setdefault("summary_runs", set()).update(touched)
+
+
+@event.listens_for(Session, "after_flush")
+def _bump_summary_versions(session, flush_context):
+    touched = session.info.pop("summary_runs", None)
+    if not touched:
+        return
+    connection = session.connection()
+    # Schemas older than the summary table (migration tests, pre-0026 databases) have nothing to bump.
+    if not inspect(connection).has_table(ResolutionRunSummary.__tablename__):
+        return
+    connection.execute(update(ResolutionRunSummary).where(ResolutionRunSummary.run_id.in_(touched))
+                       .values(version=ResolutionRunSummary.version + 1))

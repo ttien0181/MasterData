@@ -3,20 +3,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
+  commitUploadPart,
   commitUploadSession,
   createUploadSession,
   deleteUploadSession,
   getUploadSession,
   getUploadSessions,
+  presignUploadParts,
+  putPartToStorage,
   renameUploadSession,
   replaceUploadSessionFile,
   uploadResolutionUploadPart,
   validateUploadSession,
 } from "@/lib/api";
-import type { UploadSession, UploadSessionFile } from "@/lib/contracts";
+import type { RunCommitProfile, UploadSession, UploadSessionFile } from "@/lib/contracts";
 import { ShellIcon } from "./ShellIcons";
 
+type CreatedRun = { run_id: string; status: string; profile: RunCommitProfile };
+
 const CHUNK_BYTES = 8 * 1024 * 1024;
+// Direct R2 uploads run in parallel; the proxy path stays sequential because its bytes share one API connection.
+const DIRECT_CONCURRENCY = 3;
+const PART_ATTEMPTS = 3;
+const VALIDATION_POLL_MS = 1500;
+const MAX_VALIDATION_POLLS = 120;
 
 function formatBytes(bytes: number) {
   if (!bytes) return "0 byte";
@@ -39,15 +49,62 @@ async function sha256(blob: Blob) {
   ).join("");
 }
 
+function withoutKey(items: Record<string, string>, key: string) {
+  const next = { ...items };
+  delete next[key];
+  return next;
+}
+
+function validationOutcome(status: UploadSession["status"]) {
+  return status === "READY"
+    ? "Kiểm tra xong: dữ liệu hợp lệ. Bạn có thể bắt đầu phân giải."
+    : "Kiểm tra xong: có file chưa hợp lệ. Xem lỗi ở từng file để sửa.";
+}
+
+function isRetryable(error: unknown) {
+  // A rejected checksum or size would fail the same way again. Expired URLs (403), throttling,
+  // 5xx and dropped connections are worth another attempt with a fresh URL.
+  if (error instanceof ApiError)
+    return error.status === 403 || error.status === 429 || error.status >= 500;
+  return true;
+}
+
+async function sendPart(
+  sessionId: string,
+  fileId: string,
+  mode: "direct" | "proxy",
+  partNumber: number,
+  blob: Blob,
+  onProgress: (loaded: number) => void,
+) {
+  const digest = await sha256(blob);
+  if (mode === "proxy") {
+    await uploadResolutionUploadPart(sessionId, fileId, partNumber, blob, digest, onProgress);
+    return;
+  }
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      const { parts } = await presignUploadParts(sessionId, fileId, [
+        { part_number: partNumber, byte_size: blob.size, sha256: digest },
+      ]);
+      await putPartToStorage(parts[0], blob, onProgress);
+      await commitUploadPart(sessionId, fileId, partNumber, blob.size, digest);
+      return;
+    } catch (error) {
+      if (attempt >= PART_ATTEMPTS || !isRetryable(error)) throw error;
+      onProgress(0);
+      await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+    }
+  }
+}
+
 export default function ResolutionIntake({
   onRunCreated,
   userId,
   onPendingChange,
   onDismiss,
 }: {
-  onRunCreated: (
-    created: Awaited<ReturnType<typeof commitUploadSession>>,
-  ) => Promise<void>;
+  onRunCreated: (created: CreatedRun) => Promise<void>;
   userId?: string;
   onPendingChange?: (label: string) => void;
   onDismiss?: () => void;
@@ -61,9 +118,12 @@ export default function ResolutionIntake({
   const [restoreFailed, setRestoreFailed] = useState(false);
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   const busy = working || restoring;
+  // Validation is a server-side state of the draft, so it survives reloads and is never tied to a button's lifetime.
+  const validating = session?.status === "VALIDATING";
   const uploadInFlight = useRef(false);
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const [activity, setActivity] = useState<
-    "uploading" | "validating" | "starting" | null
+    "uploading" | "validating" | "committing" | "starting" | null
   >(null);
   const [progress, setProgress] = useState<{
     fileId: string;
@@ -128,8 +188,8 @@ export default function ResolutionIntake({
           if (cancelled) return;
           setSession(restored);
           setName(restored.name || "");
-          if (restored.status === "VALIDATING") {
-            setActivity("validating");
+          if (restored.status === "COMMITTING") {
+            setActivity("committing");
           }
           rememberUpload(id);
           setMessage(
@@ -137,7 +197,9 @@ export default function ResolutionIntake({
               ? "Phiên đã được tạo. Bấm tiếp tục để mở hoặc bắt đầu xử lý."
               : restored.status === "READY"
                 ? "Đã khôi phục dữ liệu. Bạn có thể bắt đầu phân giải."
-                : "Đã khôi phục tiến độ. Chọn lại file để tiếp tục phần chưa tải xong.",
+                : restored.status === "COMMITTING"
+                  ? "Phiên đang được tạo. Trang sẽ cập nhật khi xong."
+                  : "Đã khôi phục tiến độ. Chọn lại file để tiếp tục phần chưa tải xong.",
           );
         }
       } catch (error) {
@@ -160,23 +222,24 @@ export default function ResolutionIntake({
 
   useEffect(() => {
     onPendingChange?.(
-      activity === "starting"
+      activity === "starting" || activity === "committing"
         ? "Đang tạo phiên phân giải"
         : activity === "uploading"
           ? "Đang tải dữ liệu"
-          : activity === "validating"
+          : validating
             ? "Đang kiểm tra dữ liệu"
             : session
               ? "Có dữ liệu đang chuẩn bị"
               : "",
     );
-  }, [activity, session, onPendingChange]);
+  }, [activity, validating, session, onPendingChange]);
 
   async function transferFile(
     active: UploadSession,
     target: UploadSessionFile,
     file: File,
   ) {
+    setUploadErrors((items) => withoutKey(items, target.file_id));
     let currentSession = active;
     let currentTarget = target.replacement ?? target;
     const fileMatches =
@@ -225,35 +288,48 @@ export default function ResolutionIntake({
       setSession(currentSession);
     }
 
+    // Every part the server already holds was verified against the local bytes above, so only the rest are sent.
+    const partCount = Math.ceil(file.size / CHUNK_BYTES);
+    const pending = Array.from({ length: partCount }, (_, index) => index).filter(
+      (partNumber) => !uploadedByNumber.has(partNumber),
+    );
+    const mode = currentSession.upload_mode;
+    const sessionId = currentSession.session_id;
+    const fileId = currentTarget.file_id;
     let completed = currentTarget.received_size;
-    for (
-      let start = 0, partNumber = 0;
-      start < file.size;
-      start += CHUNK_BYTES, partNumber += 1
-    ) {
-      const blob = file.slice(start, Math.min(start + CHUNK_BYTES, file.size));
-      const existingHash = uploadedByNumber.get(partNumber);
-      if (existingHash) {
-        const localHash = await sha256(blob);
-        if (localHash === existingHash) continue;
+    const inFlight = new Map<number, number>();
+    const reportProgress = () => {
+      const loaded = [...inFlight.values()].reduce((sum, value) => sum + value, 0);
+      setProgress({ fileId: target.file_id, current: completed + loaded });
+    };
+    let next = 0;
+    let failure: unknown = null;
+    const worker = async () => {
+      while (failure === null && next < pending.length) {
+        const partNumber = pending[next++];
+        const start = partNumber * CHUNK_BYTES;
+        const blob = file.slice(start, Math.min(start + CHUNK_BYTES, file.size));
+        inFlight.set(partNumber, 0);
+        reportProgress();
+        try {
+          await sendPart(sessionId, fileId, mode, partNumber, blob, (loaded) => {
+            inFlight.set(partNumber, Math.min(loaded, blob.size));
+            reportProgress();
+          });
+        } catch (error) {
+          if (failure === null) failure = error;
+          return;
+        }
+        inFlight.delete(partNumber);
+        completed += blob.size;
+        reportProgress();
       }
-      const digest = await sha256(blob);
-      setProgress({ fileId: target.file_id, current: completed });
-      await uploadResolutionUploadPart(
-        currentSession.session_id,
-        currentTarget.file_id,
-        partNumber,
-        blob,
-        digest,
-        (loaded) =>
-          setProgress({
-            fileId: target.file_id,
-            current: completed + Math.min(loaded, blob.size),
-          }),
-      );
-      completed += blob.size;
-      setProgress({ fileId: target.file_id, current: completed });
-    }
+    };
+    const concurrency = mode === "direct" ? DIRECT_CONCURRENCY : 1;
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, pending.length) }, worker),
+    );
+    if (failure !== null) throw failure;
     currentSession = await getUploadSession(currentSession.session_id);
     setSession(currentSession);
     setDrafts((items) => [
@@ -271,7 +347,6 @@ export default function ResolutionIntake({
         return candidate.received_size === candidate.expected_size;
       })
     ) {
-      setActivity("validating");
       const checked = await validateUploadSession(updated.session_id);
       setSession(checked);
       setDrafts((items) => [
@@ -283,48 +358,42 @@ export default function ResolutionIntake({
     return updated;
   }
 
+  // Validate and commit run as background jobs. Follow the draft for as long as the job holds it,
+  // and report the outcome when it leaves VALIDATING. No attempt cap: large files can take minutes.
+  const jobSessionId = session?.session_id;
+  const jobStatus = session?.status;
   useEffect(() => {
-    let ws: WebSocket | null = null;
-    if (activity === "validating" && session?.session_id) {
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const port = window.location.port
-        ? `:${window.location.port === "3000" ? "8001" : window.location.port}`
-        : "";
-      const wsUrl = `${protocol}//${window.location.hostname}${port}/api/v1/mdm/upload-sessions/${session.session_id}/ws`;
-
-      ws = new WebSocket(wsUrl);
-
-      ws.onmessage = async (event) => {
-        const data = JSON.parse(event.data);
-        if (
-          data.status === "READY" ||
-          data.status === "ERROR" ||
-          data.status === "COMMITTED"
-        ) {
-          try {
-            const latest = await getUploadSession(session.session_id);
-            setSession(latest);
-            setDrafts((items) => [
-              latest,
-              ...items.filter((item) => item.session_id !== latest.session_id),
-            ]);
-          } catch (e) {
-            // keep existing state on network fail
-          } finally {
-            setActivity(null);
-            ws?.close();
-          }
-        }
-      };
-
-      ws.onerror = () => {
-        setActivity(null);
-      };
-    }
-    return () => {
-      ws?.close();
+    if (!jobSessionId || (jobStatus !== "VALIDATING" && jobStatus !== "COMMITTING")) return;
+    let stopped = false;
+    let timer = 0;
+    const schedule = (delay: number) => {
+      timer = window.setTimeout(poll, delay);
     };
-  }, [activity, session?.session_id]);
+    const poll = async () => {
+      try {
+        const latest = await getUploadSession(jobSessionId);
+        if (stopped) return;
+        setSession(latest);
+        setDrafts((items) => [
+          latest,
+          ...items.filter((item) => item.session_id !== latest.session_id),
+        ]);
+        if (latest.status === jobStatus) {
+          schedule(VALIDATION_POLL_MS);
+          return;
+        }
+        if (jobStatus === "VALIDATING") setMessage(validationOutcome(latest.status));
+      } catch {
+        // A dropped request should not end the watch; retry more slowly.
+        if (!stopped) schedule(VALIDATION_POLL_MS * 2);
+      }
+    };
+    schedule(VALIDATION_POLL_MS);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [jobSessionId, jobStatus]);
 
   async function uploadFiles(incoming: File[]) {
     if (!incoming.length || busy || uploadInFlight.current || session) return;
@@ -359,12 +428,28 @@ export default function ResolutionIntake({
         created,
         ...items.filter((item) => item.session_id !== created.session_id),
       ]);
+      // One failed file must not stop the others: upload everything, then say exactly what is left.
+      const unfinished: string[] = [];
       for (let index = 0; index < created.files.length; index += 1) {
-        created = await transferFile(
-          created,
-          created.files[index],
-          files[index],
+        const target = created.files[index];
+        try {
+          created = await transferFile(created, target, files[index]);
+        } catch (error) {
+          unfinished.push(files[index].name);
+          setUploadErrors((items) => ({
+            ...items,
+            [target.file_id]: error instanceof Error ? error.message : "Không tải được file.",
+          }));
+          created = await getUploadSession(created.session_id).catch(() => created);
+          setSession(created);
+        }
+      }
+      if (unfinished.length) {
+        setMessage(
+          `Chưa tải xong ${unfinished.length} file: ${unfinished.join(", ")}. ` +
+            `Bấm "Tiếp tục" ở file đó để tải lại phần còn thiếu.`,
         );
+        return;
       }
       await validateIfComplete(created);
     } catch (error) {
@@ -426,9 +511,9 @@ export default function ResolutionIntake({
       const updated = await transferFile(session, target, file);
       await validateIfComplete(updated);
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Không tải được file.",
-      );
+      const detail = error instanceof Error ? error.message : "Không tải được file.";
+      setUploadErrors((items) => ({ ...items, [target.file_id]: detail }));
+      setMessage(`Chưa tải xong file ${target.filename}. Bấm "Tiếp tục" để thử lại.`);
     } finally {
       setBusy(false);
       setActivity(null);
@@ -475,6 +560,22 @@ export default function ResolutionIntake({
     }
   }
 
+  // The commit job runs in the background: poll the draft until it records the run or an error.
+  async function waitForCommit(sessionId: string): Promise<CreatedRun> {
+    for (let attempt = 0; attempt < MAX_VALIDATION_POLLS; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, VALIDATION_POLL_MS));
+      const latest = await getUploadSession(sessionId);
+      if (latest.status === "COMMITTED" && latest.committed_run_id && latest.committed_profile) {
+        setSession(latest);
+        return { run_id: latest.committed_run_id, status: "UPLOADED", profile: latest.committed_profile };
+      }
+      if (latest.status !== "COMMITTING") {
+        throw new Error(latest.error_message || "Không thể tạo phiên. Hãy thử lại.");
+      }
+    }
+    throw new Error("Phiên vẫn đang được tạo. Hãy tải lại trang sau ít phút.");
+  }
+
   async function commitDraft() {
     if (!session || !["READY", "COMMITTED"].includes(session.status) || busy)
       return;
@@ -487,7 +588,11 @@ export default function ResolutionIntake({
         name.trim() !== (session.name || "")
       )
         await renameUploadSession(session.session_id, name.trim());
-      const created = await commitUploadSession(session.session_id);
+      const accepted = await commitUploadSession(session.session_id);
+      const created: CreatedRun =
+        accepted.run_id && accepted.profile
+          ? { run_id: accepted.run_id, status: accepted.status, profile: accepted.profile }
+          : await waitForCommit(session.session_id);
       await onRunCreated(created);
       forgetUpload(session.session_id);
       setDrafts((items) =>
@@ -524,9 +629,9 @@ export default function ResolutionIntake({
   const ready = session?.status === "READY" || session?.status === "COMMITTED";
   const actionLabel = restoring
     ? "Đang khôi phục dữ liệu…"
-    : activity === "starting"
+    : activity === "starting" || activity === "committing"
       ? "Đang bắt đầu phân giải…"
-      : activity === "validating"
+      : validating
         ? "Đang kiểm tra dữ liệu…"
         : activity === "uploading"
           ? "Chờ tải lên hoàn tất"
@@ -694,15 +799,17 @@ export default function ResolutionIntake({
                   activity !== "uploading";
                 const fileBusy =
                   activity === "uploading" && progress?.fileId === file.file_id;
+                const uploadError = uploadErrors[file.file_id];
+                const failed = !!error || !!uploadError;
                 return (
                   <article
-                    className={`upload-session-file${error ? " is-error" : valid ? " is-ready" : ""}`}
+                    className={`upload-session-file${failed ? " is-error" : valid ? " is-ready" : ""}`}
                     key={file.file_id}
                   >
                     <div className="upload-session-file-head">
                       <span className="upload-file-icon">
                         <ShellIcon
-                          name={error ? "warning" : valid ? "check" : "file"}
+                          name={failed ? "warning" : valid ? "check" : "file"}
                           size={20}
                         />
                       </span>
@@ -713,7 +820,9 @@ export default function ResolutionIntake({
                         <small>
                           {error
                             ? "Không thể dùng file này"
-                            : valid
+                            : uploadError
+                              ? "Chưa tải xong"
+                              : valid
                               ? `Tải lên hoàn tất · ${formatBytes(candidate.expected_size)}`
                               : formatBytes(candidate.expected_size)}
                         </small>
@@ -778,6 +887,12 @@ export default function ResolutionIntake({
                         {error}
                       </p>
                     )}
+                    {!error && uploadError && (
+                      <p className="upload-file-error" role="alert">
+                        <ShellIcon name="warning" size={15} />
+                        Tải lên gián đoạn: {uploadError}. Bấm &quot;Tiếp tục&quot; để tải lại phần còn thiếu.
+                      </p>
+                    )}
                     {file.replacement && (
                       <p className="upload-replacement-note">
                         Đang thay thế <b>{file.filename}</b>. File cũ được giữ
@@ -798,9 +913,9 @@ export default function ResolutionIntake({
                   {session.error_message}
                 </p>
               )}
-            {activity === "validating" && (
+            {validating && (
               <p className="upload-info-note" role="status">
-                Đang kiểm tra dữ liệu trong các file CSV…
+                Đang kiểm tra dữ liệu trong các file CSV. File lớn có thể mất vài phút; trang sẽ tự cập nhật.
               </p>
             )}
             {session.status === "READY" && !busy && (
@@ -885,8 +1000,10 @@ export default function ResolutionIntake({
         <small>
           {activity === "uploading"
             ? "Có thể tiếp tục tải nếu mất kết nối"
-            : activity === "validating"
+            : validating
               ? "Chờ kiểm tra xong để tiếp tục"
+              : activity === "committing"
+                ? "Phiên đang được tạo, có thể đợi hoặc quay lại sau"
               : session?.status === "ERROR"
                 ? "Sửa lỗi hoặc đổi file để tiếp tục"
                 : "Phiên được tạo khi bạn bấm bắt đầu phân giải"}

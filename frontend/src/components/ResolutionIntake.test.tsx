@@ -1,20 +1,26 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ResolutionIntake from "./ResolutionIntake";
+import { ApiError } from "@/lib/api";
 import type { UploadSession } from "@/lib/contracts";
 
 const api = vi.hoisted(() => ({
-  commitUploadSession: vi.fn(), createUploadSession: vi.fn(), deleteUploadSession: vi.fn(),
-  getUploadSession: vi.fn(), getUploadSessions: vi.fn(), renameUploadSession: vi.fn(),
-  replaceUploadSessionFile: vi.fn(), uploadResolutionUploadPart: vi.fn(), validateUploadSession: vi.fn(),
+  commitUploadPart: vi.fn(), commitUploadSession: vi.fn(), createUploadSession: vi.fn(), deleteUploadSession: vi.fn(),
+  getUploadSession: vi.fn(), getUploadSessions: vi.fn(), presignUploadParts: vi.fn(), putPartToStorage: vi.fn(),
+  renameUploadSession: vi.fn(), replaceUploadSessionFile: vi.fn(), uploadResolutionUploadPart: vi.fn(),
+  validateUploadSession: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({ ApiError: class extends Error { status = 0; }, ...api }));
+vi.mock("@/lib/api", () => ({
+  ApiError: class extends Error { constructor(message: string, readonly status: number) { super(message); } },
+  ...api,
+}));
 
-function uploadSession(size: number, status: UploadSession["status"], receivedSize = 0): UploadSession {
+function uploadSession(size: number, status: UploadSession["status"], receivedSize = 0,
+                       uploadMode: UploadSession["upload_mode"] = "proxy"): UploadSession {
   return {
-    session_id: "upload-1", name: null, status, total_bytes: size, committed_run_id: null,
-    error_message: null, created_at: "2026-10-07T00:00:00Z", updated_at: "2026-10-07T00:00:00Z",
+    session_id: "upload-1", name: null, status, total_bytes: size, committed_run_id: null, upload_mode: uploadMode,
+    committed_profile: null, error_message: null, created_at: "2026-10-07T00:00:00Z", updated_at: "2026-10-07T00:00:00Z",
     files: [{ file_id: "file-1", position: 0, filename: "large.csv", expected_size: size,
       received_size: receivedSize, status, sha256: null, row_count: status === "READY" ? 1 : null,
       source_counts: {}, validation_error: null,
@@ -68,31 +74,57 @@ describe("ResolutionIntake", () => {
     expect(api.renameUploadSession.mock.invocationCallOrder[0]).toBeLessThan(api.commitUploadSession.mock.invocationCallOrder[0]);
   });
 
-  it("automatically uploads three dropped CSVs into one session and waits for validation", async () => {
+  it("automatically uploads three dropped CSVs into one session, then follows validation to its result", async () => {
     const files = ["crm.csv", "erp.csv", "billing.csv"].map((name) => new File(["csv"], name));
     const pending = uploadSession(9, "UPLOADING");
     pending.files = files.map((file, index) => ({ ...pending.files[0], file_id: `file-${index}`,
       filename: file.name, position: index, expected_size: file.size }));
     const uploaded = { ...pending, files: pending.files.map((file) => ({ ...file, received_size: file.expected_size })) };
+    const validating: UploadSession = { ...uploaded, status: "VALIDATING" };
+    const ready: UploadSession = { ...uploaded, status: "READY" };
     api.createUploadSession.mockResolvedValue(pending);
-    api.getUploadSession.mockResolvedValue(uploaded);
-    let finishValidation!: (value: UploadSession) => void;
-    api.validateUploadSession.mockReturnValue(new Promise<UploadSession>((resolve) => { finishValidation = resolve; }));
+    let validationStarted = false;
+    let polls = 0;
+    api.validateUploadSession.mockImplementation(async () => { validationStarted = true; return validating; });
+    api.getUploadSession.mockImplementation(async () => {
+      if (!validationStarted) return uploaded;
+      polls += 1;
+      return polls < 2 ? validating : ready;
+    });
     const { container } = render(<ResolutionIntake onRunCreated={vi.fn()} />);
     fireEvent.drop(container.querySelector(".resolution-dropzone")!, { dataTransfer: { files } });
 
-    await waitFor(() => expect(api.validateUploadSession).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Đang kiểm tra dữ liệu trong các file CSV. File lớn có thể mất vài phút; trang sẽ tự cập nhật."))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Đang kiểm tra dữ liệu…" })).toBeDisabled();
     expect(api.createUploadSession).toHaveBeenCalledExactlyOnceWith("", files);
     expect(api.uploadResolutionUploadPart).toHaveBeenCalledTimes(3);
     for (let index = 0; index < files.length; index += 1) {
       expect(api.uploadResolutionUploadPart).toHaveBeenNthCalledWith(index + 1,
         "upload-1", `file-${index}`, 0, expect.any(Blob), "00".repeat(32), expect.any(Function));
     }
-    expect(screen.getByText("Đang kiểm tra dữ liệu trong các file CSV…")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Đang kiểm tra dữ liệu…" })).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu phân giải" })).toBeEnabled(), { timeout: 4000 });
+    expect(screen.getByText("Kiểm tra xong: dữ liệu hợp lệ. Bạn có thể bắt đầu phân giải.")).toBeInTheDocument();
     expect(api.commitUploadSession).not.toHaveBeenCalled();
-    finishValidation({ ...uploaded, status: "READY" });
-    await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu phân giải" })).toBeEnabled());
+  });
+
+  it("keeps uploading the other files when one fails, and names the file to resume", async () => {
+    const files = ["crm.csv", "erp.csv", "billing.csv"].map((name) => new File(["csv"], name));
+    const pending = uploadSession(9, "UPLOADING");
+    pending.files = files.map((file, index) => ({ ...pending.files[0], file_id: `file-${index}`,
+      filename: file.name, position: index, expected_size: file.size }));
+    api.createUploadSession.mockResolvedValue(pending);
+    api.getUploadSession.mockResolvedValue(pending);
+    api.uploadResolutionUploadPart.mockImplementation(async (_sessionId: string, fileId: string) => {
+      if (fileId === "file-1") throw new Error("Mất kết nối");
+    });
+    const { container } = render(<ResolutionIntake onRunCreated={vi.fn()} />);
+    fireEvent.drop(container.querySelector(".resolution-dropzone")!, { dataTransfer: { files } });
+
+    expect(await screen.findByText(/Chưa tải xong 1 file: erp\.csv/)).toBeInTheDocument();
+    expect(screen.getByText(/Tải lên gián đoạn: Mất kết nối/)).toBeInTheDocument();
+    expect(api.uploadResolutionUploadPart).toHaveBeenCalledTimes(3);
+    expect(api.validateUploadSession).not.toHaveBeenCalled();
   });
 
   it("rejects unsupported selections and too many files without uploading a subset", async () => {
@@ -116,7 +148,7 @@ describe("ResolutionIntake", () => {
     const { container } = render(<ResolutionIntake onRunCreated={onRunCreated} />);
     fireEvent.change(container.querySelector('input[type="file"][multiple]')!, { target: { files: [file] } });
     await waitFor(() => expect(screen.getByRole("button", { name: "Để sau" })).toBeEnabled());
-    expect(screen.getByText("Mất kết nối")).toBeInTheDocument();
+    expect(screen.getByText(/Mất kết nối/)).toBeInTheDocument();
     fireEvent.change(container.querySelector('.upload-replace-control input')!, { target: { files: [file] } });
     await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu phân giải" })).toBeEnabled());
     expect(api.createUploadSession).toHaveBeenCalledTimes(1);
@@ -163,5 +195,74 @@ describe("ResolutionIntake", () => {
     render(<ResolutionIntake userId="user-1" onRunCreated={vi.fn()} />);
     await waitFor(() => expect(screen.getByLabelText("Chọn các file CSV")).toBeEnabled());
     expect(api.getUploadSession).not.toHaveBeenCalled();
+  });
+
+  describe("direct upload to storage", () => {
+    const chunkSize = 8 * 1024 * 1024;
+    const presignEcho = () => api.presignUploadParts.mockImplementation(async (_id: string, _fileId: string,
+      parts: { part_number: number }[]) => ({
+      parts: parts.map((part) => ({ part_number: part.part_number, upload_url: `https://r2.test/${part.part_number}`,
+        headers: { "Content-Type": "application/octet-stream", "x-amz-checksum-sha256": "AAAA" }, expires_in: 900 })),
+    }));
+
+    it("sends every part to R2 through a presigned URL, three at a time, then commits each one", async () => {
+      const size = 2 * chunkSize + 5;
+      let active = 0;
+      let peak = 0;
+      api.createUploadSession.mockResolvedValue(uploadSession(size, "UPLOADING", 0, "direct"));
+      api.getUploadSession.mockResolvedValue(uploadSession(size, "UPLOADING", size, "direct"));
+      presignEcho();
+      api.putPartToStorage.mockImplementation(async () => {
+        active += 1;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        active -= 1;
+      });
+      api.commitUploadPart.mockResolvedValue({ part_number: 0, byte_size: 0, sha256: "", received_size: 0 });
+      const { container } = render(<ResolutionIntake onRunCreated={vi.fn()} />);
+      fireEvent.change(container.querySelector('input[type="file"][multiple]')!, {
+        target: { files: [new File([new Uint8Array(size)], "large.csv")] },
+      });
+
+      await waitFor(() => expect(api.commitUploadPart).toHaveBeenCalledTimes(3));
+      expect(api.uploadResolutionUploadPart).not.toHaveBeenCalled();
+      expect(api.presignUploadParts).toHaveBeenCalledTimes(3);
+      expect(peak).toBe(3);
+      expect(api.commitUploadPart).toHaveBeenCalledWith("upload-1", "file-1", 0, chunkSize, "00".repeat(32));
+      expect(api.commitUploadPart).toHaveBeenCalledWith("upload-1", "file-1", 1, chunkSize, "00".repeat(32));
+      expect(api.commitUploadPart).toHaveBeenCalledWith("upload-1", "file-1", 2, 5, "00".repeat(32));
+      expect(api.putPartToStorage.mock.calls[0][0]).toMatchObject({ upload_url: "https://r2.test/0" });
+      await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu phân giải" })).toBeEnabled());
+    });
+
+    it("asks for a fresh URL and retries when R2 reports the presigned URL expired", async () => {
+      api.createUploadSession.mockResolvedValue(uploadSession(3, "UPLOADING", 0, "direct"));
+      api.getUploadSession.mockResolvedValue(uploadSession(3, "UPLOADING", 3, "direct"));
+      presignEcho();
+      api.putPartToStorage.mockRejectedValueOnce(new ApiError("expired", 403)).mockResolvedValue(undefined);
+      api.commitUploadPart.mockResolvedValue({ part_number: 0, byte_size: 3, sha256: "", received_size: 3 });
+      const { container } = render(<ResolutionIntake onRunCreated={vi.fn()} />);
+      fireEvent.change(container.querySelector('input[type="file"][multiple]')!, {
+        target: { files: [new File(["csv"], "large.csv")] },
+      });
+
+      await waitFor(() => expect(api.commitUploadPart).toHaveBeenCalledTimes(1));
+      expect(api.presignUploadParts).toHaveBeenCalledTimes(2);
+      expect(api.putPartToStorage).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not retry a checksum rejection, because the same bytes would fail again", async () => {
+      api.createUploadSession.mockResolvedValue(uploadSession(3, "UPLOADING", 0, "direct"));
+      presignEcho();
+      api.putPartToStorage.mockRejectedValue(new ApiError("Kho lưu trữ từ chối khối (400)", 400));
+      const { container } = render(<ResolutionIntake onRunCreated={vi.fn()} />);
+      fireEvent.change(container.querySelector('input[type="file"][multiple]')!, {
+        target: { files: [new File(["csv"], "large.csv")] },
+      });
+
+      await screen.findByText(/Kho lưu trữ từ chối khối \(400\)/);
+      expect(api.presignUploadParts).toHaveBeenCalledTimes(1);
+      expect(api.commitUploadPart).not.toHaveBeenCalled();
+    });
   });
 });

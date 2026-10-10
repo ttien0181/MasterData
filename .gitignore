@@ -194,3 +194,5 @@ sandbox/
 *.bak
 *.tmp
 *.temp
+
+backend/data/export-artifacts/

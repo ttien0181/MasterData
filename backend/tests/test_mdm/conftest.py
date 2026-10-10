@@ -17,6 +17,8 @@ def client(monkeypatch):
     for field in ("r2_endpoint_url", "r2_access_key_id", "r2_secret_access_key", "r2_bucket", "gemini_api_key"):
         monkeypatch.setattr(get_settings(), field, "")
     monkeypatch.setattr(get_settings(), "semantic_address_enabled", False)
+    # Validate and commit run inline here; process-based jobs are covered by test_import_jobs.py.
+    monkeypatch.setattr(get_settings(), "import_jobs_inline", True)
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)

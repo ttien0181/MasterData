@@ -2,7 +2,7 @@ import { exportChoices } from "./resolutionChoices";
 import type { ResolutionOverview, ResolutionRunHistory, ResolutionRun, ReviewCategory, SeparateRecord,
   ResolutionItem, ResolutionItemDetail, ResolutionExportReadiness, ResolutionExportSummary,
   ResolutionPreview, ResolutionMergeHistory, ResolutionSplitPreview, AuthUser, ResolutionTask,
-  UploadSession, ResolutionAuditPage, ResolutionAnalytics } from "./contracts";
+  UploadSession, ResolutionAuditPage, ResolutionAnalytics, RunCommitProfile } from "./contracts";
 
 export const getResolutionAnalytics = (runId: string) => request<ResolutionAnalytics>(`/runs/${runId}/analytics`);
 
@@ -101,9 +101,9 @@ export const replaceUploadSessionFile = (sessionId: string, fileId: string, file
   });
 export const validateUploadSession = (sessionId: string) =>
   request<UploadSession>(`/upload-sessions/${sessionId}/validate`, { method: "POST" });
+// 201 with the run when created inline; 202 with run_id and profile null while the import job runs.
 export const commitUploadSession = (sessionId: string) =>
-  request<{ run_id: string; status: string; profile: { row_count: number; file_count: number;
-    source_counts: Record<string, number>; files: { filename: string; row_count: number; sha256: string }[] } }>(
+  request<{ run_id: string | null; status: string; profile: RunCommitProfile | null }>(
     `/upload-sessions/${sessionId}/commit`, { method: "POST" });
 export const deleteUploadSession = (sessionId: string) =>
   request<void>(`/upload-sessions/${sessionId}`, { method: "DELETE" });
@@ -133,6 +133,35 @@ export function uploadResolutionUploadPart(sessionId: string, fileId: string, pa
     xhr.send(blob);
   });
 }
+export type PresignedPart = {
+  part_number: number; upload_url: string; headers: Record<string, string>; expires_in: number;
+};
+export const presignUploadParts = (sessionId: string, fileId: string,
+                                   parts: { part_number: number; byte_size: number; sha256: string }[]) =>
+  request<{ parts: PresignedPart[] }>(`/upload-sessions/${sessionId}/files/${fileId}/presign`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parts }) });
+export const commitUploadPart = (sessionId: string, fileId: string, partNumber: number, byteSize: number, sha256: string) =>
+  request<{ part_number: number; byte_size: number; sha256: string; received_size: number }>(
+    `/upload-sessions/${sessionId}/files/${fileId}/parts/${partNumber}/commit`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ byte_size: byteSize, sha256 }) });
+
+// Sends bytes straight to R2. Deliberately without our cookies and CSRF token: they belong to our API, not the bucket.
+export function putPartToStorage(target: PresignedPart, blob: Blob, onProgress: (loaded: number) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", target.upload_url);
+    for (const [name, value] of Object.entries(target.headers)) xhr.setRequestHeader(name, value);
+    xhr.upload.onprogress = (event) => onProgress(event.loaded);
+    xhr.onerror = () => reject(new Error("Kết nối bị gián đoạn khi tải file."));
+    xhr.onabort = () => reject(new Error("Đã hủy khối upload."));
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) { resolve(); return; }
+      reject(new ApiError(`Kho lưu trữ từ chối khối (${xhr.status})`, xhr.status));
+    };
+    xhr.send(blob);
+  });
+}
+
 export const startResolutionRun = (id: string) => request<{ task_id: string; run_id: string; status: string }>(`/runs/${id}/start`, { method: "POST" });
 export const getResolutionTask = (id: string) => request<ResolutionTask>(`/runs/tasks/${id}`);
 export const getResolutionOverview = (id: string) => request<ResolutionOverview>(`/runs/${id}/overview`);

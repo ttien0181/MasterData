@@ -202,12 +202,27 @@ def _top_k_pairs(ids: list[str], matrix, top_k: int, sim_threshold: float) -> di
                     candidates[(left, right)].add("tfidf_name")
     return dict(candidates)
 
+MAX_MATCH_PARTITION = 5000  # exact top-k is O(n^2) per partition; larger ones are matched in windows
+MATCH_WINDOW_OVERLAP = 500  # neighbours near a window edge are still compared with each other
+
+
+def _match_windows(part_records: list[dict]) -> list[list[dict]]:
+    """Partitions up to MAX_MATCH_PARTITION are matched whole. Larger ones are cut into
+    overlapping windows over their name-sorted order, so similar names share a window."""
+    if len(part_records) <= MAX_MATCH_PARTITION:
+        return [part_records]
+    ordered = sorted(part_records, key=lambda r: ((r.get("normalized_fields", {}).get("name") or ""), r["id"]))
+    step = MAX_MATCH_PARTITION - MATCH_WINDOW_OVERLAP
+    return [ordered[start:start + MAX_MATCH_PARTITION] for start in range(0, len(ordered) - MATCH_WINDOW_OVERLAP, step)]
+
+
 def tfidf_candidates(records: list[dict], top_k: int = TOP_K, sim_threshold: float = SIM_THRESHOLD) -> dict[tuple[str, str], set[str]]:
     partitions = defaultdict(list)
     for record in records:
         partitions[_partition_key(record)].append(record)
     all_candidates = defaultdict(set)
-    for part_records in partitions.values():
+    for window in (w for part in partitions.values() for w in _match_windows(part)):
+        part_records = window
         if len(part_records) < 2:
             continue
         ids = [r["id"] for r in part_records]

@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from masterone.api.auth import router as auth_router
 from masterone.api.mdm_resolution import router as mdm_resolution_router
+from masterone.api.mdm_resolution import ws_router as mdm_resolution_ws_router
 from masterone.api.mdm_runs import router as mdm_runs_router
 from masterone.api.mdm_uploads import router as mdm_uploads_router
 from masterone.api.routes import router
@@ -75,6 +76,7 @@ app.include_router(router, prefix="/api/v1")
 app.include_router(mdm_runs_router, prefix="/api/v1")
 app.include_router(mdm_uploads_router, prefix="/api/v1")
 app.include_router(mdm_resolution_router, prefix="/api/v1")
+app.include_router(mdm_resolution_ws_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 
 

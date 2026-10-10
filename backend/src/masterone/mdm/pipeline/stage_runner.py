@@ -1,8 +1,10 @@
 """7-stage pipeline with batched SCORE artifacts; CLUSTER still uses memory."""
 
 import json
+import os
 import time
 from dataclasses import dataclass, field
+from itertools import islice
 from hashlib import sha256
 from pathlib import Path
 from tempfile import mkdtemp
@@ -15,7 +17,14 @@ import pyarrow.parquet as pq
 from masterone.mdm.pipeline.candidate_engine import CandidateConfig, CandidateEngine, CandidateResult
 from masterone.mdm.pipeline.clustering import build_proposals
 from masterone.mdm.pipeline.review_grouping import classify_pair
-from masterone.mdm.pipeline.scoring_engine import ParquetSnapshot, ScoringConfig, ScoringEngine, iter_score_batches
+from masterone.mdm.pipeline.scoring_engine import (
+    CLUSTER_CACHE_RECORDS,
+    ParquetSnapshot,
+    RecordView,
+    ScoringConfig,
+    ScoringEngine,
+    iter_score_batches,
+)
 from masterone.mdm.pipeline.semantic_address import enrich_pairs_with_semantic
 from masterone.mdm.pipeline.standardization import standardize
 
@@ -55,6 +64,35 @@ class StageRunner:
     def _ctx(self, stage_name: str) -> StageContext:
         return StageContext(self.run_id, self.attempt_id, stage_name, "", self.output_dir)
 
+    def _copy_snapshot_from_postgres(self, prep_path: str) -> None:
+        import psycopg
+        from sqlalchemy.engine import make_url
+
+        url = make_url(self.db_url)
+        conninfo = {"host": url.host, "port": url.port, "dbname": url.database,
+                    "user": url.username, "password": url.password, **url.query}
+        conninfo = {key: value for key, value in conninfo.items() if value is not None}
+        columns = ("id", "external_id", "source_system", "entity_type", "raw_fields",
+                   "normalized_fields", "quality_flags", "source_updated_at")
+        schema = pa.schema([(name, pa.string()) for name in columns])
+        sql = """
+            SELECT id, external_id, source_system, entity_type,
+                   raw_fields::text AS raw_fields,
+                   normalized_fields::text AS normalized_fields,
+                   quality_flags::text AS quality_flags,
+                   COALESCE(normalized_fields->>'_source_updated_at', original_fields->>'source_updated_at',
+                            extra_fields->>'source_updated_at') AS source_updated_at
+            FROM mdm_resolution_records
+            WHERE run_id = %s
+        """
+        with psycopg.connect(**conninfo) as conn, conn.cursor(name="prepare_snapshot") as cursor, \
+                pq.ParquetWriter(prep_path, schema) as writer:
+            cursor.itersize = 2048
+            cursor.execute(sql, (self.run_id,))
+            while rows := cursor.fetchmany(2048):
+                arrays = [pa.array(values, type=pa.string()) for values in zip(*rows)]
+                writer.write_table(pa.Table.from_arrays(arrays, schema=schema))
+
     def build_candidates(self, snapshot_path: str, candidate_path: str,
                          config: CandidateConfig | None = None,
                          batch_size: int = 50000) -> CandidateResult:
@@ -67,20 +105,25 @@ class StageRunner:
                     record["normalized_fields"] = json.loads(record["normalized_fields"] or "{}")
             engine.add_records(records)
         result = engine.finalize()
-        self.con.execute("DROP TABLE IF EXISTS cand_blocks")
-        self.con.execute("CREATE TEMP TABLE cand_blocks (left_id VARCHAR, right_id VARCHAR, reason VARCHAR)")
         schema = pa.schema([("left_id", pa.string()), ("right_id", pa.string()),
                             ("reasons", pa.list_(pa.string()))])
-        # One canonical row per pair; every source survives into SCORE.
-        rows = [{"left_id": left, "right_id": right, "reasons": sorted(sources)}
-                for (left, right), sources in result.pairs.items()]
-        candidate_table = pa.Table.from_pylist(rows, schema=schema)
-        pq.write_table(candidate_table, candidate_path)
-        self.con.execute("INSERT INTO cand_blocks SELECT left_id, right_id, unnest(reasons) FROM candidate_table")
+        # One canonical row per pair; every source survives into SCORE. Written in chunks:
+        # converting every pair to a dict at once is the largest allocation of the stage.
+        with pq.ParquetWriter(candidate_path, schema) as writer:
+            pairs = iter(result.pairs.items())
+            while chunk := list(islice(pairs, 500_000)):
+                writer.write_table(pa.Table.from_pylist(
+                    [{"left_id": left, "right_id": right, "reasons": sorted(sources)}
+                     for (left, right), sources in chunk], schema=schema))
+        # DuckDB streams the Parquet file and spills to its own file, so this never holds every pair in memory.
+        self.con.execute("DROP TABLE IF EXISTS cand_blocks")
+        self.con.execute("CREATE TEMP TABLE cand_blocks (left_id VARCHAR, right_id VARCHAR, reason VARCHAR)")
+        self.con.execute(f"INSERT INTO cand_blocks SELECT left_id, right_id, unnest(reasons) "
+                         f"FROM read_parquet('{candidate_path}')")
         Path(candidate_path).with_suffix(".metrics.json").write_text(
             json.dumps(result.metrics, sort_keys=True), encoding="utf-8")
-        Path(candidate_path).with_suffix(".blocks.json").write_text(
-            json.dumps(result.block_log, sort_keys=True), encoding="utf-8")
+        with Path(candidate_path).with_suffix(".blocks.json").open("w", encoding="utf-8") as handle:
+            json.dump(result.block_log, handle, sort_keys=True)
         return result
 
     def score_candidates(self, snapshot_path: str, candidate_path: str, score_path: str,
@@ -247,20 +290,9 @@ class StageRunner:
         else:
             if not self.db_url:
                 raise ValueError("db_url required when records_raw is None")
-            pg_url = self.db_url.replace("+psycopg", "").replace("+psycopg2", "")
-            self.con.execute("INSTALL postgres; LOAD postgres;")
-            self.con.execute(f"ATTACH '{pg_url}' AS pg (TYPE postgres);")
-            self.con.execute(f"""
-                COPY (
-                    SELECT id, external_id, source_system, entity_type, 
-                           CAST(raw_fields AS VARCHAR) as raw_fields, 
-                           CAST(normalized_fields AS VARCHAR) as normalized_fields, 
-                           CAST(quality_flags AS VARCHAR) as quality_flags,
-                           COALESCE(normalized_fields->>'_source_updated_at', original_fields->>'source_updated_at', extra_fields->>'source_updated_at') as source_updated_at
-                    FROM pg.mdm_resolution_records 
-                    WHERE run_id = '{self.run_id}'
-                ) TO '{prep_path}' (FORMAT PARQUET)
-            """)
+            # psycopg streams the indexed run_id lookup straight into parquet. DuckDB's postgres
+            # scanner took ~5-8 min to move the JSON columns of one 10k-record run.
+            self._copy_snapshot_from_postgres(prep_path)
         
         count = self.con.execute(f"SELECT COUNT(*) FROM read_parquet('{prep_path}')").fetchone()[0]
         self.stage_results.append(StageResult("PREPARE", self.run_id, self.attempt_id, True, int((time.monotonic() - t0)*1000), {"record_count": count}))
@@ -346,10 +378,13 @@ class StageRunner:
         self.decision_store = DecisionStore(self.output_dir) if disk_decisions else None
         decision_pairs = []
         by_id = {}
+        # Only semantic enrichment reads records here; clustering looks them up on demand.
+        keep_hydrated = get_settings().semantic_address_enabled
         insufficient_count = 0
         score_rows = pq.ParquetFile(score_path).metadata.num_rows
         for batch, hydrated, decisions in self.scoring_engine.decided_batches(
-                iter_score_batches(score_path, self.scoring_engine.config.batch_size), score_rows):
+                iter_score_batches(score_path, self.scoring_engine.config.batch_size), score_rows,
+                need_hydrated=keep_hydrated):
             for scored, result_pair in zip(batch, decisions):
                 if result_pair["decision"] == "INSUFFICIENT_EVIDENCE":
                     insufficient_count += 1
@@ -360,8 +395,9 @@ class StageRunner:
                     self.decision_store.add(payload)
                 else:
                     decision_pairs.append(payload)
-                    for rid in (scored.left_id, scored.right_id):
-                        by_id[rid] = hydrated[rid]
+                    if keep_hydrated:
+                        for rid in (scored.left_id, scored.right_id):
+                            by_id[rid] = hydrated[rid]
         if disk_decisions:
             self.decision_store.seal()
             self.decision_store.write_parquet(decide_path, self.scoring_engine.config.batch_size)
@@ -392,26 +428,11 @@ class StageRunner:
         # ---------------------------------------------------------
         ctx_cluster = self._ctx("CLUSTER")
         t0 = time.monotonic()
-        columns = {row[0] for row in self.con.execute("DESCRIBE norm1").fetchall()}
-        projection = "id, external_id, source_system, entity_type, raw_fields, normalized_fields, quality_flags"
-        if "source_updated_at" in columns:
-            projection += ", source_updated_at"
-        record_cursor = self.con.execute("SELECT " + projection + " FROM norm1")
-        names = [column[0] for column in record_cursor.description]
-        def record_rows():
-            while rows := record_cursor.fetchmany(2048):
-                for row in rows:
-                    yield dict(zip(names, row))
-        all_recs_raw = record_rows()
-        by_id_full = {}
-        for r in all_recs_raw:
-            r["raw_fields"] = json.loads(r["raw_fields"]) if r["raw_fields"] else {}
-            r["normalized_fields"] = json.loads(r["normalized_fields"]) if r["normalized_fields"] else {}
-            if "quality_flags" in r and isinstance(r["quality_flags"], str):
-                r["quality_flags"] = json.loads(r["quality_flags"]) if r["quality_flags"] else {}
-            by_id_full[r["id"]] = r
-
-        clusters = build_proposals(list(by_id_full.values()), decisions_sorted, self.run_id, policy_version, negative_pairs=negative_pairs,
+        # Records are looked up by id from the snapshot index instead of loading every record here.
+        snapshot = self.scoring_engine.snapshot
+        snapshot.widen_cache(int(os.environ.get("MDM_CLUSTER_CACHE_RECORDS", CLUSTER_CACHE_RECORDS)))
+        by_id_full = RecordView(snapshot)
+        clusters = build_proposals(by_id_full, decisions_sorted, self.run_id, policy_version, negative_pairs=negative_pairs,
                                    execution_blocked_pairs=execution_blocked_pairs)
         
         review_cases = []
@@ -462,6 +483,12 @@ class StageRunner:
 
     def total_duration_ms(self) -> int:
         return sum(s.duration_ms for s in self.stage_results)
+
+    def close_snapshot(self):
+        engine = getattr(self, "scoring_engine", None)
+        snapshot = getattr(engine, "snapshot", None)
+        if snapshot is not None:
+            snapshot.close()
 
     def close_decisions(self):
         store = getattr(self, "decision_store", None)

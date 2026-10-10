@@ -3,6 +3,7 @@
 import csv
 import hashlib
 import io
+import json
 import logging
 import sys
 from collections.abc import Iterator, Sequence
@@ -11,6 +12,7 @@ from dataclasses import dataclass
 from typing import BinaryIO
 from uuid import uuid4
 
+import psycopg
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import func, insert
 from sqlalchemy.exc import DBAPIError, IntegrityError
@@ -19,13 +21,24 @@ from sqlalchemy.orm import Session
 from masterone.config import get_settings
 from masterone.mdm.ids import new_ordered_uuid
 from masterone.mdm.input_schema import InputMappingError, input_error, resolve_source_schema
-from masterone.mdm.models import ResolutionAuditEvent, ResolutionFile, ResolutionRecord, ResolutionRun
+from masterone.mdm.models import (
+    ResolutionAuditEvent,
+    ResolutionFile,
+    ResolutionRecord,
+    ResolutionRun,
+    ResolutionRunSummary,
+)
 from masterone.mdm.pipeline.matching import POLICY_VERSION
 from masterone.mdm.pipeline.standardization import standardize
 from masterone.storage.r2 import get_store, source_file_key
 
 MAX_FILES_PER_RUN = 10
 INSERT_BATCH_SIZE = 1000
+RECORD_COLUMNS = ("id", "run_id", "file_id", "external_id", "source_system", "entity_type",
+                  "benchmark_entity_id", "original_fields", "mapping_provenance", "lineage",
+                  "raw_fields", "normalized_fields", "quality_flags", "extra_fields")
+RECORD_JSON_COLUMNS = frozenset({"original_fields", "mapping_provenance", "lineage", "raw_fields",
+                                 "normalized_fields", "quality_flags", "extra_fields"})
 # Python's csv default field limit is 128 KiB. File and row counts are not capped;
 # rows are streamed into bounded insert batches below.
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
@@ -140,9 +153,50 @@ async def create_resolution_run(db: Session, uploads: list[UploadFile], owner_us
     return create_resolution_run_from_streams(db, sources, owner_user_id, name, upload_session_id)
 
 
+def _sha256_stream(stream: BinaryIO) -> str:
+    file_hash = hashlib.sha256()
+    stream.seek(0)
+    while block := stream.read(1024 * 1024):
+        file_hash.update(block)
+    return file_hash.hexdigest()
+
+
+def _iter_standardized(rows: Iterator[dict]) -> Iterator[tuple[dict, dict, list[str]]]:
+    """Yield (row, normalized, quality_flags). Sequential on purpose: measured at 100k rows,
+    shipping rows to worker processes and back cost more than standardize() itself."""
+    for row in rows:
+        normalized, quality_flags = standardize({field: value.strip() for field, value in row["raw_fields"].items()},
+                                                entity_type=row["entity_type"])
+        yield row, normalized, quality_flags
+
+
+def _copy_value(column: str, value):
+    if value is None or column not in RECORD_JSON_COLUMNS:
+        return value
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _insert_records(db: Session, batch: list[dict]) -> None:
+    """Write one batch of records. PostgreSQL uses COPY: one stream, no per-row SQL parsing."""
+    if db.get_bind().dialect.name != "postgresql":
+        db.execute(insert(ResolutionRecord), batch)
+        return
+    raw = db.connection().connection.driver_connection
+    columns = ", ".join(RECORD_COLUMNS)
+    try:
+        with raw.cursor() as cursor, cursor.copy(f"COPY mdm_resolution_records ({columns}) FROM STDIN") as copy:
+            for row in batch:
+                copy.write_row([_copy_value(column, row.get(column)) for column in RECORD_COLUMNS])
+    except psycopg.errors.UniqueViolation as exc:
+        raise IntegrityError("COPY mdm_resolution_records", None, exc) from exc
+    except psycopg.Error as exc:
+        raise DBAPIError("COPY mdm_resolution_records", None, exc) from exc
+
+
 def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, BinaryIO]],
                                        owner_user_id: str, name: str | None = None,
-                                       upload_session_id: str | None = None) -> tuple[ResolutionRun, dict]:
+                                       upload_session_id: str | None = None,
+                                       known_hashes: Sequence[str | None] | None = None) -> tuple[ResolutionRun, dict]:
     if not files:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Chọn ít nhất một file records.csv")
     if len(files) > MAX_FILES_PER_RUN:
@@ -163,14 +217,10 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
                               "files": [{"filename": row.filename, "row_count": row.row_count,
                                          "sha256": row.sha256} for row in stored_files]}
 
-    run = ResolutionRun(owner_user_id=owner_user_id, upload_session_id=upload_session_id,
-                        name=normalized_name, record_count=0,
-                        file_count=len(files), policy_version=POLICY_VERSION)
-    db.add(run)
-    total_rows = 0
-    source_counts: dict[str, int] = {}
-    file_profiles = []
-    r2 = None
+    # Nothing is written yet. End the read transaction so no transaction stays open during uploads.
+    db.commit()
+    run_id = str(uuid4())
+    r2 = get_store(get_settings())
     uploaded_keys: list[str] = []
 
     def compensate_uploads():
@@ -181,26 +231,51 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
                 r2.delete(key)
             except Exception as error:
                 logging.error("SOURCE_COMPENSATION_FAILED run_id=%s error_type=%s",
-                              run.id, type(error).__name__)
+                              run_id, type(error).__name__)
+
+    # Hash and upload every source before writing rows, so object-storage I/O never runs inside the insert transaction.
+    sources = []
+    try:
+        for index, (original_name, stream) in enumerate(files):
+            filename = original_name.replace("\\", "/").rsplit("/", 1)[-1] or "records.csv"
+            known = known_hashes[index] if known_hashes and index < len(known_hashes) else None
+            digest = known or _sha256_stream(stream)
+            file_id = str(uuid4())
+            key = None
+            if r2 is not None:
+                key = source_file_key(run_id, file_id, filename)
+                uploaded_keys.append(key)
+                try:
+                    stream.seek(0)
+                    r2.upload_stream(stream, key, "text/csv; charset=utf-8")
+                except Exception as error:
+                    logging.error("SOURCE_UPLOAD_FAILED run_id=%s error_type=%s",
+                                  run_id, type(error).__name__)
+                    raise HTTPException(502, "Source object storage unavailable; import was not committed") from None
+            sources.append((filename, stream, digest, file_id, key))
+    except BaseException:
+        compensate_uploads()
+        raise
+
+    run = ResolutionRun(id=run_id, owner_user_id=owner_user_id, upload_session_id=upload_session_id,
+                        name=normalized_name, record_count=0,
+                        file_count=len(files), policy_version=POLICY_VERSION)
+    db.add(run)
+    total_rows = 0
+    source_counts: dict[str, int] = {}
+    file_profiles = []
     try:
         db.flush()
-        r2 = get_store(get_settings())
-        for original_name, stream in files:
-            filename = original_name.replace("\\", "/").rsplit("/", 1)[-1] or "records.csv"
-            file_hash = hashlib.sha256()
-            stream.seek(0)
-            while block := stream.read(1024 * 1024):
-                file_hash.update(block)
-            digest = file_hash.hexdigest()
-            file_row = ResolutionFile(run_id=run.id, filename=filename[:255], sha256=digest, row_count=0)
+        for filename, stream, digest, file_id, key in sources:
+            file_row = ResolutionFile(id=file_id, run_id=run.id, filename=filename[:255], sha256=digest,
+                                      row_count=0, r2_key=key)
             db.add(file_row)
             db.flush()
             file_rows = 0
             batch = []
-            for row in _iter_normalized(stream, filename):
+            mapping_report = None
+            for row, normalized, quality_flags in _iter_standardized(_iter_normalized(stream, filename)):
                 raw = row["raw_fields"]
-                normalized, quality_flags = standardize(
-                    {field: value.strip() for field, value in raw.items()}, entity_type=row["entity_type"])
                 record_id = row["lineage"]["record_id"]
                 lineage = {**row["lineage"], "record_id": record_id, "source_file_id": file_row.id,
                            "source_file_sha256": digest}
@@ -214,33 +289,24 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
                     "raw_fields": raw, "normalized_fields": normalized, "quality_flags": quality_flags,
                     "extra_fields": row["extra_fields"],
                 })
+                mapping_report = row["mapping_provenance"]
                 file_rows += 1
                 total_rows += 1
                 source = row["source_system"]
                 source_counts[source] = source_counts.get(source, 0) + 1
                 if len(batch) >= INSERT_BATCH_SIZE:
-                    db.execute(insert(ResolutionRecord), batch)
+                    _insert_records(db, batch)
                     batch.clear()
             if batch:
-                db.execute(insert(ResolutionRecord), batch)
+                _insert_records(db, batch)
             if file_rows == 0:
                 raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"{filename} không có bản ghi")
             file_row.row_count = file_rows
-            if r2 is not None:
-                key = source_file_key(run.id, file_row.id, filename)
-                uploaded_keys.append(key)
-                try:
-                    stream.seek(0)
-                    r2.upload_stream(stream, key, "text/csv; charset=utf-8")
-                    file_row.r2_key = key
-                except Exception as error:
-                    logging.error("SOURCE_UPLOAD_FAILED run_id=%s error_type=%s",
-                                  run.id, type(error).__name__)
-                    raise HTTPException(502, "Source object storage unavailable; import was not committed") from None
             file_profiles.append({"filename": filename, "row_count": file_rows, "sha256": digest,
-                                  "mapping_report": row["mapping_provenance"]})
-            stream.seek(0)
+                                  "mapping_report": mapping_report})
         run.record_count = total_rows
+        # Source counts are final once the records are written; overview reads them from here.
+        db.add(ResolutionRunSummary(run_id=run.id, source_counts=source_counts, version=0))
         db.add(ResolutionAuditEvent(
             run_id=run.id, actor_user_id=owner_user_id, action="SESSION_CREATED",
             details={"file_count": len(file_profiles), "record_count": total_rows,
