@@ -1,4 +1,5 @@
 import { exportChoices } from "./resolutionChoices";
+import { apiBase } from "./apiBase";
 import type { ResolutionOverview, ResolutionRunHistory, ResolutionRun, ReviewCategory, SeparateRecord,
   ResolutionItem, ResolutionItemDetail, ResolutionExportReadiness, ResolutionExportSummary,
   ResolutionPreview, ResolutionMergeHistory, ResolutionSplitPreview, AuthUser, ResolutionTask,
@@ -6,13 +7,6 @@ import type { ResolutionOverview, ResolutionRunHistory, ResolutionRun, ReviewCat
 
 export const getResolutionAnalytics = (runId: string) => request<ResolutionAnalytics>(`/runs/${runId}/analytics`);
 
-function apiBase() {
-  const configured = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
-  if (configured) return configured === "/" ? "" : configured.replace(/\/+$/, "");
-  if (process.env.NODE_ENV === "production") return "";
-  const host = typeof window !== "undefined" ? window.location.hostname : "localhost";
-  return `http://${host === "127.0.0.1" ? host : "localhost"}:8001`;
-}
 let csrfToken = "";
 export function setCsrfToken(token: string) { csrfToken = token; }
 

@@ -194,6 +194,4 @@ sandbox/
 *.bak
 *.tmp
 *.temp
-
-
-.agents/skills
+.agents/skills/
