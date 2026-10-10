@@ -28,6 +28,8 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     if settings.app_env == "production" and len(settings.auth_csrf_secret) < 32:
         raise RuntimeError("AUTH_CSRF_SECRET must be at least 32 characters in production")
+    from masterone.llm.policy import validate_startup
+    validate_startup(settings)
     engine, factory = create_database(settings.active_mdm_database_url)
     try:
         if settings.app_env == "production":

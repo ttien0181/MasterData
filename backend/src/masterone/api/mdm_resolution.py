@@ -2,6 +2,7 @@ import asyncio
 import csv
 import json
 import time
+from datetime import timedelta
 from hashlib import sha256
 from io import StringIO
 from itertools import islice
@@ -25,9 +26,10 @@ from masterone.auth.security import (
 )
 from masterone.config import get_settings
 from masterone.db.session import get_session
+from masterone.llm.explanation import explain_cohort
 from masterone.mdm.benchmark import run_benchmark
+from masterone.llm.policy import digest
 from masterone.mdm.engine_adapter import EngineResultAdapter, FrontendJSONRoute, api_engine_context
-from masterone.mdm.gemini_explanation import explain_cohort
 from masterone.mdm.models import (
     ResolutionAuditEvent,
     ResolutionEntity,
@@ -419,19 +421,68 @@ def get_categories(run_id: str, db: Session = Depends(get_session),
             for key, value in sorted(grouped.items())]
 
 
+def _explanation_context(db, run_id, owner_user_id):
+    """The aggregate is the whole explanation input, so freshness needs the cheap fence, never a run scan."""
+    from masterone.llm.policy import fence
+    return {"run_id": run_id, "user_id": owner_user_id, "fence": fence(db, run_id),
+            "input_hash": "", "review_hash": "", "reference_version": "", "reference_hash": ""}
+
+
+def _explanation_model_identity(settings):
+    from masterone.llm.gateway import PROMPT_VERSION, SCHEMA_VERSION
+    from masterone.llm.policy import digest
+    return digest([settings.gemini_model, settings.openrouter_model, settings.llm_policy_revision,
+                   PROMPT_VERSION["EXPLANATION"], SCHEMA_VERSION["EXPLANATION"]])
+
+
+def _explanation_payload(row):
+    return {"status": row.status, "explanation": row.explanation,
+            "model_version": row.model_version, "usage": row.usage}
+
+
+def _guarded_explanation(db, run_id, signature, primary_group, subgroup, aggregate):
+    """READY results are cached by aggregate identity. TEMPLATE and STALE are never served as READY."""
+    from masterone.db.base import now_utc
+    from masterone.llm.explanation import template_explanation
+    from masterone.llm.policy import factory_for
+    settings = get_settings()
+    row = db.query(ResolutionExplanation).filter_by(run_id=run_id, signature_hash=signature).one_or_none()
+    if row is None:
+        row = ResolutionExplanation(run_id=run_id, signature_hash=signature, primary_group=primary_group,
+                                    subgroup=subgroup, status="PENDING")
+        db.add(row)
+    if row.status == "READY" and row.updated_at is not None:
+        updated = row.updated_at if row.updated_at.tzinfo else row.updated_at.replace(tzinfo=now_utc().tzinfo)
+        if updated + timedelta(seconds=settings.llm_cache_ttl_seconds) >= now_utc():
+            return _explanation_payload(row)
+    if not settings.llm_enabled or not settings.llm_explanation_enabled:
+        result = template_explanation("LLM_DISABLED")
+    else:
+        run = db.get(ResolutionRun, run_id)
+        context = _explanation_context(db, run_id, run.owner_user_id)
+        factory = factory_for(db.get_bind().url.render_as_string(hide_password=False))
+        db.commit()  # the provider call must not hold this request's transaction open
+        result = explain_cohort(aggregate, settings, context=context, factory=factory)
+    if result["status"] == "STALE":
+        return {"status": "STALE", "explanation": None, "model_version": None, "usage": {}}
+    row = db.query(ResolutionExplanation).filter_by(run_id=run_id, signature_hash=signature).one()
+    row.status = result["status"]
+    row.explanation = result["explanation"]
+    row.model_version = result["model_version"]
+    row.usage = result.get("usage", {})
+    row.error_code = result.get("error_code")
+    db.commit()
+    return _explanation_payload(row)
+
+
 @router.post("/{run_id}/categories/{signature_hash}/explanation")
-async def explain_category(run_id: str, signature_hash: str, db: Session = Depends(get_session),
-                          auth: CurrentSession = Depends(require_mutation_capability("explain"))):
+def explain_category(run_id: str, signature_hash: str, db: Session = Depends(get_session),
+                     auth: CurrentSession = Depends(require_mutation_capability("explain"))):
     owned_run(db, run_id, auth.user.id)
     cases = [case for case in db.query(ResolutionReviewCase).filter_by(run_id=run_id, status="OPEN").all()
              if _category_key(case.primary_group, case.subgroup) == signature_hash]
     if not cases:
         raise HTTPException(404, "Review cohort not found")
-    existing = db.query(ResolutionExplanation).filter_by(run_id=run_id,
-                                                          signature_hash=signature_hash).one_or_none()
-    if existing and existing.status == "READY":
-        return {"status": existing.status, "explanation": existing.explanation,
-                "model_version": existing.model_version, "usage": existing.usage}
     pair_ids = {pair_id for case in cases for pair_id in case.pair_ids}
     pairs = db.query(ResolutionPair).filter(ResolutionPair.id.in_(pair_ids)).all()
     bands = {field: {"exact": 0, "similar": 0, "different": 0, "ambiguous": 0, "missing": 0}
@@ -450,41 +501,15 @@ async def explain_category(run_id: str, signature_hash: str, db: Session = Depen
                  "pair_count": len(pairs), "unique_record_count": len({record_id for case in cases
                     for record_id in case.member_record_ids}), "reason_counts": reason_counts,
                  "field_signal_counts": bands}
-    if existing is None:
-        existing = ResolutionExplanation(run_id=run_id, signature_hash=signature_hash,
-                                         primary_group=cases[0].primary_group,
-                                         subgroup=cases[0].subgroup, status="RUNNING")
-        db.add(existing)
-    else:
-        existing.status = "RUNNING"
-        existing.error_code = None
-    db.commit()
-    try:
-        result = await asyncio.to_thread(explain_cohort, aggregate, get_settings())
-        existing.status = "READY"
-        existing.explanation = result["explanation"]
-        existing.model_version = result["model_version"]
-        existing.usage = result["usage"]
-        existing.error_code = None
-        db.commit()
-        return {"status": existing.status, "explanation": existing.explanation,
-                "model_version": existing.model_version, "usage": existing.usage}
-    except HTTPException as exc:
-        existing.status = "ERROR"
-        existing.error_code = exc.detail if isinstance(exc.detail, str) else "GEMINI_ERROR"
-        db.commit()
-        raise
-    except Exception:
-        existing.status = "ERROR"
-        existing.error_code = "GEMINI_UNAVAILABLE"
-        db.commit()
-        raise HTTPException(502, "GEMINI_UNAVAILABLE") from None
+    signature = sha256(f"category:{signature_hash}:{digest(aggregate)}:{_explanation_model_identity(get_settings())}"
+                       .encode()).hexdigest()
+    return _guarded_explanation(db, run_id, signature, cases[0].primary_group, cases[0].subgroup, aggregate)
 
 
 @router.post("/{run_id}/items/{bucket}/{item_id}/explanation")
-async def explain_item(run_id: str, bucket: str, item_id: str,
-                       db: Session = Depends(get_session),
-                       auth: CurrentSession = Depends(require_mutation_capability("explain"))):
+def explain_item(run_id: str, bucket: str, item_id: str,
+                 db: Session = Depends(get_session),
+                 auth: CurrentSession = Depends(require_mutation_capability("explain"))):
     """Explain one item from comparison states; never send source values to AI."""
     owned_run(db, run_id, auth.user.id)
     detail = get_item(db, run_id, bucket, item_id)
@@ -492,13 +517,6 @@ async def explain_item(run_id: str, bucket: str, item_id: str,
     pairs = db.query(ResolutionPair).filter(
         ResolutionPair.run_id == run_id, ResolutionPair.id.in_(pair_ids)).all()
     version = "|".join(sorted(f"{pair.id}:{pair.revision}" for pair in pairs))
-    signature = sha256(f"item:{bucket}:{item_id}:{version}".encode()).hexdigest()
-    existing = db.query(ResolutionExplanation).filter_by(
-        run_id=run_id, signature_hash=signature).one_or_none()
-    if existing and existing.status == "READY":
-        return {"status": existing.status, "explanation": existing.explanation,
-                "model_version": existing.model_version, "usage": existing.usage}
-
     field_states: dict[str, dict[str, int]] = {}
     reasons: dict[str, int] = {}
     for pair in detail["pairs"]:
@@ -514,33 +532,10 @@ async def explain_item(run_id: str, bucket: str, item_id: str,
     aggregate = {"record_count": detail["member_count"], "pair_count": len(detail["pairs"]),
                  "field_state_counts": field_states, "reason_counts": reasons,
                  "score_is_probability": False}
-    if existing is None:
-        existing = ResolutionExplanation(run_id=run_id, signature_hash=signature,
-                                         primary_group="ITEM", subgroup="ITEM", status="RUNNING")
-        db.add(existing)
-    else:
-        existing.status = "RUNNING"
-        existing.error_code = None
-    db.commit()
-    try:
-        result = await asyncio.to_thread(explain_cohort, aggregate, get_settings())
-        existing.status = "READY"
-        existing.explanation = result["explanation"]
-        existing.model_version = result["model_version"]
-        existing.usage = result["usage"]
-        db.commit()
-        return {"status": existing.status, "explanation": existing.explanation,
-                "model_version": existing.model_version, "usage": existing.usage}
-    except HTTPException as exc:
-        existing.status = "ERROR"
-        existing.error_code = exc.detail if isinstance(exc.detail, str) else "GEMINI_ERROR"
-        db.commit()
-        raise
-    except Exception:
-        existing.status = "ERROR"
-        existing.error_code = "GEMINI_UNAVAILABLE"
-        db.commit()
-        raise HTTPException(502, "GEMINI_UNAVAILABLE") from None
+    signature = sha256(f"item:{bucket}:{item_id}:{version}:{_explanation_model_identity(get_settings())}"
+                       .encode()).hexdigest()
+    return _guarded_explanation(db, run_id, signature, "ITEM", "ITEM", aggregate)
+
 
 # ── Golden record endpoints for Steward ──────────────────────────────────────
 

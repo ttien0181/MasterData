@@ -295,6 +295,14 @@ def _address_state(left: dict, right: dict) -> tuple[str, float, list[str]]:
     if not a or not b:
         return "MI", 0.0, []
 
+    # Identical normalized addresses are never capped by the ward branch below
+    if a == b:
+        raw_a = (left.get("raw_fields", {}).get("address") or "").strip()
+        raw_b = (right.get("raw_fields", {}).get("address") or "").strip()
+        if normalize("NFC", raw_a) == normalize("NFC", raw_b):
+            return "EX", 1.0, []
+        return "NX", 1.0, ["ADDRESS_ABBREVIATION"]
+
     # Ward overlap check
     ap_l = left["normalized_fields"].get("address_parts", {})
     ap_r = right["normalized_fields"].get("address_parts", {})
@@ -316,13 +324,6 @@ def _address_state(left: dict, right: dict) -> tuple[str, float, list[str]]:
             if similarity >= 0.88:
                 return "HS", similarity, ["ADDRESS_ADMIN_MAPPING"]
             return "MS", max(similarity, 0.65), ["ADDRESS_ADMIN_MAPPING"]
-
-    if a == b:
-        raw_a = (left.get("raw_fields", {}).get("address") or "").strip()
-        raw_b = (right.get("raw_fields", {}).get("address") or "").strip()
-        if normalize("NFC", raw_a) == normalize("NFC", raw_b):
-            return "EX", 1.0, []
-        return "NX", 1.0, ["ADDRESS_ABBREVIATION"]
 
     similarity = _address_similarity(a, b)
     if similarity >= 0.88:

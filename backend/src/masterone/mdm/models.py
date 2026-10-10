@@ -574,6 +574,7 @@ class ResolutionCheckpointDependency(Base):
 
 class LLMRequest(Base):
     __tablename__ = "llm_requests"
+    __table_args__ = (Index("ix_llm_requests_created_status", "created_at", "status"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     request_type: Mapped[str] = mapped_column(String(50))
@@ -589,6 +590,35 @@ class LLMRequest(Base):
     input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class LLMPolicyControl(Base):
+    """Shared emergency switch and Gemini quota cooldown; every process reads these rows."""
+    __tablename__ = "llm_policy_control"
+
+    id: Mapped[str] = mapped_column(String(24), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(default=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    gemini_blocked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class LLMReservation(Base):
+    """Durable logical LLM request and conservative accounting. Never stores raw prompts."""
+    __tablename__ = "llm_reservations"
+    __table_args__ = (Index("ix_llm_reservations_state", "state"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(36), index=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    purpose: Mapped[str] = mapped_column(String(24))
+    context_hash: Mapped[str] = mapped_column(String(64))
+    context: Mapped[dict] = mapped_column(JSON)
+    state: Mapped[str] = mapped_column(String(24))
+    calls: Mapped[int] = mapped_column(Integer, default=0)
+    reserved_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    reserved_cost_microusd: Mapped[int] = mapped_column(BigInteger, default=0)
+    response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 

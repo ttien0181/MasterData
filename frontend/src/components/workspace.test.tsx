@@ -4,14 +4,14 @@ import ResolutionFlow from "./ResolutionFlow";
 import ResolutionWorkspace from "./ResolutionWorkspace";
 import { createResolutionPreview, executeResolutionPreview, getResolutionExportReadiness, getResolutionItem,
   getResolutionItems, getResolutionOverview, getResolutionRuns, getReviewCategories, resolveMergeConflict,
-  getSeparateRecords, transitionReviewItems } from "@/lib/api";
+  getSeparateRecords, explainResolutionItem, transitionReviewItems } from "@/lib/api";
 import type { AuthUser } from "@/lib/contracts";
 import { getSavedChoices } from "@/lib/resolutionChoices";
 
 vi.mock("@/lib/api", () => ({
   ApiError: class extends Error { status = 0; },
   compareResolutionExport: vi.fn(), createResolutionPreview: vi.fn(), executeResolutionPreview: vi.fn(), downloadResolutionExport: vi.fn(),
-  downloadResolutionSource: vi.fn(), explainReviewCategory: vi.fn(),
+  downloadResolutionSource: vi.fn(), explainReviewCategory: vi.fn(), explainResolutionItem: vi.fn(),
   getResolutionExportReadiness: vi.fn(), getResolutionExports: vi.fn(), getResolutionItem: vi.fn(),
   getResolutionItems: vi.fn(), getResolutionOverview: vi.fn(), getResolutionRuns: vi.fn(), getSeparateRecords: vi.fn(),
   getReviewCategories: vi.fn(), resolveMergeConflict: vi.fn(), setCsrfToken: vi.fn(),
@@ -70,6 +70,31 @@ describe("Resolution item flow", () => {
     within(dialog).getAllByRole("radio").forEach((radio) => expect(radio).toBeDisabled());
     fireEvent.click(within(dialog).getByRole("button", { name: /Đưa sang Chờ gộp/ }));
     expect(transitionReviewItems).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["READY", "Giải thích từ AI"],
+    ["TEMPLATE", "Giải thích theo quy tắc"],
+  ])("labels a %s explanation by where its text came from", async (status, label) => {
+    vi.mocked(explainResolutionItem).mockResolvedValue({ status, explanation: { summary_vi: "Cần xem tên.",
+      attention_fields: ["name"], limitations: [] } });
+    render(<ResolutionFlow user={steward} runId="run-1" stage="review" onChanged={vi.fn()} notify={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Xem so sánh/ }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /Giải thích bằng AI/ }));
+    expect(await within(dialog).findByText(label)).toBeInTheDocument();
+    expect(within(dialog).getByText("Cần xem tên.")).toBeInTheDocument();
+  });
+
+  it("tells the steward to reload instead of showing a stale explanation", async () => {
+    vi.mocked(explainResolutionItem).mockResolvedValue({ status: "STALE", explanation: null });
+    const notify = vi.fn();
+    render(<ResolutionFlow user={steward} runId="run-1" stage="review" onChanged={vi.fn()} notify={notify} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Xem so sánh/ }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /Giải thích bằng AI/ }));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith("Dữ liệu đã thay đổi; hãy tải lại giải thích."));
+    expect(within(dialog).queryByText("Giải thích từ AI")).not.toBeInTheDocument();
   });
 
   it("does not enable export for a viewer even when backend readiness has no blockers", async () => {

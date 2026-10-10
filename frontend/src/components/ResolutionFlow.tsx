@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Stage } from "./AppShell";
 import { ShellIcon } from "./ShellIcons";
-import { ApiError, compareResolutionExport, createResolutionPreview, executeResolutionPreview,
+import { type AiExplanation, ApiError, compareResolutionExport, createResolutionPreview, executeResolutionPreview,
   downloadResolutionExport, downloadResolutionSource,
   explainResolutionItem, explainReviewCategory, getResolutionExportReadiness,
   getResolutionExports, getResolutionItem, getResolutionItems, getReviewCategories, resolveMergeConflict,
@@ -120,8 +120,8 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
   const [preview, setPreview] = useState<ResolutionPreview | null>(null);
   const [previewStale, setPreviewStale] = useState(false);
   const executeRequestId = useRef("");
-  const [explanations, setExplanations] = useState<Record<string, { summary_vi: string; attention_fields: string[]; limitations: string[] }>>({});
-  const [itemExplanation, setItemExplanation] = useState<{ itemId: string; summary: string } | null>(null);
+  const [explanations, setExplanations] = useState<Record<string, AiExplanation & { status: string }>>({});
+  const [itemExplanation, setItemExplanation] = useState<{ itemId: string; summary: string; status: string } | null>(null);
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
 
@@ -333,8 +333,8 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
     setBusy(true);
     try {
       const result = await explainReviewCategory(runId, category.signature_hash);
-      if (result.explanation) setExplanations((current) => ({ ...current, [category.signature_hash]: result.explanation! }));
-      else notify(`Giải thích AI chưa sẵn sàng: ${result.status}`);
+      if (result.explanation && ["READY", "TEMPLATE"].includes(result.status)) setExplanations((current) => ({ ...current, [category.signature_hash]: { ...result.explanation!, status: result.status } }));
+      else notify(result.status === "STALE" ? "Dữ liệu đã thay đổi; hãy tải lại giải thích." : "Giải thích chưa sẵn sàng; hãy đối chiếu thông tin trong bản ghi.");
     } catch (error) { notify(error instanceof Error ? error.message : "Không lấy được giải thích AI"); }
     finally { setBusy(false); }
   }
@@ -344,8 +344,8 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
     setBusy(true);
     try {
       const result = await explainResolutionItem(runId, bucket, active.id);
-      if (result.explanation) setItemExplanation({ itemId: active.id, summary: result.explanation.summary_vi });
-      else notify(`Giải thích AI chưa sẵn sàng: ${result.status}`);
+      if (result.explanation && ["READY", "TEMPLATE"].includes(result.status)) setItemExplanation({ itemId: active.id, summary: result.explanation.summary_vi, status: result.status });
+      else notify(result.status === "STALE" ? "Dữ liệu đã thay đổi; hãy tải lại giải thích." : "Giải thích chưa sẵn sàng; hãy đối chiếu thông tin trong bản ghi.");
     } catch (error) { notify(error instanceof Error ? error.message : "Không lấy được giải thích AI"); }
     finally { setBusy(false); }
   }
@@ -488,8 +488,8 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
     </div>
     </div>
     {category && stage === "review" && <div className="card resolution-category-guide"><div><strong>{categoryGroupLabel(category.primary_group)} · {subgroupLabel(category.subgroup)}</strong><p>{category.rule_template_vi}</p>
-      {explanations[category.signature_hash] && <div className="resolution-ai-review"><strong>Giải thích từ Gemini</strong><p>{explanations[category.signature_hash].summary_vi}</p><small>AI giải thích tín hiệu tổng hợp, quyết định thuộc về bạn.</small></div>}</div>
-      <button type="button" className="button outline" disabled={busy || !canExplain} onClick={() => void explainCategory(category)}>Giải thích bằng Gemini</button></div>}
+      {explanations[category.signature_hash] && <div className="resolution-ai-review"><strong>{explanations[category.signature_hash].status === "TEMPLATE" ? "Giải thích theo quy tắc" : "Giải thích từ AI"}</strong><p>{explanations[category.signature_hash].summary_vi}</p><small>AI giải thích tín hiệu tổng hợp, quyết định thuộc về bạn.</small></div>}</div>
+      <button type="button" className="button outline" disabled={busy || !canExplain} onClick={() => void explainCategory(category)}>Giải thích bằng AI</button></div>}
     {stage === "auto" && !loading && !loadError && readiness && <div className={`resolution-readiness ${!readiness.can_export ? "needs-input" : ""}`}>
       <strong>{readiness.can_export ? "Sẵn sàng xem trước CSV" : `${(readiness.blockers ?? []).length} vấn đề cần xử lý trước khi xuất CSV`}</strong>
       {!readiness.can_export && <ul className="resolution-blockers">{(readiness.blockers ?? []).map((blocker) => <li key={`${blocker.item_id}-${blocker.kind}`}><button type="button" onClick={() => void openBlocker(blocker.item_id)}><b>{blocker.label || blocker.item_id}</b><span>{blocker.message}{blocker.fields?.length ? ` ${blocker.fields.map((field) => labels[field] ?? field).join(", ")}.` : ""}</span><em>Mở hồ sơ →</em></button></li>)}</ul>}
@@ -534,8 +534,8 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
                 {sources.length > 0 && <small>{sources.map((source) => `${source.source_system} · ${source.external_id}`).join(", ")}</small>}</dd></div>;
             })}</dl>
             <div className="review-assistant-card"><div><strong>Giải thích bằng chứng</strong><p>AI chỉ tóm tắt tín hiệu; quyết định cuối vẫn thuộc về bạn.</p></div>
-              <button type="button" className="button outline" disabled={busy || !canExplain} onClick={() => void explainActiveItem()}>Giải thích bằng Gemini</button>
-              {itemExplanation?.itemId === active.id && <p className="resolution-ai-review">{itemExplanation.summary}</p>}
+              <button type="button" className="button outline" disabled={busy || !canExplain} onClick={() => void explainActiveItem()}>Giải thích bằng AI</button>
+              {itemExplanation?.itemId === active.id && <div className="resolution-ai-review"><strong>{itemExplanation.status === "TEMPLATE" ? "Giải thích theo quy tắc" : "Giải thích từ AI"}</strong><p>{itemExplanation.summary}</p></div>}
             </div>
             <div className="resolution-footer-status"><strong>{active.status === "REVIEW_STAGED_CONFLICT" ? "Cụm đang chờ tách" : differentFields.length ? `${selectedCount}/${differentFields.length} trường khác nhau đã có lựa chọn` : "Không có trường khác nhau cần chọn"}</strong>
               <small>{choicesDirty ? "Có thay đổi chưa lưu." : "Chưa có thay đổi để lưu."} {selectedCount < differentFields.length && "Có thể lưu từng phần và hoàn tất sau."}</small></div>
@@ -554,8 +554,8 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
       <div className="card resolution-item-dialog"><div className="resolution-dialog-head"><div><p className="section-kicker">{stage === "auto" ? "CHỜ GỘP" : "CẦN REVIEW"} · {active.member_count} BẢN GHI</p><h2 id="resolution-item-heading">{active.label || active.records[0]?.raw_fields.name}</h2><p>So sánh các giá trị nguồn trước khi quyết định.</p></div><button type="button" className="dialog-close" aria-label="Đóng" onClick={closeItem}>×</button></div>
         <div className="resolution-record-strip">{active.records.map((record) => <span key={record.id} className={`resolution-source ${sourceColor(record.source_system)}`}><b>{record.source_system}</b> · {record.external_id}</span>)}</div>
         {hasSemanticAddress && <div className="resolution-review-reason"><b>Địa chỉ đã được Gemini đối chiếu.</b> Đây là tín hiệu hỗ trợ; hãy xem giá trị nguồn trước khi quyết định.</div>}
-        <div className="resolution-review-reason"><button type="button" className="button outline" disabled={busy || !canExplain} onClick={() => void explainActiveItem()}>Giải thích hồ sơ bằng Gemini</button>
-          {itemExplanation?.itemId === active.id && <div className="resolution-ai-review"><p>{itemExplanation.summary}</p><small>AI chỉ giải thích tín hiệu; quyết định thuộc về bạn.</small></div>}
+        <div className="resolution-review-reason"><button type="button" className="button outline" disabled={busy || !canExplain} onClick={() => void explainActiveItem()}>Giải thích hồ sơ bằng AI</button>
+          {itemExplanation?.itemId === active.id && <div className="resolution-ai-review"><strong>{itemExplanation.status === "TEMPLATE" ? "Giải thích theo quy tắc" : "Giải thích từ AI"}</strong><p>{itemExplanation.summary}</p><small>AI chỉ giải thích tín hiệu; quyết định thuộc về bạn.</small></div>}
         </div>
         {active.merge_blocked_reason && <div className="resolution-readiness needs-input" role="alert">{active.merge_blocked_reason} Tách cụm sẽ từ chối các liên kết chưa quyết định và giữ các nhóm khớp an toàn.</div>}
         <div className="resolution-field-list">

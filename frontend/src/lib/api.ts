@@ -175,7 +175,12 @@ export const getSeparateRecords = (runId: string, offset = 0, q = "") =>
   request<{ total: number; items: SeparateRecord[] }>(
     `/runs/${runId}/separate-records?offset=${offset}&limit=25&q=${encodeURIComponent(q)}`);
 export const getReviewCategories = (id: string) => request<ReviewCategory[]>(`/runs/${id}/categories`);
-export const explainReviewCategory = (runId: string, signature: string) => request<{ status: string; explanation?: { summary_vi: string; attention_fields: string[]; limitations: string[] }; model_version?: string; usage?: Record<string, number> }>(`/runs/${runId}/categories/${signature}/explanation`, { method: "POST" });
+export type AiExplanation = { summary_vi: string; attention_fields: string[]; limitations: string[] };
+// READY: produced by the model. TEMPLATE: rule-based text, the model was unavailable. STALE: the cohort changed.
+export type AiExplanationResult = { status: "READY" | "TEMPLATE" | "STALE" | string; explanation?: AiExplanation | null;
+  model_version?: string | null; usage?: Record<string, number> };
+export const explainReviewCategory = (runId: string, signature: string) => request<AiExplanationResult>(
+  `/runs/${runId}/categories/${signature}/explanation`, { method: "POST" });
 export type ItemBucket = "merge" | "no_merge" | "review" | "review_pairs";
 export type PairCategory = { primary_group: string; subgroup: string; pair_count: number };
 export const getPairCategories = (runId: string) => request<PairCategory[]>(`/runs/${runId}/pair-categories`);
@@ -196,8 +201,7 @@ export const getResolutionItem = (runId: string, bucket: ItemBucket, itemId: str
   return request<ResolutionItemDetail>(`/runs/${runId}/items/${bucket}/${itemId}${query.size ? `?${query}` : ""}`);
 };
 export const explainResolutionItem = (runId: string, bucket: ItemBucket, itemId: string) =>
-  request<{ status: string; explanation?: { summary_vi: string; attention_fields: string[]; limitations: string[] } }>(
-    `/runs/${runId}/items/${bucket}/${itemId}/explanation`, { method: "POST" });
+  request<AiExplanationResult>(`/runs/${runId}/items/${bucket}/${itemId}/explanation`, { method: "POST" });
 export const transitionReviewItems = (runId: string, itemIds: string[], decision: "merge" | "no_merge") =>
   request<{ decision: string; changed_count: number; changed_ids: string[] }>(`/runs/${runId}/review-items/transition`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ item_ids: itemIds, decision }),

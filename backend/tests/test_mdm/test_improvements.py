@@ -5,43 +5,16 @@ import pytest
 
 # ── TASK-0.1: LLM Settings mapping ───────────────────────────────────────────
 
-def test_settings_has_all_llm_fields():
+def test_settings_defaults_fail_closed():
     from masterone.config import Settings
-    s = Settings(llm_enabled=True, openrouter_api_key="test-key")
-    assert s.llm_enabled is True
-    assert s.openrouter_api_key == "test-key"
-    assert s.llm_semantic_model == "google/gemini-2.5-flash"
+    s = Settings(_env_file=None)
+    assert s.llm_enabled is False
+    assert s.llm_approved_providers == "" and s.llm_approved_models == ""
+    assert s.gemini_retention_verified is False and s.openrouter_retention_verified is False
+    assert s.gemini_token_price_microusd == 0 and s.openrouter_token_price_microusd == 0
+    assert s.openrouter_model == "google/gemini-2.5-flash"
     assert s.llm_max_concurrency == 5
     assert s.llm_cache_ttl_seconds == 86400
-    assert s.llm_allow_auto_merge_evidence is False
-
-
-def test_llm_settings_mapping():
-    from masterone.config import Settings
-    from masterone.llm.config import LLMSettings
-    s = Settings(llm_enabled=False)
-    ls = LLMSettings(
-        enabled=s.llm_enabled,
-        semantic_enabled=s.llm_semantic_enabled,
-        explanation_enabled=s.llm_explanation_enabled,
-        openrouter_api_key=s.openrouter_api_key,
-        openrouter_base_url=s.openrouter_base_url,
-        semantic_model=s.llm_semantic_model,
-        explanation_model=s.llm_explanation_model,
-        semantic_batch_size=s.llm_semantic_batch_size,
-        max_concurrency=s.llm_max_concurrency,
-        request_timeout_seconds=s.llm_request_timeout_seconds,
-        max_retries=s.llm_max_retries,
-        cache_ttl_seconds=s.llm_cache_ttl_seconds,
-        allow_auto_merge_evidence=s.llm_allow_auto_merge_evidence,
-        max_semantic_calls_per_run=s.llm_max_semantic_calls_per_run,
-        max_explanation_calls_per_run=s.llm_max_explanation_calls_per_run,
-        max_input_tokens_per_request=s.llm_max_input_tokens_per_request,
-        max_output_tokens_semantic=s.llm_max_output_tokens_semantic,
-        max_output_tokens_explanation=s.llm_max_output_tokens_explanation,
-    )
-    assert ls.enabled is False
-    assert ls.semantic_model == "google/gemini-2.5-flash"
 
 
 # ── TASK-7.3: Config fail-fast ────────────────────────────────────────────────
