@@ -41,3 +41,6 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["masterone*"]
+
+[tool.setuptools.package-data]
+"masterone.mdm" = ["input_contract_v*.json", "config/*.yaml"]

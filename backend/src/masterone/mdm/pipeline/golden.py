@@ -61,7 +61,7 @@ def _best_record_for_field(field: str, ordered: list[dict]) -> dict | None:
     return candidates[0]
 
 
-def build_golden(member_ids: list[str], records_by_id: dict[str, dict]) -> dict:
+def build_golden(member_ids: list[str], records_by_id: dict[str, dict], *, existing_golden=None, policy=None) -> dict:
     """Build golden record for a cluster using full survivorship rules (§22).
 
     Returns:
@@ -78,6 +78,10 @@ def build_golden(member_ids: list[str], records_by_id: dict[str, dict]) -> dict:
         }
       }
     """
+    from masterone.mdm.pipeline.cluster_policy import enabled
+    if enabled():
+        from masterone.mdm.pipeline.golden_v2 import build_golden_v2
+        return build_golden_v2(member_ids, records_by_id, existing_golden=existing_golden, policy=policy)
     records = [records_by_id[rid] for rid in member_ids if rid in records_by_id]
     # Primary sort: source reliability, secondary: external_id for determinism
     ordered = sorted(records, key=lambda r: (
@@ -146,4 +150,8 @@ def build_golden(member_ids: list[str], records_by_id: dict[str, dict]) -> dict:
                 "provenance": "SURVIVORSHIP",
             }
 
-    return {"member_record_ids": sorted(member_ids), "fields": fields}
+    result = {"member_record_ids": sorted(member_ids), "fields": fields}
+    if existing_golden and "_golden_override" in existing_golden:
+        from copy import deepcopy
+        result["_golden_override"] = deepcopy(existing_golden["_golden_override"])
+    return result

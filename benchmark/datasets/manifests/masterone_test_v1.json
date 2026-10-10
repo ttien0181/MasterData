@@ -1,0 +1,174 @@
+{
+  "manifest_schema": "masterone-dataset-manifest-v1",
+  "dataset_id": "masterone_test",
+  "dataset_version": "internal-test-v1",
+  "schema_version": "1",
+  "config_hash": "d0c9f45196a9c9eee6aab4d3d7b88ad55f8b1673fa337a2ab1e251d4832cb63a",
+  "task": "multi_source",
+  "sources": [
+    "BILL",
+    "CRM",
+    "ERP"
+  ],
+  "allowed_source_pairs": [
+    [
+      "BILL",
+      "BILL"
+    ],
+    [
+      "BILL",
+      "CRM"
+    ],
+    [
+      "BILL",
+      "ERP"
+    ],
+    [
+      "CRM",
+      "CRM"
+    ],
+    [
+      "CRM",
+      "ERP"
+    ],
+    [
+      "ERP",
+      "ERP"
+    ]
+  ],
+  "pair_universe_policy": "All same-source and cross-source pairs remain legal; source uniqueness has not been verified.",
+  "gold_coverage": {
+    "pair_labels": "sampled_labeled_pairs",
+    "entity_labels": null,
+    "entity_labels_verified": false,
+    "reason": "Only 1,200 listed test pairs are labeled; entity_id is generator provenance and has not been independently validated."
+  },
+  "entity_distribution": {
+    "records_with_entity_id": 4213,
+    "distinct_entity_ids": 1200,
+    "entity_records_per_source_group": {
+      "1": 2976,
+      "2": 614,
+      "3": 3
+    },
+    "repeated_same_source_entity_groups": 617,
+    "verified": false
+  },
+  "listed_pair_source_distribution": {
+    "BILL|BILL": {
+      "negative": 16
+    },
+    "BILL|CRM": {
+      "negative": 25,
+      "positive": 322
+    },
+    "BILL|ERP": {
+      "negative": 85,
+      "positive": 329
+    },
+    "CRM|CRM": {
+      "negative": 11,
+      "positive": 1
+    },
+    "CRM|ERP": {
+      "negative": 63,
+      "positive": 307
+    },
+    "ERP|ERP": {
+      "negative": 40,
+      "positive": 1
+    }
+  },
+  "pair_case_distribution": {
+    "HARD_NEGATIVE": 240,
+    "MIXED_ADMIN": 114,
+    "NOISY_DUPLICATE": 300,
+    "NORMAL_DUPLICATE": 420,
+    "OLD_NEW_ADDRESS": 126
+  },
+  "hard_negative_type_distribution": {
+    "<empty>": 960,
+    "RELATED_ADMIN_UNITS": 39,
+    "SAME_ADDRESS_DIFFERENT_PERSON": 38,
+    "SAME_NAME_DIFFERENT_ADDRESS": 41,
+    "SAME_SURNAME_SAME_COMMUNE": 40,
+    "SIMILAR_PHONE": 41,
+    "SIMILAR_STREET": 41
+  },
+  "feature_allowlist": [
+    "address",
+    "email",
+    "name",
+    "phone"
+  ],
+  "record_id_policy": "Opaque join key only: dataset::source::raw_id; IDs are not features or tokens.",
+  "files": [
+    {
+      "relative_path": "datasets/masterone_test/records.csv",
+      "sha256": "16587b35766a107c4deb1ff4e237f122a954b9b27f53c15ff12fcc71ec83b046",
+      "encoding": "UTF-8",
+      "row_count": 4213,
+      "schema": [
+        "id",
+        "entity_id",
+        "source_system",
+        "full_name",
+        "phone_number",
+        "email_address",
+        "raw_address",
+        "address_id",
+        "noise_type",
+        "difficulty",
+        "temporal_case"
+      ],
+      "empty_cells_by_column": {
+        "id": 0,
+        "entity_id": 0,
+        "source_system": 0,
+        "full_name": 0,
+        "phone_number": 137,
+        "email_address": 273,
+        "raw_address": 0,
+        "address_id": 0,
+        "noise_type": 0,
+        "difficulty": 0,
+        "temporal_case": 0
+      }
+    },
+    {
+      "relative_path": "datasets/masterone_test/pairs.csv",
+      "sha256": "4272fe4be8e06cebcf18abf6f1bd88f63de0dc854d83175a155d465c8f1746be",
+      "encoding": "UTF-8",
+      "row_count": 1200,
+      "schema": [
+        "id_a",
+        "id_b",
+        "is_match",
+        "case_type",
+        "difficulty",
+        "split",
+        "hard_negative_type",
+        "entity_a",
+        "entity_b"
+      ],
+      "empty_cells_by_column": {
+        "id_a": 0,
+        "id_b": 0,
+        "is_match": 0,
+        "case_type": 0,
+        "difficulty": 0,
+        "split": 0,
+        "hard_negative_type": 960,
+        "entity_a": 960,
+        "entity_b": 960
+      }
+    }
+  ],
+  "provenance": "Internal team-generated dataset; generator/label adjudication provenance not present in the audited files.",
+  "generated_at_utc": "2026-09-30T09:25:35.510074+00:00",
+  "raw_sources_immutable": true,
+  "legal_pair_universe": {
+    "policy": "same-source and cross-source pairs; source uniqueness has not been verified",
+    "possible_pair_count": 8872578
+  }
+}

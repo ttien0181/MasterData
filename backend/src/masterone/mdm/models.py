@@ -4,6 +4,7 @@ from uuid import uuid4
 from sqlalchemy import (
     JSON,
     BigInteger,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -12,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -107,7 +109,7 @@ class ResolutionUploadPart(Base):
 class ResolutionRecord(Base):
     __tablename__ = "mdm_resolution_records"
     __table_args__ = (
-        UniqueConstraint("run_id", "external_id", name="uq_mdm_resolution_record_external"),
+        UniqueConstraint("run_id", "source_system", "external_id", name="uq_mdm_resolution_record_source_external"),
         Index("ix_mdm_resolution_records_run_source", "run_id", "source_system"),
         Index("ix_mdm_resolution_records_run_entity_type", "run_id", "entity_type"),
     )
@@ -121,6 +123,9 @@ class ResolutionRecord(Base):
     entity_type: Mapped[str] = mapped_column(String(16), default="UNKNOWN")
     # Ground-truth cluster label from benchmark CSV (entity_id column); null for production data
     benchmark_entity_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    original_fields: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    mapping_provenance: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    lineage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     raw_fields: Mapped[dict] = mapped_column(JSON)
     normalized_fields: Mapped[dict] = mapped_column(JSON)
     quality_flags: Mapped[list] = mapped_column(JSON, default=list)
@@ -130,7 +135,10 @@ class ResolutionRecord(Base):
 
 class ResolutionTask(Base):
     __tablename__ = "mdm_resolution_tasks"
-    __table_args__ = (Index("ix_mdm_resolution_tasks_status_created", "status", "created_at"),)
+    __table_args__ = (
+        Index("ix_mdm_resolution_tasks_queue", "status", "created_at", "id"),
+        Index("ix_mdm_resolution_tasks_status_created", "status", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     run_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_runs.id", ondelete="CASCADE"), unique=True)
@@ -141,6 +149,26 @@ class ResolutionTask(Base):
     error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+    attempt_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3, server_default="3")
+    cancel_requested: Mapped[bool] = mapped_column(default=False, server_default=false())
+
+
+class ResolutionJobAttempt(Base):
+    __tablename__ = "mdm_resolution_job_attempts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_tasks.id", ondelete="CASCADE"), index=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_runs.id", ondelete="CASCADE"), index=True)
+    worker_id: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(24), default="RUNNING")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
 
 class ResolutionPair(Base):
@@ -419,9 +447,129 @@ class ResolutionStageResult(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
+class ResolutionEngineSelection(Base):
+    __tablename__ = "mdm_resolution_engine_selections"
+    run_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_runs.id", ondelete="CASCADE"), primary_key=True)
+    engine_version: Mapped[str] = mapped_column(String(32))
+    configuration: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class ResolutionGeneration(Base):
+    __tablename__ = "mdm_resolution_generations"
+    __table_args__ = (UniqueConstraint("run_id", "identity_sha256", name="uq_mdm_generation_identity"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_runs.id", ondelete="CASCADE"), index=True)
+    identity_sha256: Mapped[str] = mapped_column(String(64))
+    snapshot_sha256: Mapped[str] = mapped_column(String(64))
+    review_sha256: Mapped[str] = mapped_column(String(64))
+    config_sha256: Mapped[str] = mapped_column(String(64))
+    base_generation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    artifact_backend: Mapped[str] = mapped_column(String(8))  # DB | OBJECT
+    state: Mapped[str] = mapped_column(String(16), default="STAGING")
+    record_count: Mapped[int] = mapped_column(BigInteger)
+    expected_counts: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    manifest_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    promoted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ResolutionGenerationAttempt(Base):
+    __tablename__ = "mdm_resolution_generation_attempts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    generation_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_generations.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="RUNNING")
+    error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ResolutionPublication(Base):
+    """Separate pointer keeps legacy ResolutionRun schema/ORM inserts compatible."""
+    __tablename__ = "mdm_resolution_publications"
+
+    run_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_runs.id", ondelete="CASCADE"), primary_key=True)
+    active_generation_id: Mapped[str | None] = mapped_column(ForeignKey("mdm_resolution_generations.id", ondelete="SET NULL"), nullable=True)
+    pipeline_attempt_id: Mapped[str | None] = mapped_column(ForeignKey("mdm_resolution_generation_attempts.id", ondelete="SET NULL"), nullable=True)
+
+
+class ResolutionStagedResult(Base):
+    """Private pair/proposal/membership/golden/review projections; never API rows."""
+    __tablename__ = "mdm_resolution_staged_results"
+    __table_args__ = (
+        CheckConstraint("kind IN ('pair','proposal','membership','golden','review')", name="ck_mdm_stage_kind"),
+        CheckConstraint("kind != 'pair' OR left_id < right_id", name="ck_mdm_stage_pair_order"),
+        UniqueConstraint("generation_id", "kind", "left_id", "right_id", name="uq_mdm_stage_pair"),
+        UniqueConstraint("generation_id", "kind", "record_id", name="uq_mdm_stage_member"),
+        Index("ix_mdm_stage_partition", "generation_id", "kind", "partition_no"),
+    )
+
+    generation_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_generations.id", ondelete="CASCADE"), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    row_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    partition_no: Mapped[int] = mapped_column(Integer)
+    payload: Mapped[dict] = mapped_column(JSON)
+    sha256: Mapped[str] = mapped_column(String(64))
+    left_id: Mapped[str | None] = mapped_column(ForeignKey("mdm_resolution_records.id"), nullable=True)
+    right_id: Mapped[str | None] = mapped_column(ForeignKey("mdm_resolution_records.id"), nullable=True)
+    record_id: Mapped[str | None] = mapped_column(ForeignKey("mdm_resolution_records.id"), nullable=True)
+    proposal_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class ResolutionPartitionReceipt(Base):
+    __tablename__ = "mdm_resolution_partition_receipts"
+    __table_args__ = (CheckConstraint("row_count >= 0 AND byte_count > 0", name="ck_mdm_receipt_counts"),)
+
+    generation_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_generations.id", ondelete="CASCADE"), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    partition_no: Mapped[int] = mapped_column(Integer, primary_key=True)
+    attempt_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_generation_attempts.id"))
+    row_count: Mapped[int] = mapped_column(Integer)
+    byte_count: Mapped[int] = mapped_column(BigInteger)
+    sha256: Mapped[str] = mapped_column(String(64))
+    object_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    artifact_bytes: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class ResolutionCheckpointObject(Base):
+    __tablename__ = "mdm_checkpoint_objects"
+    key: Mapped[str] = mapped_column(String(512), primary_key=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_runs.id", ondelete="CASCADE"), index=True)
+    sha256: Mapped[str] = mapped_column(String(64))
+    byte_count: Mapped[int] = mapped_column(BigInteger)
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class ResolutionCheckpoint(Base):
+    __tablename__ = "mdm_checkpoints"
+    __table_args__ = (Index("ix_mdm_checkpoint_lookup", "run_id", "stage", "scope", "pins_sha256", "input_sha256", "state"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_runs.id", ondelete="CASCADE"))
+    attempt_id: Mapped[str] = mapped_column(String(128))
+    stage: Mapped[str] = mapped_column(String(32))
+    scope: Mapped[str] = mapped_column(String(128))
+    pins_sha256: Mapped[str] = mapped_column(String(64))
+    input_sha256: Mapped[str] = mapped_column(String(64))
+    output_sha256: Mapped[str] = mapped_column(String(64))
+    manifest_sha256: Mapped[str] = mapped_column(String(64))
+    manifest: Mapped[dict] = mapped_column(JSON)
+    state: Mapped[str] = mapped_column(String(24))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class ResolutionCheckpointDependency(Base):
+    __tablename__ = "mdm_checkpoint_dependencies"
+    child_id: Mapped[str] = mapped_column(ForeignKey("mdm_checkpoints.id"), primary_key=True)
+    parent_id: Mapped[str] = mapped_column(ForeignKey("mdm_checkpoints.id"), primary_key=True)
+
+
 class LLMRequest(Base):
     __tablename__ = "llm_requests"
-    
+
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     request_type: Mapped[str] = mapped_column(String(50))
     model: Mapped[str] = mapped_column(String(50))

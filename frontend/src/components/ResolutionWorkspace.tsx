@@ -121,7 +121,7 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
   const refreshActiveRuns = useCallback(async () => {
     const requestId = ++activeRunsRequestRef.current;
     try {
-      const result = await getResolutionRuns(ACTIVE_RUNS_PAGE_SIZE, 0, { status: "QUEUED,RUNNING" });
+      const result = await getResolutionRuns(ACTIVE_RUNS_PAGE_SIZE, 0, { status: "QUEUED,RUNNING,IMPORTING" });
       if (requestId === activeRunsRequestRef.current) {
         setActiveRuns(result.items);
         setActiveRunsTotal(result.total);
@@ -177,7 +177,7 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
         try { saved = window.localStorage.getItem(activeRunKey(user.id)) || ""; } catch { /* Storage is optional. */ }
       }
       const candidates = [...new Set([
-        list.find((run) => run.status === "RUNNING" || run.status === "QUEUED")?.run_id || "",
+        list.find((run) => run.status === "RUNNING" || run.status === "QUEUED" || run.status === "IMPORTING")?.run_id || "",
         saved,
         list[0]?.run_id || "",
       ].filter(Boolean))];
@@ -224,25 +224,51 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
   }, [refreshActiveRuns, refreshOverview, refreshRuns, user]);
 
   useEffect(() => {
-    if (!runId || !overview || !["QUEUED", "RUNNING"].includes(overview.status)) return;
+    if (!runId || !overview || !["QUEUED", "RUNNING", "IMPORTING"].includes(overview.status)) return;
+    
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const port = window.location.port ? `:${window.location.port === "3000" ? "8001" : window.location.port}` : "";
+    const wsUrl = `${protocol}//${window.location.hostname}${port}/api/v1/mdm/runs/${runId}/overview/ws`;
+    
+    let ws = new WebSocket(wsUrl);
+    let reconnectTimer = 0;
     let stopped = false;
-    let timer = 0;
-    let delay = 1500;
-    const poll = async () => {
-      try {
-        const latest = await refreshOverview(runId);
-        if (stopped) return;
-        delay = 1500;
-        if (!["QUEUED", "RUNNING"].includes(latest.status)) return;
-      } catch {
+    
+    const connect = () => {
+      if (stopped) return;
+      ws = new WebSocket(wsUrl);
+      
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (activeRunRef.current === runId) {
+            setOverview(data);
+            setOverviewStale(false);
+          }
+        } catch {}
+      };
+      
+      ws.onclose = () => {
+        if (!stopped) {
+          reconnectTimer = window.setTimeout(connect, 3000);
+        }
+      };
+      
+      ws.onerror = () => {
         if (!stopped && activeRunRef.current === runId) setOverviewStale(true);
-        delay = Math.min(delay * 2, 30000);
-      }
-      if (!stopped) timer = window.setTimeout(() => void poll(), delay);
+      };
     };
-    timer = window.setTimeout(() => void poll(), delay);
-    return () => { stopped = true; window.clearTimeout(timer); };
-  }, [overview?.status, refreshOverview, runId]);
+    
+    connect();
+    
+    return () => {
+      stopped = true;
+      window.clearTimeout(reconnectTimer);
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
+      }
+    };
+  }, [overview?.status, runId]);
 
   useEffect(() => {
     let stopped = false;

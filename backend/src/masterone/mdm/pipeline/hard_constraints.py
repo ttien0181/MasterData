@@ -84,6 +84,14 @@ def check_all(left: dict, right: dict,
               negative_pairs: frozenset[tuple[str, str]] | None = None,
               ) -> HardConstraintViolation | None:
     """Run all hard constraints in priority order. Returns first violation or None."""
+    from masterone.mdm.pipeline.decision_semantics import enabled, person_constraints
+    if enabled():
+        constraints = person_constraints(left, right, negative_pairs or ())
+        if constraints.cannot_link:
+            return HardConstraintViolation("STEWARD_NEGATIVE_DECISION", "NON_MATCH")
+        if constraints.violations:
+            return HardConstraintViolation(constraints.violations[0], "HARD_CONFLICT")
+        return None
     # §11.3 steward decision is checked first (most authoritative)
     if negative_pairs:
         v = check_negative_edge(left["id"], right["id"], negative_pairs)

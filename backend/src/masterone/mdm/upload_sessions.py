@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import shutil
@@ -17,6 +18,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from masterone.config import get_settings
+from masterone.mdm.input_schema import InputMappingError
 from masterone.mdm.models import (
     ResolutionFile,
     ResolutionRecord,
@@ -109,11 +111,22 @@ def serialize_upload_session(db: Session, session: ResolutionUploadSession,
     def serialize_file(file: ResolutionUploadFile) -> dict:
         parts = db.query(ResolutionUploadPart).filter_by(upload_file_id=file.id).order_by(
             ResolutionUploadPart.part_number).all() if include_parts else []
+        error_message = file.validation_error
+        error_report = None
+        if error_message and error_message.startswith('{"code":'):
+            # Legacy validation_error strings remain readable without migration.
+            try:
+                error_report = json.loads(error_message)
+            except json.JSONDecodeError:
+                error_report = None
+            if isinstance(error_report, dict) and isinstance(error_report.get("message"), str):
+                error_message = error_report["message"]
         return {
             "file_id": file.id, "position": file.position, "filename": file.filename,
             "expected_size": file.expected_size, "received_size": file.received_size,
             "status": file.status, "sha256": file.sha256, "row_count": file.row_count,
-            "source_counts": file.source_counts or {}, "validation_error": file.validation_error,
+            "source_counts": file.source_counts or {}, "validation_error": error_message,
+            "validation_report": error_report,
             "parts": [{"part_number": part.part_number, "byte_size": part.byte_size,
                        "sha256": part.sha256} for part in parts],
         }
@@ -320,7 +333,7 @@ def validate_upload_session(db: Session, session: ResolutionUploadSession) -> Re
     try:
         with closing(sqlite3.connect(ids_path)) as ids_db:
             with ids_db:
-                ids_db.execute("CREATE TABLE IF NOT EXISTS ids (external_id TEXT PRIMARY KEY)")
+                ids_db.execute("CREATE TABLE IF NOT EXISTS ids (source_system TEXT, external_id TEXT, PRIMARY KEY (source_system, external_id))")
                 ids_db.execute("DELETE FROM ids")
                 for original in current_files:
                     file = replacements.get(original.id, original)
@@ -331,9 +344,11 @@ def validate_upload_session(db: Session, session: ResolutionUploadSession) -> Re
                     with path.open("rb") as stream:
                         for row in _iter_normalized(stream, file.filename):
                             try:
-                                ids_db.execute("INSERT INTO ids (external_id) VALUES (?)", (row["external_id"],))
+                                ids_db.execute("INSERT INTO ids (source_system, external_id) VALUES (?, ?)",
+                                                (row["source_system"], row["external_id"]))
                             except sqlite3.IntegrityError as exc:
-                                raise ValueError(f"ID {row['external_id']} bị lặp trong cùng phiên") from exc
+                                raise InputMappingError("DUPLICATE_SOURCE_ID", "ID bị lặp trong cùng nguồn",
+                                    source_row_number=row["lineage"]["source_row_number"]) from exc
                             row_count += 1
                             source = row["source_system"]
                             source_counts[source] = source_counts.get(source, 0) + 1
@@ -364,7 +379,8 @@ def validate_upload_session(db: Session, session: ResolutionUploadSession) -> Re
         session.error_message = str(exc.detail)
         if checked_file:
             checked_file.status = "ERROR"
-            checked_file.validation_error = str(exc.detail)
+            checked_file.validation_error = (json.dumps(exc.report, ensure_ascii=False)
+                if isinstance(exc, InputMappingError) else str(exc.detail))
     except (ValueError, OSError, RuntimeError) as exc:
         session.status = "ERROR"
         session.error_message = str(exc)

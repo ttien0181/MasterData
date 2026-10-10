@@ -19,8 +19,8 @@ def explain_cohort(payload: dict, settings: Settings) -> dict:
         raise HTTPException(503, "GEMINI_MODEL_INVALID")
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     schema = {"type": "object", "properties": {
-        "summary_vi": {"type": "string"},
-        "attention_fields": {"type": "array", "items": {"type": "string"}},
+        "summary_vi": {"type": "string", "description": "Tóm tắt ngắn bằng tiếng Việt, tối đa 3 câu, khoảng 350 ký tự."},
+        "attention_fields": {"type": "array", "items": {"type": "string", "enum": sorted(ALLOWED_FIELDS)}},
         "limitations": {"type": "array", "items": {"type": "string"}},
     }, "required": ["summary_vi", "attention_fields", "limitations"]}
     prompt = ("Giải thích ngắn gọn bằng tiếng Việt tự nhiên các thông tin để người dùng xem xét. "
@@ -30,7 +30,8 @@ def explain_cohort(payload: dict, settings: Settings) -> dict:
               + json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
     request = Request(endpoint, data=json.dumps({
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"responseFormat": {"text": {"mimeType": "APPLICATION_JSON", "schema": schema}}},
+        "generationConfig": {"maxOutputTokens": settings.gemini_max_output_tokens,
+                             "responseFormat": {"text": {"mimeType": "APPLICATION_JSON", "schema": schema}}},
     }).encode(), headers={"Content-Type": "application/json", "x-goog-api-key": settings.gemini_api_key}, method="POST")
     try:
         with urlopen(request, timeout=25) as response:

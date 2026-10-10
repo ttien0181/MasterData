@@ -8,6 +8,7 @@ LocalObjectStore — local filesystem, used in dev/test when R2 is not configure
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -49,6 +50,20 @@ class ObjectStore(ABC):
         data = (json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
         self.upload_bytes(data, key, content_type="application/json")
 
+    def upload_partition_file(self, path: str | Path, key: str) -> None:
+        """Partition uploader controls file concurrency separately."""
+        self.upload_file(path, key, "application/vnd.apache.parquet")
+
+    def upload_export_file(self, path: str | Path, key: str, content_type: str,
+                           progress=None) -> None:
+        self.upload_file(path, key, content_type)
+        if progress:
+            progress(0)
+
+    def iter_chunks(self, key: str, chunk_size: int = 1024 * 1024):
+        """Bounded read-back for partition verification; no full object in RAM."""
+        raise NotImplementedError("Store requires streaming partition verification")
+
 
 class LocalObjectStore(ObjectStore):
     """Filesystem-backed store — for development and tests without R2 credentials."""
@@ -59,8 +74,14 @@ class LocalObjectStore(ObjectStore):
 
     def _path(self, key: str) -> Path:
         p = (self._root / key).resolve()
-        if not str(p).startswith(str(self._root.resolve())):
+        if not p.is_relative_to(self._root.resolve()):
             raise ValueError(f"Key escapes store root: {key!r}")
+        # Attempt-scoped content-addressed keys plus test/deployment workspaces
+        # can exceed Win32 MAX_PATH; retain the exact object key on Windows.
+        if os.name == "nt" and len(str(p)) >= 240:
+            value = str(p)
+            if not value.startswith("\\\\?\\"):
+                p = Path("\\\\?\\UNC\\" + value[2:] if value.startswith("\\\\") else "\\\\?\\" + value)
         return p
 
     def exists(self, key: str) -> bool:
@@ -99,6 +120,11 @@ class LocalObjectStore(ObjectStore):
         if p.exists():
             p.unlink()
 
+    def iter_chunks(self, key: str, chunk_size: int = 1024 * 1024):
+        with self._path(key).open("rb") as handle:
+            while chunk := handle.read(chunk_size):
+                yield chunk
+
 
 class _BorrowedStream:
     """Let the transfer SDK close its body without closing the caller's file."""
@@ -115,7 +141,8 @@ class _BorrowedStream:
 
 
 class R2ObjectStore(ObjectStore):
-    def __init__(self, endpoint_url: str, access_key_id: str, secret_access_key: str, bucket: str):
+    def __init__(self, endpoint_url: str, access_key_id: str, secret_access_key: str, bucket: str,
+                 *, presign_endpoint_url: str | None = None):
         import boto3
         from botocore.config import Config
 
@@ -126,8 +153,13 @@ class R2ObjectStore(ObjectStore):
             aws_access_key_id=access_key_id,
             aws_secret_access_key=secret_access_key,
             region_name="auto",
-            config=Config(retries={"max_attempts": 5, "mode": "standard"}),
+            config=Config(connect_timeout=5, read_timeout=30,
+                          retries={"total_max_attempts": 3, "mode": "standard"}),
         )
+        self.presign_client = (boto3.client("s3", endpoint_url=presign_endpoint_url,
+            aws_access_key_id=access_key_id, aws_secret_access_key=secret_access_key,
+            region_name="auto", config=Config(signature_version="s3v4"))
+            if presign_endpoint_url else self.client)
 
     def exists(self, key: str) -> bool:
         try:
@@ -140,6 +172,28 @@ class R2ObjectStore(ObjectStore):
 
     def upload_file(self, path: str | Path, key: str, content_type: str = "application/octet-stream") -> None:
         self.client.upload_file(str(path), self.bucket, key, ExtraArgs={"ContentType": content_type})
+
+    def upload_export_file(self, path: str | Path, key: str, content_type: str,
+                           progress=None) -> None:
+        from boto3.s3.transfer import TransferConfig
+        self.client.upload_file(str(path), self.bucket, key, ExtraArgs={"ContentType": content_type},
+            Callback=progress, Config=TransferConfig(use_threads=False, max_concurrency=1,
+                                                    multipart_chunksize=8 * 1024**2))
+
+    def upload_partition_file(self, path: str | Path, key: str) -> None:
+        from boto3.s3.transfer import TransferConfig
+        self.client.upload_file(str(path), self.bucket, key,
+            ExtraArgs={"ContentType": "application/vnd.apache.parquet"},
+            Config=TransferConfig(use_threads=False, max_concurrency=1))
+
+    def iter_chunks(self, key: str, chunk_size: int = 1024 * 1024):
+        response = self.client.get_object(Bucket=self.bucket, Key=key)
+        body = response["Body"]
+        try:
+            while chunk := body.read(chunk_size):
+                yield chunk
+        finally:
+            body.close()
 
     def upload_stream(self, stream: BinaryIO, key: str, content_type: str = "application/octet-stream") -> None:
         """Upload from the current position, leaving the caller's stream open."""
@@ -154,10 +208,13 @@ class R2ObjectStore(ObjectStore):
 
     def download_bytes(self, key: str) -> bytes:
         response = self.client.get_object(Bucket=self.bucket, Key=key)
-        return response["Body"].read()
+        try:
+            return response["Body"].read()
+        finally:
+            response["Body"].close()
 
     def presigned_url(self, key: str, expires_in: int = 3600) -> str:
-        return self.client.generate_presigned_url(
+        return self.presign_client.generate_presigned_url(
             "get_object",
             Params={"Bucket": self.bucket, "Key": key},
             ExpiresIn=expires_in,

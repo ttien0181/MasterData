@@ -14,11 +14,12 @@ from collections import Counter
 from math import log2
 from unicodedata import normalize
 
+from rapidfuzz.distance import JaroWinkler, Levenshtein
+
 from masterone.mdm.pipeline.evidence_floor import evaluate as _floor_evaluate
 from masterone.mdm.pipeline.hard_constraints import check_all as _hard_check
 from masterone.mdm.pipeline.policy_engine import POLICY_FILE_VERSION, apply_policy
 from masterone.mdm.pipeline.standardization import parse_dob
-from rapidfuzz.distance import JaroWinkler, Levenshtein
 
 FIELDS = ("name", "phone", "email", "address")
 OPTIONAL_FIELDS = ("dob", "government_id")
@@ -106,6 +107,17 @@ def _gov_id_state(nf_left: dict, nf_right: dict) -> tuple[str, float, str]:
     if qa == "INVALID" or qb == "INVALID":
         return "IV", 0.0, "RULE"
 
+    from masterone.mdm.pipeline.decision_semantics import enabled, identifier_key, identifier_single_value
+    if enabled():
+        ka, kb = identifier_key(nf_left), identifier_key(nf_right)
+        if ka is None or kb is None or ka != kb:
+            return "NC", 0.0, "RULE"
+        if a == b:
+            return "EX", 1.0, "RULE"
+        if identifier_single_value(nf_left) and identifier_single_value(nf_right):
+            return "_HARD_CONFLICT", 0.0, "RULE"
+        return "DF", 0.0, "RULE"
+
     type_a = nf_left.get("government_id_type", "UNKNOWN")
     type_b = nf_right.get("government_id_type", "UNKNOWN")
 
@@ -187,7 +199,7 @@ def _contact_state(field: str, left: dict, right: dict, frequencies: dict) -> tu
     collection_key = "phones" if field == "phone" else "emails"
     list_a = left["normalized_fields"].get(collection_key, [])
     list_b = right["normalized_fields"].get(collection_key, [])
-    
+
     if not list_a and left["normalized_fields"].get(field):
         list_a = [{"value": left["normalized_fields"][field], "quality": left["normalized_fields"].get("_field_quality", {}).get(field, "VALID")}]
     if not list_b and right["normalized_fields"].get(field):
@@ -198,6 +210,14 @@ def _contact_state(field: str, left: dict, right: dict, frequencies: dict) -> tu
 
     quality_a = left["normalized_fields"].get("_field_quality", {}).get(field)
     quality_b = right["normalized_fields"].get("_field_quality", {}).get(field)
+
+    from masterone.mdm.pipeline.decision_semantics import enabled
+    if enabled() and any(
+        nf.get(f"_{field}_shared") is True or nf.get(f"_{field}_shared_risk") is True
+        or nf.get(f"{field}_shared") is True or nf.get(f"{field}_shared_risk") is True
+        for nf in (left["normalized_fields"], right["normalized_fields"])
+    ):
+        return "SH", 0.0, ["CONTACT_SHARED_RISK"]
 
     if "INVALID" in {quality_a, quality_b}:
         return "IV", 0.0, []
@@ -213,12 +233,22 @@ def _contact_state(field: str, left: dict, right: dict, frequencies: dict) -> tu
     best_state = "DF"
     best_sim = 0.0
     best_tags = []
-    
+
+    if enabled() and any(
+        a["value"] == b["value"] and (
+            any(item.get("shared") is True or item.get("shared_risk") is True
+                or item.get("historical") is True or bool(item.get("valid_to"))
+                for item in (a, b))
+            or bool(a.get("origin_id") and a.get("origin_id") == b.get("origin_id")))
+        for a in list_a for b in list_b
+    ):
+        return "SH", 0.0, ["CONTACT_SHARED_RISK"]
+
     for item_a in list_a:
         for item_b in list_b:
             a, qa = item_a["value"], item_a.get("quality", "VALID")
             b, qb = item_b["value"], item_b.get("quality", "VALID")
-            
+
             if "INVALID" in {qa, qb}:
                 state, sim, tags = "IV", 0.0, []
             elif {qa, qb} & {"SHARED", "PLACEHOLDER"}:
@@ -254,7 +284,7 @@ def _contact_state(field: str, left: dict, right: dict, frequencies: dict) -> tu
                 best_sim = sim
             elif state == "IV" and best_state == "IV":
                 pass
-                
+
     return best_state, best_sim, best_tags
 
 
@@ -395,19 +425,30 @@ def value_frequencies(records: list[dict]) -> dict[str, Counter]:
 def score_pair(left: dict, right: dict, blocking_reasons: set[str],
                frequencies: dict | None = None,
                negative_pairs: frozenset | None = None) -> dict:
+    """Compatibility facade: evidence/numeric score, then existing decision policy."""
+    result = compare_and_score_rule(left, right, blocking_reasons, frequencies, negative_pairs)
+    return decide_rule_result(result, left, right, blocking_reasons)
+
+
+def compare_and_score_rule(left: dict, right: dict, blocking_reasons: set[str],
+                           frequencies: dict | None = None,
+                           negative_pairs: frozenset | None = None) -> dict:
+    """Compute evidence and baseline weight only; never assign a decision."""
     frequencies = frequencies or value_frequencies([left, right])
 
     # ── Hard constraints (§11) — always before scoring ────────────────────────
     violation = _hard_check(left, right, negative_pairs)
     if violation:
-        return _non_match(violation.reason, violation.constraint, blocking_reasons)
+        return {"score": 0.0, "match_weight": 0.0, "field_evidence": [], "comparisons": {},
+                "hard_violation": {"reason": violation.reason, "constraint": violation.constraint}}
 
     # ── gov_id comparison state (used in evidence; hard conflict handled above) ─
     gov_state, gov_sim, gov_prov = _gov_id_state(
         left["normalized_fields"], right["normalized_fields"])
     # _HARD_CONFLICT sentinel means hard_constraints already caught this; skip silently
     if gov_state == "_HARD_CONFLICT":
-        return _non_match("HARD_CONFLICT", "SAME_TYPE_GOV_ID_CONFLICT", blocking_reasons)
+        return {"score": 0.0, "match_weight": 0.0, "field_evidence": [], "comparisons": {},
+                "hard_violation": {"reason": "HARD_CONFLICT", "constraint": "SAME_TYPE_GOV_ID_CONFLICT"}}
 
     # ── Per-field comparison ──────────────────────────────────────────────────
     evidence: list[dict] = []
@@ -461,6 +502,16 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
 
     states = {item["field"]: item["state"] for item in evidence}
 
+    from masterone.mdm.pipeline.decision_semantics import enabled, verified
+    if enabled():
+        for item in evidence:
+            field = item["field"]
+            item["verified_both"] = verified(left["normalized_fields"], field) and verified(right["normalized_fields"], field)
+            if field in {"phone", "email"} and item["state"] == "DF":
+                item["conflict_meaning"] = "CHANGE_OR_MULTI_CONTACT"
+            elif item["state"] == "CF":
+                item["conflict_meaning"] = "VERIFIED_CONFLICT" if item["verified_both"] else "UNVERIFIED_DIFFERENCE"
+
     # comparisons dict (architecture §15.2 — compact view used by policy engine)
     comparisons = {item["field"]: {"state": item["state"], "provenance": item["provenance"], "normalization_tags": item.get("normalization_tags", [])}
                    for item in evidence}
@@ -473,9 +524,6 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
     # ── Contact anchors and weight — computed before floor check ─────────────
     contact_matches = [f for f in ("phone", "email") if states[f] in {"EX", "NX"}]
     gov_id_anchor = states.get("government_id") == "EX"
-    dob_anchor = states.get("dob") in {"EX", "CL"}
-    name_good = states["name"] in {"EX", "NX", "NA", "HS"}
-    name_close = states["name"] in {"MS", "WS"}
 
     # Frequency-adjusted weight
     weight = 0.0
@@ -491,6 +539,35 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
         weight += 0.5
     if gov_id_anchor:
         weight += 3.0
+
+    return {"score": round(weight, 6), "match_weight": round(weight, 6), "_raw_weight": weight,
+            "field_evidence": evidence, "comparisons": comparisons,
+            "signature": signature, "normalization_tags": norm_tags, "hard_violation": None}
+
+
+def decide_rule_result(result: dict, left: dict, right: dict, blocking_reasons: set[str],
+                       policies: dict | None = None) -> dict:
+    from masterone.mdm.pipeline.decision_semantics import evaluate_prepared
+    return evaluate_prepared(result, left, right, blocking_reasons, policies)[0]
+
+
+def _decide_legacy_rule_result(result: dict, left: dict, right: dict, blocking_reasons: set[str],
+                               policies: dict | None = None) -> dict:
+    """DECIDE boundary. Rule weights retain their legacy units; no ML thresholds."""
+    violation = result.get("hard_violation")
+    if violation:
+        return _non_match(violation["reason"], violation["constraint"], blocking_reasons)
+    evidence = result["field_evidence"]
+    comparisons = result["comparisons"]
+    signature = result["signature"]
+    norm_tags = result["normalization_tags"]
+    weight = result.get("_raw_weight", result["score"])
+    states = {item["field"]: item["state"] for item in evidence}
+    contact_matches = [f for f in ("phone", "email") if states[f] in {"EX", "NX"}]
+    gov_id_anchor = states.get("government_id") == "EX"
+    dob_anchor = states.get("dob") in {"EX", "CL"}
+    name_good = states["name"] in {"EX", "NX", "NA", "HS"}
+    name_close = states["name"] in {"MS", "WS"}
 
     # ── Evidence floor (§12) — before grouping ───────────────────────────────
     floor = _floor_evaluate(comparisons, weight)
@@ -546,7 +623,7 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
         }
 
     # ── Policy engine (§17) — gates MERGEABLE ─────────────────────────────
-    pol_result = apply_policy(group, comparisons, weight, nf_left, nf_right)
+    pol_result = apply_policy(group, comparisons, weight, nf_left, nf_right, policies=policies)
 
     matched_subgroups  = pol_result.matched_subgroups
     decision_subgroup  = pol_result.decision_subgroup or subgroup

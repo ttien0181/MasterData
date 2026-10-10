@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from datetime import date
 
 FIELDS = ("name", "phone", "email", "address")
 OPTIONAL_FIELDS = ("dob", "government_id")
@@ -105,6 +106,7 @@ def normalize_dob(value: str) -> tuple[str, str]:
         try:
             y, m, d = int(year), int(month), int(day)
             if 1900 <= y <= 2100 and 1 <= m <= 12 and 1 <= d <= 31:
+                date(y, m, d)
                 return f"{y:04d}-{m:02d}-{d:02d}", "VALID"
         except ValueError:
             pass
@@ -196,6 +198,7 @@ def parse_dob(value: str) -> dict:
         try:
             y, m, d = int(year), int(month), int(day)
             if 1900 <= y <= 2100 and 1 <= m <= 12 and 1 <= d <= 31:
+                date(y, m, d)
                 canonical = f"{y:04d}-{m:02d}-{d:02d}"
                 return {"canonical": canonical, "year": f"{y:04d}", "month": f"{m:02d}", "day": f"{d:02d}",
                         "quality": "VALID", "is_year_only": False, "is_ambiguous": is_ambiguous}

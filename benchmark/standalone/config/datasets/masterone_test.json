@@ -1,0 +1,35 @@
+{
+  "schema_version": "1",
+  "dataset_id": "masterone_test",
+  "dataset_version": "internal-test-v1",
+  "task": "multi_source",
+  "files": {
+    "records": "datasets/masterone_test/records.csv",
+    "pairs": "datasets/masterone_test/pairs.csv"
+  },
+  "record_id": ["dataset_id", "source_system", "id"],
+  "field_mapping": {
+    "full_name": "name",
+    "phone_number": "phone",
+    "email_address": "email",
+    "raw_address": "address",
+    "source_system": "source"
+  },
+  "feature_allowlist": ["name", "phone", "email", "address"],
+  "gold_coverage": {
+    "pair_labels": "sampled_labeled_pairs",
+    "entity_labels": null,
+    "entity_labels_verified": false
+  },
+  "pair_split_names": ["test"],
+  "allowed_source_pairs": [
+    ["BILL", "BILL"],
+    ["BILL", "CRM"],
+    ["BILL", "ERP"],
+    ["CRM", "CRM"],
+    ["CRM", "ERP"],
+    ["ERP", "ERP"]
+  ],
+  "source_uniqueness_verified": false,
+  "provenance": "Internal team-generated data; generator/label adjudication provenance not present in audited files."
+}

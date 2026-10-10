@@ -67,4 +67,132 @@ out/
 .ai-log/
 
 sandbox/
+
+# Local perf scratch (PERFORMANCE_PLAN: không commit)
+scratch/
+/perf_baseline.json
+
+# Local perf scratch (PERFORMANCE_PLAN: không commit)
+scratch/
+/perf_baseline.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.qa
+.env.qa.local
+.env.*
+!.env.example
+!.env.*.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (track loaders, never commit generated datasets)
+data/*
+!data/*.py
+*.db
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Locally generated datasets (keep benchmark code and reference data)
+/gemini_3_5_flash_lite/
+
+# Logs
+logs/
+*.log
+
+# Test coverage
+htmlcov/
+.coverage
+coverage.xml
+.coverage.*
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+coverage/
+
+# Benchmark cache and generated results; preserve directory placeholders
+/benchmark/.cache/*
+!/benchmark/.cache/.gitkeep
+/benchmark/results/*
+!/benchmark/results/.gitkeep
+/benchmark/standalone/results/*
+!/benchmark/standalone/results/.gitkeep
+
+# Generated reports from the isolated migration baseline runner
+/artifacts/merge-baseline/
+/artifacts/merge-validation/
+/artifacts/sparse-tfidf/
+/artifacts/full-system-20261009/
+
+# Generated audit reports, scratch copies, and evaluation output
+/artifacts/*
+!/artifacts/baseline/
+/eval/results/
+
+# Docker
+docker-compose.override.yml
+
+# Node (frontend)
+node_modules/
+.next/
+frontend/.npm-cache/
+.npm-cache/
+.npm/
+.eslintcache
+frontend/test-results/
+frontend/playwright-report/
+frontend/tsconfig.tsbuildinfo
+*.tsbuildinfo
+.superpowers/
+out/
+.nuxt/
+
+# Build
+*.pyc
+*.pyo
+
+# AI logs — tracked structure, ignored content
+.ai-log/*.jsonl
+.ai-log/archive/
+.ai-log/
+
+sandbox/
+
+# Local backup and temporary files
+*.bak
+*.tmp
+*.temp
+=======
 .agents/skills/

@@ -154,6 +154,17 @@ def get_task(
     return task_read(task)
 
 
+@router.post("/{run_id}/cancel", response_model=ResolutionTaskRead)
+def cancel_run(run_id: str, request: Request, db: Session = Depends(get_session),
+               auth: CurrentSession = Depends(require_mutation_capability("start_run"))):
+    from masterone.mdm.job_queue import request_cancel
+    owned_run(db, run_id, auth.user.id)
+    task = request_cancel(request.app.state.session_factory, run_id)
+    if task is None:
+        raise HTTPException(404, "Task not found")
+    return task_read(task)
+
+
 @router.get("/{run_id}")
 def get_run(
     run_id: str,

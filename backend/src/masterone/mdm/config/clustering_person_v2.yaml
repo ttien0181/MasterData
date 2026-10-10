@@ -1,0 +1,10 @@
+version: p119_cluster_person_v2
+max_cluster_size: 20
+max_pair_checks_per_union: 190
+max_pair_checks_per_run: 1000000
+# A source is unique only where its domain contract explicitly says so.
+unique_sources: {}
+source_priority: {CRM: 0, ERP: 1, BILL: 2}
+legacy_unique_sources:
+  CRM: [PERSON, ORGANIZATION, UNKNOWN]
+  ERP: [PERSON, ORGANIZATION, UNKNOWN]

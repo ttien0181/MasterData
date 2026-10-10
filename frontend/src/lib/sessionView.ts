@@ -2,7 +2,7 @@ import type { AuthUser, ResolutionOverview, ResolutionRunHistory, RunStatus } fr
 import { can } from "./permissions";
 
 const STATUS_LABELS: Record<RunStatus, string> = {
-  UPLOADED: "Đã nạp, chưa xử lý", QUEUED: "Đang chờ xử lý", RUNNING: "Đang phân giải",
+  UPLOADED: "Đã nạp, chưa xử lý", IMPORTING: "Đang nạp dữ liệu", QUEUED: "Đang chờ xử lý", RUNNING: "Đang phân giải",
   COMPLETED: "Đã xử lý", RETRYABLE_FAILED: "Xử lý bị gián đoạn", FAILED: "Xử lý thất bại",
 };
 export function runStatusLabel(status: string) {
@@ -40,7 +40,7 @@ export type SessionViewModel = {
 export function toSessionViewModel(overview: ResolutionOverview, user: AuthUser,
   history?: ResolutionRunHistory["items"][number]): SessionViewModel {
   const completed = overview.status === "COMPLETED";
-  const processing = overview.status === "RUNNING" || overview.status === "QUEUED";
+  const processing = overview.status === "RUNNING" || overview.status === "QUEUED" || overview.status === "IMPORTING";
   const failed = overview.status === "FAILED" || overview.status === "RETRYABLE_FAILED";
   // Counters currently mark coarse phases (persisting may already be N/N).
   // They are not a measurable fraction of the complete computation.

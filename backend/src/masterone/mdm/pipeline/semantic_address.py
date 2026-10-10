@@ -58,18 +58,19 @@ def _ask_gemini(batch: list[dict], settings: Settings) -> dict[str, str]:
     )
     request = Request(endpoint, data=json.dumps({
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"responseFormat": {"text": {"mimeType": "APPLICATION_JSON", "schema": schema}}},
+        "generationConfig": {"maxOutputTokens": settings.gemini_max_output_tokens,
+                             "responseFormat": {"text": {"mimeType": "APPLICATION_JSON", "schema": schema}}},
     }).encode(), headers={"Content-Type": "application/json", "x-goog-api-key": settings.gemini_api_key}, method="POST")
-    for attempt in range(2):
+    for attempt in range(settings.gemini_max_retries + 1):
         try:
             with urlopen(request, timeout=settings.semantic_address_timeout_seconds) as response:
                 body = json.loads(response.read())
             break
         except HTTPError as exc:
-            if attempt or exc.code not in {429, 500, 502, 503, 504}:
+            if attempt == settings.gemini_max_retries or exc.code not in {429, 500, 502, 503, 504}:
                 raise
         except (URLError, TimeoutError):
-            if attempt:
+            if attempt == settings.gemini_max_retries:
                 raise
         time.sleep(0.5)
     output = json.loads(body["candidates"][0]["content"]["parts"][0]["text"])
