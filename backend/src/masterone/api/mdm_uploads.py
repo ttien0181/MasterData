@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from masterone.auth.security import CurrentSession, require_capability, require_mutation_capability
 from masterone.db.session import get_session
 from masterone.mdm.models import ResolutionUploadSession
+from masterone.mdm.trace import emit, span
 from masterone.mdm.upload_sessions import (
     MAX_UPLOAD_CHUNK_BYTES,
     commit_upload_session,
@@ -77,6 +78,9 @@ def create_upload_draft(
 ):
     session = create_upload_session(db, auth.user.id, body.name,
                                     [item.model_dump() for item in body.files])
+    emit("upload.session", "created", upload_session_id=session.id,
+         file_count=len(body.files), byte_count=session.total_bytes,
+         storage_backend=session.storage_backend)
     return serialize_upload_session(db, session)
 
 
@@ -127,24 +131,26 @@ async def upload_draft_part(
 ):
     session = owned_upload_session(db, session_id, auth.user.id)
     file = get_upload_file(db, session, file_id)
-    digest = hashlib.sha256()
-    client_digest = request.headers.get("x-chunk-sha256")
-    size = 0
-    with tempfile.SpooledTemporaryFile(max_size=MAX_UPLOAD_CHUNK_BYTES) as chunk:
-        async for block in request.stream():
-            size += len(block)
-            if size > MAX_UPLOAD_CHUNK_BYTES:
-                raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE,
-                                    f"Một khối upload không vượt quá {MAX_UPLOAD_CHUNK_BYTES // (1024 * 1024)} MiB")
-            digest.update(block)
-            chunk.write(block)
-        if not size:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Khối upload trống")
-        if client_digest and client_digest.lower() != digest.hexdigest():
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Checksum khối upload không khớp")
-        chunk.seek(0)
-        saved = save_upload_part(db, session, file, part_number, chunk, size, digest.hexdigest())
-    return saved
+    with span("upload.receive_part", upload_session_id=session_id, file_id=file_id,
+              part_number=part_number, storage_backend=session.storage_backend) as metrics:
+        digest = hashlib.sha256()
+        client_digest = request.headers.get("x-chunk-sha256")
+        size = 0
+        with tempfile.SpooledTemporaryFile(max_size=MAX_UPLOAD_CHUNK_BYTES) as chunk:
+            async for block in request.stream():
+                size += len(block)
+                if size > MAX_UPLOAD_CHUNK_BYTES:
+                    raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE,
+                                        f"Một khối upload không vượt quá {MAX_UPLOAD_CHUNK_BYTES // (1024 * 1024)} MiB")
+                digest.update(block)
+                chunk.write(block)
+            if not size:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Khối upload trống")
+            if client_digest and client_digest.lower() != digest.hexdigest():
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Checksum khối upload không khớp")
+            chunk.seek(0)
+            metrics["byte_count"] = size
+            return save_upload_part(db, session, file, part_number, chunk, size, digest.hexdigest())
 
 
 @router.post("/{session_id}/validate")
@@ -154,7 +160,9 @@ def validate_draft(
     auth: CurrentSession = Depends(require_mutation_capability("create_run")),
 ):
     session = owned_upload_session(db, session_id, auth.user.id)
-    session = validate_upload_session(db, session)
+    with span("upload.validate", upload_session_id=session_id) as metrics:
+        session = validate_upload_session(db, session)
+        metrics["status"] = session.status
     return serialize_upload_session(db, session)
 
 
@@ -165,7 +173,12 @@ def commit_draft(
     auth: CurrentSession = Depends(require_mutation_capability("create_run")),
 ):
     session = owned_upload_session(db, session_id, auth.user.id)
-    run, profile = commit_upload_session(db, session, auth.user.id)
+    with span("upload.commit", upload_session_id=session_id) as metrics:
+        run, profile = commit_upload_session(db, session, auth.user.id)
+        metrics.update(run_id=run.id, record_count=run.record_count,
+                       file_count=run.file_count)
+    emit("upload.run_link", "completed", upload_session_id=session_id,
+         run_id=run.id, record_count=run.record_count)
     return {"run_id": run.id, "status": run.status, "profile": profile}
 
 

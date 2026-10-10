@@ -284,46 +284,29 @@ export default function ResolutionIntake({
   }
 
   useEffect(() => {
-    let ws: WebSocket | null = null;
-    if (activity === "validating" && session?.session_id) {
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const port = window.location.port
-        ? `:${window.location.port === "3000" ? "8001" : window.location.port}`
-        : "";
-      const wsUrl = `${protocol}//${window.location.hostname}${port}/api/v1/mdm/upload-sessions/${session.session_id}/ws`;
-
-      ws = new WebSocket(wsUrl);
-
-      ws.onmessage = async (event) => {
-        const data = JSON.parse(event.data);
-        if (
-          data.status === "READY" ||
-          data.status === "ERROR" ||
-          data.status === "COMMITTED"
-        ) {
-          try {
-            const latest = await getUploadSession(session.session_id);
-            setSession(latest);
-            setDrafts((items) => [
-              latest,
-              ...items.filter((item) => item.session_id !== latest.session_id),
-            ]);
-          } catch (e) {
-            // keep existing state on network fail
-          } finally {
-            setActivity(null);
-            ws?.close();
-          }
+    if (activity !== "validating" || !session?.session_id) return;
+    const sessionId = session.session_id;
+    let stopped = false;
+    let timer: number | undefined;
+    let delay = 1500;
+    const poll = async () => {
+      try {
+        const latest = await getUploadSession(sessionId);
+        if (stopped) return;
+        setSession(latest);
+        setDrafts((items) => [latest, ...items.filter((item) => item.session_id !== sessionId)]);
+        delay = 1500;
+        if (["READY", "ERROR", "COMMITTED"].includes(latest.status)) {
+          setActivity(null);
+          return;
         }
-      };
-
-      ws.onerror = () => {
-        setActivity(null);
-      };
-    }
-    return () => {
-      ws?.close();
+      } catch {
+        delay = Math.min(delay * 2, 30000);
+      }
+      if (!stopped) timer = window.setTimeout(() => void poll(), delay);
     };
+    timer = window.setTimeout(() => void poll(), delay);
+    return () => { stopped = true; window.clearTimeout(timer); };
   }, [activity, session?.session_id]);
 
   async function uploadFiles(incoming: File[]) {

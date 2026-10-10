@@ -18,6 +18,7 @@ from hashlib import sha256
 from importlib.metadata import version
 from itertools import islice
 from pathlib import Path
+from time import perf_counter
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -287,7 +288,9 @@ def _decide_rule(result, records, policies):
 
 def _decide_rule_batch(results, records, policies):
     """Worker-side DECIDE for one batch; shares _decide_rule with the serial path."""
-    return [_decide_rule(r, records, policies) for r in results]
+    started = perf_counter()
+    decisions = [_decide_rule(r, records, policies) for r in results]
+    return decisions, (perf_counter() - started) * 1000
 
 
 class ScoringEngine:
@@ -515,15 +518,22 @@ class ScoringEngine:
         self._check_decision_semantics()
         return _decide_rule(result, records, self.policies)
 
-    def decided_batches(self, batches, expected_count):
+    def decided_batches(self, batches, expected_count, *, timings=None):
         """Yield (batch, hydrated, decisions) in input order. Large rule-mode inputs decide
         in worker processes; hydration and the semantics check stay in this process."""
         workers = int(os.environ.get("MDM_SCORE_WORKERS", min(os.cpu_count() or 1, 4)))
         if self.config.mode != "rule" or workers <= 1 or expected_count < int(
                 os.environ.get("MDM_SCORE_PARALLEL_MIN", SCORE_PARALLEL_MIN)):
             for batch in batches:
+                started = perf_counter()
                 hydrated = self.snapshot.get_records({rid for r in batch for rid in (r.left_id, r.right_id)})
-                yield batch, hydrated, [self.decide(r, hydrated) for r in batch]
+                if timings is not None:
+                    timings["hydrate_ms"] = timings.get("hydrate_ms", 0.0) + (perf_counter() - started) * 1000
+                started = perf_counter()
+                decisions = [self.decide(r, hydrated) for r in batch]
+                if timings is not None:
+                    timings["policy_compute_ms"] = timings.get("policy_compute_ms", 0.0) + (perf_counter() - started) * 1000
+                yield batch, hydrated, decisions
             return
         from collections import deque
         from concurrent.futures import ProcessPoolExecutor
@@ -531,14 +541,30 @@ class ScoringEngine:
         with ProcessPoolExecutor(max_workers=workers) as pool:
             for batch in batches:
                 self._check_decision_semantics()
+                started = perf_counter()
                 hydrated = self.snapshot.get_records({rid for r in batch for rid in (r.left_id, r.right_id)})
+                if timings is not None:
+                    timings["hydrate_ms"] = timings.get("hydrate_ms", 0.0) + (perf_counter() - started) * 1000
+                started = perf_counter()
                 pending.append((batch, hydrated, pool.submit(_decide_rule_batch, batch, hydrated, self.policies)))
+                if timings is not None:
+                    timings["submit_ms"] = timings.get("submit_ms", 0.0) + (perf_counter() - started) * 1000
                 if len(pending) > 2 * workers:
                     yield_batch, yield_hydrated, future = pending.popleft()
-                    yield yield_batch, yield_hydrated, future.result()
+                    started = perf_counter()
+                    decisions, compute_ms = future.result()
+                    if timings is not None:
+                        timings["worker_wait_ms"] = timings.get("worker_wait_ms", 0.0) + (perf_counter() - started) * 1000
+                        timings["policy_compute_ms"] = timings.get("policy_compute_ms", 0.0) + compute_ms
+                    yield yield_batch, yield_hydrated, decisions
             while pending:
                 yield_batch, yield_hydrated, future = pending.popleft()
-                yield yield_batch, yield_hydrated, future.result()
+                started = perf_counter()
+                decisions, compute_ms = future.result()
+                if timings is not None:
+                    timings["worker_wait_ms"] = timings.get("worker_wait_ms", 0.0) + (perf_counter() - started) * 1000
+                    timings["policy_compute_ms"] = timings.get("policy_compute_ms", 0.0) + compute_ms
+                yield yield_batch, yield_hydrated, decisions
 
     def _check_decision_semantics(self):
         from masterone.mdm.pipeline.decision_semantics import enabled
@@ -549,3 +575,17 @@ class ScoringEngine:
 def iter_score_batches(path, batch_size):
     for batch in pq.ParquetFile(path).iter_batches(batch_size=batch_size):
         yield [ScoreResult.from_row(row) for row in batch.to_pylist()]
+
+
+def timed_score_batches(path, batch_size, timings):
+    """Accumulate SCORE artifact read/decode time without per-batch log writes."""
+    iterator = iter(iter_score_batches(path, batch_size))
+    while True:
+        started = perf_counter()
+        try:
+            batch = next(iterator)
+        except StopIteration:
+            break
+        timings["score_read_ms"] = timings.get("score_read_ms", 0.0) + (perf_counter() - started) * 1000
+        timings["batch_count"] = timings.get("batch_count", 0) + 1
+        yield batch

@@ -225,50 +225,24 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
 
   useEffect(() => {
     if (!runId || !overview || !["QUEUED", "RUNNING", "IMPORTING"].includes(overview.status)) return;
-    
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const port = window.location.port ? `:${window.location.port === "3000" ? "8001" : window.location.port}` : "";
-    const wsUrl = `${protocol}//${window.location.hostname}${port}/api/v1/mdm/runs/${runId}/overview/ws`;
-    
-    let ws = new WebSocket(wsUrl);
-    let reconnectTimer = 0;
     let stopped = false;
-    
-    const connect = () => {
-      if (stopped) return;
-      ws = new WebSocket(wsUrl);
-      
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (activeRunRef.current === runId) {
-            setOverview(data);
-            setOverviewStale(false);
-          }
-        } catch {}
-      };
-      
-      ws.onclose = () => {
-        if (!stopped) {
-          reconnectTimer = window.setTimeout(connect, 3000);
-        }
-      };
-      
-      ws.onerror = () => {
+    let timer: number | undefined;
+    let delay = 1500;
+    const poll = async () => {
+      try {
+        const latest = await refreshOverview(runId);
+        if (stopped) return;
+        delay = 1500;
+        if (!["QUEUED", "RUNNING", "IMPORTING"].includes(latest.status)) return;
+      } catch {
         if (!stopped && activeRunRef.current === runId) setOverviewStale(true);
-      };
-    };
-    
-    connect();
-    
-    return () => {
-      stopped = true;
-      window.clearTimeout(reconnectTimer);
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        ws.close();
+        delay = Math.min(delay * 2, 30000);
       }
+      if (!stopped) timer = window.setTimeout(() => void poll(), delay);
     };
-  }, [overview?.status, runId]);
+    timer = window.setTimeout(() => void poll(), delay);
+    return () => { stopped = true; window.clearTimeout(timer); };
+  }, [overview?.status, refreshOverview, runId]);
 
   useEffect(() => {
     let stopped = false;

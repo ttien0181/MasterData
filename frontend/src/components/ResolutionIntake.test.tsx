@@ -143,6 +143,19 @@ describe("ResolutionIntake", () => {
     expect(localStorage.getItem("masterone.upload-session.v1.user-1")).toBeNull();
   });
 
+  it("refreshes a restored validating upload until it is ready", async () => {
+    const validating = uploadSession(3, "VALIDATING", 3);
+    const ready = uploadSession(3, "READY", 3);
+    localStorage.setItem("masterone.upload-session.v1.user-1", validating.session_id);
+    api.getUploadSessions.mockResolvedValue({ items: [validating] });
+    api.getUploadSession.mockResolvedValueOnce(validating).mockResolvedValue(ready);
+
+    render(<ResolutionIntake userId="user-1" onRunCreated={vi.fn()} />);
+
+    await waitFor(() => expect(api.getUploadSession).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu phân giải" })).toBeEnabled());
+  });
+
   it("restores partial progress after remount and uploads only the missing chunk", async () => {
     const chunkSize = 8 * 1024 * 1024;
     const partial = uploadSession(chunkSize + 3, "UPLOADING", chunkSize);

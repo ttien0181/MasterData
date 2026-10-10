@@ -15,9 +15,10 @@ import pyarrow.parquet as pq
 from masterone.mdm.pipeline.candidate_engine import CandidateConfig, CandidateEngine, CandidateResult
 from masterone.mdm.pipeline.clustering import build_proposals
 from masterone.mdm.pipeline.review_grouping import classify_pair
-from masterone.mdm.pipeline.scoring_engine import ParquetSnapshot, ScoringConfig, ScoringEngine, iter_score_batches
+from masterone.mdm.pipeline.scoring_engine import ParquetSnapshot, ScoringConfig, ScoringEngine, timed_score_batches
 from masterone.mdm.pipeline.semantic_address import enrich_pairs_with_semantic
 from masterone.mdm.pipeline.standardization import standardize
+from masterone.mdm.trace import emit, span
 
 
 @dataclass
@@ -38,6 +39,18 @@ class StageResult:
     metrics: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
 
+
+class _TracedStageResults(list):
+    def append(self, result: StageResult) -> None:
+        super().append(result)
+        emit("pipeline." + result.stage_name.lower(),
+             "completed" if result.success else "failed",
+             run_id=result.run_id, attempt_id=result.attempt_id,
+             duration_ms=result.duration_ms,
+             record_count=result.metrics.get("record_count"),
+             candidate_count=result.metrics.get("candidate_count"),
+             pair_count=result.metrics.get("pair_count"))
+
 def _artifact_path(ctx: StageContext, name: str) -> str:
     ctx.output_dir.mkdir(parents=True, exist_ok=True)
     return str(ctx.output_dir / f"{ctx.run_id}_{name}")
@@ -49,10 +62,12 @@ class StageRunner:
         self.output_dir = output_dir if output_dir is not None else Path(mkdtemp(prefix="masterone-stages-"))
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.db_url = db_url
-        self.stage_results: list[StageResult] = []
+        self.stage_results: list[StageResult] = _TracedStageResults()
         self.con = duckdb.connect(str(self.output_dir / f"{run_id}.duckdb"))
 
     def _ctx(self, stage_name: str) -> StageContext:
+        emit("pipeline." + stage_name.lower(), "started",
+             run_id=self.run_id, attempt_id=self.attempt_id)
         return StageContext(self.run_id, self.attempt_id, stage_name, "", self.output_dir)
 
     def build_candidates(self, snapshot_path: str, candidate_path: str,
@@ -348,8 +363,12 @@ class StageRunner:
         by_id = {}
         insufficient_count = 0
         score_rows = pq.ParquetFile(score_path).metadata.num_rows
+        decide_timings = {}
+        route_ms = 0.0
         for batch, hydrated, decisions in self.scoring_engine.decided_batches(
-                iter_score_batches(score_path, self.scoring_engine.config.batch_size), score_rows):
+                timed_score_batches(score_path, self.scoring_engine.config.batch_size, decide_timings),
+                score_rows, timings=decide_timings):
+            route_started = time.perf_counter()
             for scored, result_pair in zip(batch, decisions):
                 if result_pair["decision"] == "INSUFFICIENT_EVIDENCE":
                     insufficient_count += 1
@@ -362,25 +381,41 @@ class StageRunner:
                     decision_pairs.append(payload)
                     for rid in (scored.left_id, scored.right_id):
                         by_id[rid] = hydrated[rid]
+            route_ms += (time.perf_counter() - route_started) * 1000
+        decide_timings["route_ms"] = route_ms
+        for key, step in (("score_read_ms", "score_read"), ("hydrate_ms", "hydrate"),
+                          ("submit_ms", "worker_submit"), ("worker_wait_ms", "worker_wait"),
+                          ("policy_compute_ms", "policy_compute"), ("route_ms", "route")):
+            if key in decide_timings:
+                emit("pipeline.decide." + step, "completed", run_id=self.run_id,
+                     attempt_id=self.attempt_id, duration_ms=round(decide_timings[key], 3),
+                     batch_count=decide_timings.get("batch_count"), candidate_count=score_rows)
         if disk_decisions:
-            self.decision_store.seal()
-            self.decision_store.write_parquet(decide_path, self.scoring_engine.config.batch_size)
+            with span("pipeline.decide.spool_seal", run_id=self.run_id, attempt_id=self.attempt_id):
+                self.decision_store.seal()
+            with span("pipeline.decide.artifact_write", run_id=self.run_id, attempt_id=self.attempt_id):
+                self.decision_store.write_parquet(decide_path, self.scoring_engine.config.batch_size)
             decisions_sorted = self.decision_store
         elif decision_pairs:
-            enrich_pairs_with_semantic(decision_pairs, by_id)
-            for p in decision_pairs:
-                for k in ["blocking_reasons", "field_evidence", "comparisons", "matched_subgroups", "normalization_tags"]:
-                    p[k] = json.dumps(p[k])
-            dec_table = pa.Table.from_pylist(decision_pairs)
-            self.con.execute(f"COPY (SELECT * FROM dec_table ORDER BY match_weight DESC NULLS LAST, left_id ASC, right_id ASC) TO '{decide_path}' (FORMAT PARQUET)")
+            with span("pipeline.decide.semantic", run_id=self.run_id, attempt_id=self.attempt_id):
+                enrich_pairs_with_semantic(decision_pairs, by_id)
+            with span("pipeline.decide.json_encode", run_id=self.run_id, attempt_id=self.attempt_id):
+                for p in decision_pairs:
+                    for k in ["blocking_reasons", "field_evidence", "comparisons", "matched_subgroups", "normalization_tags"]:
+                        p[k] = json.dumps(p[k])
+            with span("pipeline.decide.artifact_write", run_id=self.run_id, attempt_id=self.attempt_id):
+                dec_table = pa.Table.from_pylist(decision_pairs)
+                self.con.execute(f"COPY (SELECT * FROM dec_table ORDER BY match_weight DESC NULLS LAST, left_id ASC, right_id ASC) TO '{decide_path}' (FORMAT PARQUET)")
             
             # Keep nullable contract fields as None. Pandas converts SQL NULL
             # into NaN, which the strict serving adapter correctly rejects.
-            decisions_sorted = pq.read_table(decide_path).to_pylist()
-            for p in decisions_sorted:
-                for k in ["blocking_reasons", "field_evidence", "comparisons", "matched_subgroups", "normalization_tags"]:
-                    if isinstance(p.get(k), str):
-                        p[k] = json.loads(p[k])
+            with span("pipeline.decide.artifact_read", run_id=self.run_id, attempt_id=self.attempt_id):
+                decisions_sorted = pq.read_table(decide_path).to_pylist()
+            with span("pipeline.decide.json_decode", run_id=self.run_id, attempt_id=self.attempt_id):
+                for p in decisions_sorted:
+                    for k in ["blocking_reasons", "field_evidence", "comparisons", "matched_subgroups", "normalization_tags"]:
+                        if isinstance(p.get(k), str):
+                            p[k] = json.loads(p[k])
         else:
             decisions_sorted = []
         del decision_pairs, by_id

@@ -22,14 +22,15 @@ from masterone.mdm.job_queue import (
     progress,
     recover,
 )
+from masterone.mdm.trace import emit
 
 logger = logging.getLogger(__name__)
 
 
 def execute_attempt(database_url, claim):
     # Spawn, never inherit pooled connections or API memory across a fork.
-    from masterone.mdm.resolution_service import run_pipeline
     from masterone.logging_config import configure_logging
+    from masterone.mdm.resolution_service import run_pipeline
     configure_logging()
     engine, factory = create_database(database_url)
     try:
@@ -88,12 +89,24 @@ class ResolutionWorker:
                            timeout_seconds=self.timeout_seconds)
         if claim is None:
             return False
+        from masterone.mdm.models import ResolutionJobAttempt, ResolutionRun, ResolutionTask
+        with self.factory() as db:
+            task = db.get(ResolutionTask, claim.task_id)
+            attempt = db.get(ResolutionJobAttempt, claim.attempt_id)
+            run = db.get(ResolutionRun, claim.run_id)
+            queue_wait = max(0, (attempt.started_at - task.created_at).total_seconds() * 1000)
+            emit("queue.claim", "completed", run_id=claim.run_id,
+                 upload_session_id=run.upload_session_id, task_id=claim.task_id,
+                 attempt_id=claim.attempt_id, queue_wait_ms=round(queue_wait, 3))
         url = self.factory.kw["bind"].url.render_as_string(hide_password=False)
         child = multiprocessing.get_context("spawn").Process(
             target=execute_attempt, args=(url, claim), name="resolution-attempt")
         self.child = child
         try:
+            child_started = time.perf_counter()
             child.start()
+            emit("worker.child", "started", run_id=claim.run_id,
+                 upload_session_id=run.upload_session_id, attempt_id=claim.attempt_id)
             deadline = time.monotonic() + self.timeout_seconds
             while child.is_alive() and not self.stop_event.wait(min(self.lease_seconds / 3, 1)):
                 if time.monotonic() >= deadline:
@@ -108,6 +121,10 @@ class ResolutionWorker:
             if child.is_alive():
                 child.kill()
                 child.join()
+            emit("worker.child", "completed" if child.exitcode == 0 else "failed",
+                 run_id=claim.run_id, upload_session_id=run.upload_session_id,
+                 attempt_id=claim.attempt_id, status=str(child.exitcode),
+                 duration_ms=round((time.perf_counter() - child_started) * 1000, 3))
             # Success is committed by the child, never inferred from exit code.
             recover(self.factory)
             try:
