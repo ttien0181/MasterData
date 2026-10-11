@@ -243,6 +243,7 @@ def _run_selected_pipeline(run_id, factory, progress, *, scoring_config=None):
                 negative_pairs=negative_pairs, return_data=True, scoring_config=scoring_config,
                 execution_blocked_pairs=execution_blocked_pairs)
         finally:
+            runner.close_snapshot()
             runner.con.close()
     else:
         emit("pipeline.branch", "selected", branch="memory", record_count=record_count)
@@ -371,6 +372,7 @@ def _run_staged_pipeline(run_id, factory, progress, *, scoring_config=None):
         elif runner is not None:
             runner.close_decisions()
         if runner is not None:
+            runner.close_snapshot()
             runner.con.close()
 
 

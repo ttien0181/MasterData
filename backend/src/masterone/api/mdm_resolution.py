@@ -1,5 +1,7 @@
 import asyncio
 import csv
+import json
+import time
 from hashlib import sha256
 from io import StringIO
 from itertools import islice
@@ -7,7 +9,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
@@ -16,8 +18,10 @@ from sqlalchemy.orm import Session
 from masterone.auth.security import (
     CurrentSession,
     check_capability,
+    current_session,
     require_capability,
     require_mutation_capability,
+    require_origin,
 )
 from masterone.config import get_settings
 from masterone.db.session import get_session
@@ -55,6 +59,7 @@ from masterone.mdm.resolution_items import (
     transition_review,
 )
 from masterone.mdm.resolution_pairs import decide_review_pair, pair_categories, pending_pairs
+from masterone.mdm.run_summary import summary_for
 from masterone.mdm.resolution_preview import execute_preview, prepare_preview
 from masterone.mdm.resolution_split import execute_split, list_merge_events, prepare_split
 from masterone.mdm.schemas import ResolutionOverviewRead, task_read
@@ -343,45 +348,20 @@ def get_overview(run_id: str, db: Session = Depends(get_session),
                  auth: CurrentSession = Depends(require_capability("read"))):
     run = owned_run(db, run_id, auth.user.id)
     task = db.query(ResolutionTask).filter_by(run_id=run.id).one_or_none()
-    counts = {
-        "auto": db.query(ResolutionProposal).filter(ResolutionProposal.run_id == run_id,
-                                                     ResolutionProposal.status.in_(["AUTO_READY", "REVIEW_APPROVED", "REVIEW_STAGED_CONFLICT"])).count(),
-        "rejected": db.query(ResolutionPair).filter(
-            ResolutionPair.run_id == run_id,
-            or_(ResolutionPair.pair_decision.in_(["NON_MATCH", "NOT_MERGEABLE"]),
-                ResolutionPair.user_decision == "REJECTED"),
-        ).count(),
-        "review_cases": len(_review_groups(db, run_id)),
-        "manual": db.query(ResolutionProposal).filter_by(run_id=run_id, status="REVIEW_REQUIRED").count(),
-    }
-    counts["review"] = counts["review_cases"] + counts["manual"]
-    counts["review_pairs"] = pending_pairs(db, run_id).count()
-    counts["hard_blocked"] = db.query(ResolutionPair).filter_by(run_id=run_id,
-                                                                  pair_decision="NOT_MERGEABLE").count()
-    counts["insufficient"] = run.insufficient_count
-    counts["group_a"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="A").count()
-    counts["group_c"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="C").count()
-    counts["group_d"] = db.query(ResolutionPair).filter_by(run_id=run_id, primary_group="D").count()
-    counts["separate"] = separate_record_count(db, run_id, run.record_count)
-    eligible_merge_group_count = db.query(ResolutionProposal).filter(
-        ResolutionProposal.run_id == run_id,
-        ResolutionProposal.status.in_(["AUTO_READY", "REVIEW_APPROVED"]),
-    ).count()
-    estimated_entity_count = counts["separate"] + eligible_merge_group_count
-    duplicate_record_count = max(0, run.record_count - estimated_entity_count)
-    source_counts = {source: count for source, count in db.query(ResolutionRecord.source_system,
-                    func.count(ResolutionRecord.id)).filter_by(run_id=run_id).group_by(
-                    ResolutionRecord.source_system).all()}
+    # One stored row holds the figures; it is recomputed only when pairs, proposals or review cases changed.
+    summary = summary_for(db, run)
+    payload = summary.payload
+    counts = {**payload["counts"], "insufficient": run.insufficient_count}
     history_count = db.query(ResolutionExport).filter_by(run_id=run_id).count()
     return {"run_id": run.id, "status": run.status, "phase": task.phase if task else run.phase,
             "processed_count": task.processed_count if task else 0,
             "total_count": task.total_count if task else run.record_count,
             "record_count": run.record_count, "file_count": run.file_count,
-            "source_counts": source_counts, "history_count": history_count,
+            "source_counts": summary.source_counts, "history_count": history_count,
             "candidate_count": run.candidate_count,
-            "estimated_entity_count": estimated_entity_count,
-            "duplicate_record_count": duplicate_record_count,
-            "eligible_merge_group_count": eligible_merge_group_count,
+            "estimated_entity_count": payload["estimated_entity_count"],
+            "duplicate_record_count": payload["duplicate_record_count"],
+            "eligible_merge_group_count": payload["eligible_merge_group_count"],
             "counts": counts,
             "task": task_read(task) if task else None}
 
@@ -852,3 +832,39 @@ def get_entity_history(
             for v in versions
         ],
     }
+
+
+# Separate router: the HTTP router's engine dependency takes a Request, which WebSocket routes never receive.
+ws_router = APIRouter(prefix="/mdm/runs", tags=["MDM resolution"])
+
+
+@ws_router.websocket("/{run_id}/overview/ws")
+async def overview_ws(websocket: WebSocket, run_id: str):
+    # Mirrors GET /overview: Origin, session cookie, read capability and run ownership.
+    with websocket.app.state.session_factory() as db:
+        try:
+            require_origin(websocket)
+            auth = current_session(websocket, db)
+            check_capability(auth, "read")
+            owned_run(db, run_id, auth.user.id)
+        except HTTPException:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+        await websocket.accept()
+        last_sent, last_sent_at = None, 0.0
+        try:
+            while True:
+                db.rollback()  # Pick up progress committed by the background run
+                snapshot = await asyncio.to_thread(get_overview, run_id, db, auth)
+                payload = ResolutionOverviewRead.model_validate(snapshot).model_dump(mode="json", by_alias=True)
+                # Send on change, plus a heartbeat, instead of the full payload every tick.
+                encoded = json.dumps(payload, sort_keys=True, default=str)
+                now = time.monotonic()
+                if encoded != last_sent or now - last_sent_at >= 15:
+                    await websocket.send_json(payload)
+                    last_sent, last_sent_at = encoded, now
+                await asyncio.sleep(2)
+        except WebSocketDisconnect:
+            return
+        except HTTPException:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)

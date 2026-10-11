@@ -433,7 +433,8 @@ def standardize(raw_fields: dict[str, str], entity_type: str = "PERSON") -> tupl
     if ward_match:
         wr = resolve_ward(ward_match)
         addr_parts["ward_status"] = wr.status
-        addr_parts["ward_ids"] = list(wr.unit_ids)
+        # frozenset order depends on the process hash seed; sort so every process stores the same value.
+        addr_parts["ward_ids"] = sorted(wr.unit_ids)
         addr_parts["needs_hitl"] = wr.status == "ambiguous"
     else:
         addr_parts["ward_status"] = "unresolved"

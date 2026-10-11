@@ -225,24 +225,56 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
 
   useEffect(() => {
     if (!runId || !overview || !["QUEUED", "RUNNING", "IMPORTING"].includes(overview.status)) return;
+    
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const port = window.location.port ? `:${window.location.port === "3000" ? "8001" : window.location.port}` : "";
+    const wsUrl = `${protocol}//${window.location.hostname}${port}/api/v1/mdm/runs/${runId}/overview/ws`;
+    
+    // Only connect() opens sockets; a second socket here would double the server-side loop.
+    let ws: WebSocket | null = null;
+    let reconnectTimer = 0;
     let stopped = false;
-    let timer: number | undefined;
-    let delay = 1500;
-    const poll = async () => {
-      try {
-        const latest = await refreshOverview(runId);
-        if (stopped) return;
-        delay = 1500;
-        if (!["QUEUED", "RUNNING", "IMPORTING"].includes(latest.status)) return;
-      } catch {
+    let attempts = 0;
+    
+    const connect = () => {
+      if (stopped) return;
+      ws = new WebSocket(wsUrl);
+      ws.onopen = () => { attempts = 0; };
+      
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (activeRunRef.current === runId) {
+            setOverview(data);
+            setOverviewStale(false);
+          }
+        } catch {}
+      };
+      
+      ws.onclose = () => {
+        if (!stopped) {
+          // Back off 3s, 6s, 12s, ... capped at 30s so a failing server is not hammered.
+          const delay = Math.min(3000 * 2 ** attempts, 30000);
+          attempts += 1;
+          reconnectTimer = window.setTimeout(connect, delay);
+        }
+      };
+      
+      ws.onerror = () => {
         if (!stopped && activeRunRef.current === runId) setOverviewStale(true);
-        delay = Math.min(delay * 2, 30000);
-      }
-      if (!stopped) timer = window.setTimeout(() => void poll(), delay);
+      };
     };
-    timer = window.setTimeout(() => void poll(), delay);
-    return () => { stopped = true; window.clearTimeout(timer); };
-  }, [overview?.status, refreshOverview, runId]);
+    
+    connect();
+    
+    return () => {
+      stopped = true;
+      window.clearTimeout(reconnectTimer);
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        ws.close();
+      }
+    };
+  }, [overview?.status, runId]);
 
   useEffect(() => {
     let stopped = false;

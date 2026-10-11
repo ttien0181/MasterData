@@ -9,11 +9,13 @@ import json
 import math
 import os
 import platform
+import sqlite3
 import tempfile
-from collections import Counter
+from collections import Counter, OrderedDict
+from collections.abc import Mapping
 from contextlib import ExitStack, nullcontext
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from hashlib import sha256
 from importlib.metadata import version
 from itertools import islice
@@ -26,6 +28,8 @@ import pyarrow.parquet as pq
 from masterone.mdm.pipeline import matching, policy_engine
 
 SCORE_PARALLEL_MIN = 15000  # expected candidates; below this SCORE stays in-process
+SNAPSHOT_CACHE_RECORDS = 100000  # decoded records kept per ParquetSnapshot (~5 KB each); 0 disables the cache
+CLUSTER_CACHE_RECORDS = 100000  # clustering re-reads the same members across merge attempts (~400 MB at most)
 CONTRACT_VERSION = "p119_score_v1"
 RULE_VERSION = "p119_rule_v1"
 NORMALIZATION_VERSION = "p119_normalized_v1"
@@ -38,9 +42,13 @@ SCORE_SCHEMA = pa.schema([
 ])
 
 
+_CANONICAL_ENCODER = json.JSONEncoder(sort_keys=True, ensure_ascii=False, separators=(",", ":"),
+                                      default=lambda v: sorted(v) if isinstance(v, (set, frozenset)) else str(v))
+
+
 def canonical_json(value):
-    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"),
-                      default=lambda v: sorted(v) if isinstance(v, (set, frozenset)) else str(v))
+    # One shared encoder: json.dumps with keyword arguments builds a new encoder per call.
+    return _CANONICAL_ENCODER.encode(value)
 
 
 def file_hash(path):
@@ -84,35 +92,190 @@ class MemorySnapshot:
         return {rid: self.records[rid] for rid in ids if rid in self.records}
 
 
-class ParquetSnapshot:
-    """Batch hydration via disk-backed DuckDB; never load all candidate records."""
-    def __init__(self, path, connection):
+class IndexReader:
+    """Record lookups by id over a SQLite index of a normalized snapshot.
+
+    Opened read-only, so pool workers can fetch the records they need themselves
+    instead of receiving pickled record payloads from the parent for every batch.
+    Decoded records sit in a bounded LRU so hot records are decoded once.
+    """
+    def __init__(self, index_path, *, cache_records):
+        self.index_path = Path(index_path).resolve()
+        self.cache_records = cache_records
+        self._index = sqlite3.connect(f"{self.index_path.as_uri()}?mode=ro", uri=True, check_same_thread=False)
+        self._cache = OrderedDict()
+        self._complete = False
+        self.rows = self._index.execute("SELECT count(*) FROM records").fetchone()[0]
+
+    def widen_cache(self, records):
+        """Raise the decoded-record budget for a phase that revisits many records (clustering)."""
+        self.cache_records = max(self.cache_records, records)
+
+    def has_record(self, record_id):
+        if record_id in self._cache:
+            return True
+        return self._index.execute("SELECT 1 FROM records WHERE id = ?", (record_id,)).fetchone() is not None
+
+    def iter_ids(self):
+        for (record_id,) in self._index.execute("SELECT id FROM records ORDER BY id"):
+            yield record_id
+
+    def close(self):
+        self._index.close()
+        self._cache.clear()
+
+    def iter_records(self, batch_size):
+        cursor = self._index.execute("SELECT payload FROM records ORDER BY id")
+        while rows := cursor.fetchmany(batch_size):
+            for (payload,) in rows:
+                yield decode_record(json.loads(payload))
+
+    def get_records(self, ids):
+        if not self._complete and self.cache_records > 0 and self.rows <= self.cache_records:
+            # Snapshot fits in the cache: one sequential scan replaces an index probe per record.
+            self._load_all()
+        if self._complete:
+            return {rid: self._cache[rid] for rid in ids if rid in self._cache}
+        found, missing = {}, []
+        for rid in ids:
+            if rid in self._cache:
+                self._cache.move_to_end(rid)
+                found[rid] = self._cache[rid]
+            else:
+                missing.append(rid)
+        if missing:
+            # A large fraction of the table is cheaper to find with one sequential scan
+            # (physical row order) than with that many separate B-tree point lookups --
+            # each IN(...) chunk still does one key search per id, which turns into real
+            # disk I/O once the index no longer fits in page cache (measured: 352k lookups
+            # against a 1M-row/4.5GB index cost ~240s; a full scan is dominated by decoding
+            # only the matched rows instead).
+            fetched = (self._scan_for(set(missing)) if len(missing) > max(1, self.rows // 10)
+                      else self._fetch(missing))
+            found.update(fetched)
+            if self.cache_records > 0:
+                for rid, record in fetched.items():
+                    self._cache[rid] = record
+                while len(self._cache) > self.cache_records:
+                    self._cache.popitem(last=False)
+        return found
+
+    def _load_all(self):
+        for record in self.iter_records(4096):
+            self._cache[record["id"]] = record
+        self._complete = True
+
+    def _fetch(self, ids):
+        found = {}
+        for start in range(0, len(ids), 500):
+            chunk = ids[start:start + 500]
+            marks = ",".join("?" * len(chunk))
+            for (payload,) in self._index.execute(f"SELECT payload FROM records WHERE id IN ({marks})", chunk):
+                record = decode_record(json.loads(payload))
+                found[record["id"]] = record
+        return found
+
+    def _scan_for(self, wanted: set) -> dict:
+        """One sequential pass over the whole table; skip decoding rows that aren't wanted."""
+        found = {}
+        cursor = self._index.execute("SELECT id, payload FROM records")
+        try:
+            while rows := cursor.fetchmany(4096):
+                for record_id, payload in rows:
+                    if record_id in wanted:
+                        found[record_id] = decode_record(json.loads(payload))
+        finally:
+            cursor.close()
+        return found
+
+
+class ParquetSnapshot(IndexReader):
+    """Snapshot of a normalized Parquet file, read by id.
+
+    The file is indexed once into SQLite. Batch lookups then cost index probes
+    instead of a full Parquet scan per batch (the previous JOIN rescanned the whole
+    snapshot for every batch, twice per run).
+    """
+    def __init__(self, path, connection, *, cache_records=None):
         self.con = connection
         self.path = str(path)
+        cache_records = (int(os.environ.get("MDM_SNAPSHOT_CACHE_RECORDS", SNAPSHOT_CACHE_RECORDS))
+                         if cache_records is None else cache_records)
         rows, unique, invalid = self.con.execute(f"SELECT count(*), count(DISTINCT id), count(*) FILTER (WHERE id IS NULL OR id='') FROM read_parquet({sql_literal(path)})").fetchone()
         if rows != unique or invalid:
             raise ValueError("Scoring snapshot requires distinct nonempty IDs")
+        index_path = Path(f"{self.path}.index.sqlite").resolve()
+        self._build_index(index_path)
+        super().__init__(index_path, cache_records=cache_records)
 
-    def iter_records(self, batch_size):
-        cursor = self.con.cursor()
+    def _build_index(self, index_path):
+        index_path.unlink(missing_ok=True)
+        index = sqlite3.connect(index_path)
         try:
-            cursor.execute(f"SELECT * FROM read_parquet({sql_literal(self.path)}) ORDER BY id")
-            names = [d[0] for d in cursor.description]
-            while rows := cursor.fetchmany(batch_size):
-                for row in rows:
-                    yield decode_record(dict(zip(names, row, strict=True)))
+            index.execute("PRAGMA journal_mode=OFF")
+            index.execute("PRAGMA synchronous=OFF")
+            index.execute("CREATE TABLE records (id TEXT PRIMARY KEY, payload TEXT NOT NULL) WITHOUT ROWID")
+            cursor = self.con.cursor()
+            try:
+                cursor.execute(f"SELECT * FROM read_parquet({sql_literal(self.path)})")
+                names = [d[0] for d in cursor.description]
+                id_position = names.index("id")
+                while rows := cursor.fetchmany(4096):
+                    index.executemany("INSERT INTO records VALUES (?, ?)",
+                                      [(row[id_position], json.dumps(dict(zip(names, row, strict=True)), default=str))
+                                       for row in rows])
+            finally:
+                cursor.close()
+            index.commit()
         finally:
-            cursor.close()
+            index.close()
 
-    def get_records(self, ids):
-        self.con.register("scoring_ids", pa.table({"id": sorted(ids)}))
-        try:
-            cursor = self.con.execute(f"SELECT s.* FROM read_parquet({sql_literal(self.path)}) s JOIN scoring_ids i USING(id) ORDER BY s.id")
-            names = [d[0] for d in cursor.description]
-            return {record["id"]: record for row in cursor.fetchall()
-                    for record in [decode_record(dict(zip(names, row, strict=True)))]}
-        finally:
-            self.con.unregister("scoring_ids")
+    def close(self):
+        super().close()
+        self.index_path.unlink(missing_ok=True)
+
+
+class RecordView(Mapping):
+    """Read-only mapping of id -> normalized record, backed by a snapshot's index.
+
+    Lets clustering and review code look records up on demand instead of holding
+    every record of a large run in process memory.
+    """
+    def __init__(self, snapshot):
+        self._snapshot = snapshot
+
+    def __getitem__(self, record_id):
+        cache = self._snapshot._cache
+        if record_id in cache:
+            # Hot path: cluster guards look the same members up many times per merge attempt.
+            cache.move_to_end(record_id)
+            return cache[record_id]
+        found = self._snapshot.get_records([record_id])
+        if record_id not in found:
+            raise KeyError(record_id)
+        return found[record_id]
+
+    def __contains__(self, record_id):
+        # Existence check only: never decode a record just to test membership.
+        return self._snapshot.has_record(record_id)
+
+    def __iter__(self):
+        yield from self._snapshot.iter_ids()
+
+    def prefetch(self, ids) -> None:
+        """Hydrate exactly these ids in one batched sweep instead of one SQLite round trip each.
+
+        Widens the cache first so a working set larger than the default cap isn't partially
+        evicted while it's being filled -- the caller already knows this is everything it needs.
+        """
+        ids = list(ids)
+        if not ids:
+            return
+        self._snapshot.widen_cache(len(ids))
+        self._snapshot.get_records(ids)
+
+    def __len__(self):
+        return self._snapshot.rows
 
 
 @dataclass(frozen=True)
@@ -156,6 +319,9 @@ class ScoreResult:
     @classmethod
     def from_row(cls, row):
         return cls(**{**row, "blocking_reasons": tuple(row["blocking_reasons"])})
+
+
+_SCORE_FIELD_NAMES = tuple(f.name for f in fields(ScoreResult))
 
 
 class ScoringCoverageError(RuntimeError):
@@ -287,10 +453,45 @@ def _decide_rule(result, records, policies):
 
 
 def _decide_rule_batch(results, records, policies):
-    """Worker-side DECIDE for one batch; shares _decide_rule with the serial path."""
-    started = perf_counter()
-    decisions = [_decide_rule(r, records, policies) for r in results]
-    return decisions, (perf_counter() - started) * 1000
+    """Worker-side DECIDE for one batch; shares _decide_rule with the serial path.
+    Consumers drop INSUFFICIENT_EVIDENCE pairs, so only their decision string is
+    returned; the full payload would be pickled back for every discarded pair."""
+    out = []
+    for r in results:
+        payload = _decide_rule(r, records, policies)
+        out.append({"decision": payload["decision"]} if payload["decision"] == "INSUFFICIENT_EVIDENCE" else payload)
+    return out
+
+
+_WORKER_READER = None
+
+
+def _init_pool_worker(index_path, cache_records):
+    """Pool initializer: each worker opens the snapshot index read-only, once."""
+    global _WORKER_READER
+    _WORKER_READER = IndexReader(index_path, cache_records=cache_records)
+
+
+def _snapshot_pool(snapshot, workers):
+    """Process pool; when the snapshot is indexed, each worker opens the index itself."""
+    from concurrent.futures import ProcessPoolExecutor
+    if isinstance(snapshot, IndexReader):
+        return ProcessPoolExecutor(max_workers=workers, initializer=_init_pool_worker,
+                                   initargs=(str(snapshot.index_path), snapshot.cache_records))
+    return ProcessPoolExecutor(max_workers=workers)
+
+
+def _score_rule_batch_indexed(candidates, frequencies, negative_pairs, identity):
+    keys = {rid for c in candidates for rid in (c["left_id"], c["right_id"])}
+    records = _WORKER_READER.get_records(keys)
+    if any(c["left_id"] not in records or c["right_id"] not in records for c in candidates):
+        raise ScoringCoverageError("Candidate endpoint missing from normalized snapshot")
+    return _score_rule_batch(candidates, records, frequencies, negative_pairs, identity)
+
+
+def _decide_rule_batch_indexed(results, policies):
+    keys = {rid for r in results for rid in (r.left_id, r.right_id)}
+    return _decide_rule_batch(results, _WORKER_READER.get_records(keys), policies)
 
 
 class ScoringEngine:
@@ -319,10 +520,15 @@ class ScoringEngine:
             self.identity.update(model_version=self.config.model_version, model_hash=self.config.model_sha256,
                                  manifest_hash=manifest_hash, splink_version=version("splink"))
         self.frequencies, count, snapshot_hash = self._census()
+        self._snapshot_file_sha = self._snapshot_file_digest()
         self.identity.update(snapshot_hash=snapshot_hash, snapshot_records=count,
                              frequency_hash=sha256(canonical_json(self.frequencies).encode()).hexdigest(),
                              frequency_scope="full_normalized_snapshot_scalar_phone_email_record_counts")
         self.predictor = None
+
+    def _snapshot_file_digest(self):
+        path = getattr(self.snapshot, "path", None)
+        return file_hash(path) if path else None
 
     def _census(self):
         frequencies = {"phone": Counter(), "email": Counter()}
@@ -338,7 +544,7 @@ class ScoringEngine:
                     frequencies[f][value] += 1
         return frequencies, count, digest.hexdigest()
 
-    def _hydrate_batch(self, candidates):
+    def _check_candidates(self, candidates):
         if len(candidates) > self.config.batch_size:
             raise ScoringCoverageError("Scoring batch exceeds configured size")
         if self.config.mode == "splink" and self.predictor is None:
@@ -346,6 +552,10 @@ class ScoringEngine:
         keys = [(c["left_id"], c["right_id"]) for c in candidates]
         if any(not isinstance(a, str) or not isinstance(b, str) or not a or a >= b for a, b in keys) or len(set(keys)) != len(keys):
             raise ScoringCoverageError("Candidate batch must contain distinct canonical nonself pairs")
+        return keys
+
+    def _hydrate_batch(self, candidates):
+        keys = self._check_candidates(candidates)
         records = self.snapshot.get_records({rid for pair in keys for rid in pair})
         if any(a not in records or b not in records for a, b in keys):
             raise ScoringCoverageError("Candidate endpoint missing from normalized snapshot")
@@ -361,14 +571,20 @@ class ScoringEngine:
                 yield batch, (self.score_batch(batch) if provider is None else provider(batch))
             return
         from collections import deque
-        from concurrent.futures import ProcessPoolExecutor
         self._check_decision_semantics()
         pending = deque()
-        with ProcessPoolExecutor(max_workers=workers) as pool:
+        indexed = isinstance(self.snapshot, IndexReader)
+        with _snapshot_pool(self.snapshot, workers) as pool:
             for batch in iter(lambda: list(islice(iterator, self.config.batch_size)), []):
-                _, records = self._hydrate_batch(batch)
-                pending.append((batch, pool.submit(_score_rule_batch, batch, records, self.frequencies,
-                                                   self.negative_pairs, self.identity)))
+                if indexed:
+                    # Workers fetch their own records from the index; only candidates cross the process boundary.
+                    self._check_candidates(batch)
+                    pending.append((batch, pool.submit(_score_rule_batch_indexed, batch, self.frequencies,
+                                                       self.negative_pairs, self.identity)))
+                else:
+                    _, records = self._hydrate_batch(batch)
+                    pending.append((batch, pool.submit(_score_rule_batch, batch, records, self.frequencies,
+                                                       self.negative_pairs, self.identity)))
                 if len(pending) > 2 * workers:
                     done, future = pending.popleft()
                     yield done, future.result()
@@ -446,7 +662,8 @@ class ScoringEngine:
                     actual = {(r.left_id, r.right_id) for r in scored}
                     if len(scored) != len(batch) or actual != expected:
                         raise ScoringCoverageError("Missing, duplicate or unexpected scored pair")
-                    rows = [asdict(r) for r in scored]
+                    # Same mapping as asdict(); a flat copy avoids recursive deep-copy per row.
+                    rows = [{name: getattr(r, name) for name in _SCORE_FIELD_NAMES} for r in scored]
                     for r, row in zip(scored, rows):
                         if (not math.isfinite(r.rule_score) or not math.isfinite(r.raw_rule_score) or r.model_hash != self.identity["model_hash"]
                             or r.model_version != self.identity["model_version"] or r.config_hash != self.identity["config_hash"]):
@@ -463,7 +680,11 @@ class ScoringEngine:
                     max_rows = max(max_rows, len(scored))
             if count != expected_count or pq.ParquetFile(temporary).metadata.num_rows != expected_count:
                 raise ScoringCoverageError("Scored artifact count differs from input candidate count")
-            frequencies, records, snapshot_hash = self._census()
+            if self._snapshot_file_sha is not None and self._snapshot_file_digest() == self._snapshot_file_sha:
+                # Parquet snapshots are immutable: an unchanged file digest proves the census taken at init still holds.
+                frequencies, records, snapshot_hash = self.frequencies, self.identity["snapshot_records"], self.identity["snapshot_hash"]
+            else:
+                frequencies, records, snapshot_hash = self._census()
             self._check_decision_semantics()
             if snapshot_hash != self.identity["snapshot_hash"] or records != self.identity["snapshot_records"] or frequencies != self.frequencies:
                 raise ScoringInputChangedError("Normalized snapshot changed during scoring")
@@ -518,53 +739,36 @@ class ScoringEngine:
         self._check_decision_semantics()
         return _decide_rule(result, records, self.policies)
 
-    def decided_batches(self, batches, expected_count, *, timings=None):
+    def decided_batches(self, batches, expected_count, *, need_hydrated=True):
         """Yield (batch, hydrated, decisions) in input order. Large rule-mode inputs decide
-        in worker processes; hydration and the semantics check stay in this process."""
+        in worker processes; the semantics check stays in this process. With an indexed
+        snapshot, workers read their own records, and `hydrated` is None unless requested."""
         workers = int(os.environ.get("MDM_SCORE_WORKERS", min(os.cpu_count() or 1, 4)))
         if self.config.mode != "rule" or workers <= 1 or expected_count < int(
                 os.environ.get("MDM_SCORE_PARALLEL_MIN", SCORE_PARALLEL_MIN)):
             for batch in batches:
-                started = perf_counter()
                 hydrated = self.snapshot.get_records({rid for r in batch for rid in (r.left_id, r.right_id)})
-                if timings is not None:
-                    timings["hydrate_ms"] = timings.get("hydrate_ms", 0.0) + (perf_counter() - started) * 1000
-                started = perf_counter()
-                decisions = [self.decide(r, hydrated) for r in batch]
-                if timings is not None:
-                    timings["policy_compute_ms"] = timings.get("policy_compute_ms", 0.0) + (perf_counter() - started) * 1000
-                yield batch, hydrated, decisions
+                yield batch, hydrated, [self.decide(r, hydrated) for r in batch]
             return
         from collections import deque
-        from concurrent.futures import ProcessPoolExecutor
         pending = deque()
-        with ProcessPoolExecutor(max_workers=workers) as pool:
+        indexed = isinstance(self.snapshot, IndexReader)
+        with _snapshot_pool(self.snapshot, workers) as pool:
             for batch in batches:
                 self._check_decision_semantics()
-                started = perf_counter()
-                hydrated = self.snapshot.get_records({rid for r in batch for rid in (r.left_id, r.right_id)})
-                if timings is not None:
-                    timings["hydrate_ms"] = timings.get("hydrate_ms", 0.0) + (perf_counter() - started) * 1000
-                started = perf_counter()
-                pending.append((batch, hydrated, pool.submit(_decide_rule_batch, batch, hydrated, self.policies)))
-                if timings is not None:
-                    timings["submit_ms"] = timings.get("submit_ms", 0.0) + (perf_counter() - started) * 1000
+                if indexed:
+                    hydrated = (self.snapshot.get_records({rid for r in batch for rid in (r.left_id, r.right_id)})
+                                if need_hydrated else None)
+                    pending.append((batch, hydrated, pool.submit(_decide_rule_batch_indexed, batch, self.policies)))
+                else:
+                    hydrated = self.snapshot.get_records({rid for r in batch for rid in (r.left_id, r.right_id)})
+                    pending.append((batch, hydrated, pool.submit(_decide_rule_batch, batch, hydrated, self.policies)))
                 if len(pending) > 2 * workers:
                     yield_batch, yield_hydrated, future = pending.popleft()
-                    started = perf_counter()
-                    decisions, compute_ms = future.result()
-                    if timings is not None:
-                        timings["worker_wait_ms"] = timings.get("worker_wait_ms", 0.0) + (perf_counter() - started) * 1000
-                        timings["policy_compute_ms"] = timings.get("policy_compute_ms", 0.0) + compute_ms
-                    yield yield_batch, yield_hydrated, decisions
+                    yield yield_batch, yield_hydrated, future.result()
             while pending:
                 yield_batch, yield_hydrated, future = pending.popleft()
-                started = perf_counter()
-                decisions, compute_ms = future.result()
-                if timings is not None:
-                    timings["worker_wait_ms"] = timings.get("worker_wait_ms", 0.0) + (perf_counter() - started) * 1000
-                    timings["policy_compute_ms"] = timings.get("policy_compute_ms", 0.0) + compute_ms
-                yield yield_batch, yield_hydrated, decisions
+                yield yield_batch, yield_hydrated, future.result()
 
     def _check_decision_semantics(self):
         from masterone.mdm.pipeline.decision_semantics import enabled

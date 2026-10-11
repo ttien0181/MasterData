@@ -275,3 +275,23 @@ def test_direct_stream_import_has_no_ten_thousand_row_cap(client):
     created = client.post("/api/v1/mdm/runs", files=[("files", ("many.csv", header + rows, "text/csv"))])
     assert created.status_code == 201, created.text
     assert created.json()["profile"]["row_count"] == 10_001
+
+
+def test_draft_cannot_be_deleted_while_its_job_runs(client, monkeypatch, tmp_path):
+    from masterone.db.base import now_utc
+    from masterone.mdm.models import ResolutionUploadSession
+
+    monkeypatch.setattr(get_settings(), "upload_staging_dir", str(tmp_path / "staging"))
+    payload = (b"record_id,source,name,phone,email,address\n"
+               b"ONE,CRM,Ada,0901234567,ada@example.test,Ha Noi\n")
+    draft = _create_draft(client, "people.csv", payload)
+    _upload_payload(client, draft, payload)
+    with client.session_factory() as db:
+        row = db.get(ResolutionUploadSession, draft["session_id"])
+        row.status = "VALIDATING"
+        row.updated_at = now_utc()
+        db.commit()
+
+    refused = client.delete(f"/api/v1/mdm/upload-sessions/{draft['session_id']}")
+    assert refused.status_code == 409, refused.text
+    assert client.get(f"/api/v1/mdm/upload-sessions/{draft['session_id']}").json()["status"] == "VALIDATING"

@@ -18,16 +18,23 @@ export type ResolutionRunHistory = {
   total: number; next_cursor?: string | null; items: { run_id: string; name?: string | null; archived_at?: string | null;
     status: string; phase?: string | null; created_at: string; record_count: number; file_count: number; files: string[] }[];
 };
-export type UploadSessionStatus = "UPLOADING" | "VALIDATING" | "READY" | "ERROR" | "COMMITTED";
+export type UploadSessionStatus = "UPLOADING" | "VALIDATING" | "READY" | "COMMITTING" | "ERROR" | "COMMITTED";
 export type UploadSessionFile = {
   file_id: string; position: number; filename: string; expected_size: number; received_size: number;
   status: string; sha256: string | null; row_count: number | null; source_counts: Record<string, number>;
   validation_error: string | null; parts: { part_number: number; byte_size: number; sha256: string }[];
   replacement?: UploadSessionFile | null;
 };
+export type RunCommitProfile = {
+  row_count: number; file_count: number; source_counts: Record<string, number>;
+  files: { filename: string; row_count: number; sha256: string }[];
+};
 export type UploadSession = {
   session_id: string; name: string | null; status: UploadSessionStatus; total_bytes: number;
-  committed_run_id: string | null; error_message: string | null; created_at: string; updated_at: string;
+  // "direct": browser PUTs parts to R2 through presigned URLs. "proxy": parts pass through the API (local staging).
+  upload_mode: "direct" | "proxy";
+  committed_run_id: string | null; committed_profile: RunCommitProfile | null;
+  error_message: string | null; created_at: string; updated_at: string;
   files: UploadSessionFile[];
 };
 export type ResolutionOverview = {

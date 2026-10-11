@@ -6,8 +6,9 @@ candidate union remain in memory; workload estimates are not an OS RSS limit.
 
 import json
 import logging
+import pickle
 from collections import defaultdict
-from copy import deepcopy
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, replace
 from hashlib import sha256
 from itertools import combinations
@@ -102,6 +103,28 @@ class CandidateConfig:
             raise ValueError("Composite sources must be distinct from every other pass")
 
 
+class _PairSources(Mapping):
+    """Read-only view: canonical pair -> set of generating sources, decoded from bitmasks on access.
+
+    Iterates in sorted pair order, like the dict it replaces, so consumers see the same sequence.
+    """
+
+    def __init__(self, masks: dict, bits: dict[str, int]):
+        self._masks = masks
+        self._bits = bits
+        self._keys = sorted(masks)
+
+    def __getitem__(self, pair):
+        mask = self._masks[pair]
+        return {name for name, bit in self._bits.items() if mask & bit}
+
+    def __iter__(self):
+        return iter(self._keys)
+
+    def __len__(self):
+        return len(self._keys)
+
+
 @dataclass
 class CandidateResult:
     pairs: dict[tuple[str, str], set[str]]
@@ -113,6 +136,11 @@ class CandidateWorkloadExceededError(RuntimeError):
     def __init__(self, metrics: dict):
         super().__init__("Global candidate pair limit exceeded; partial candidates must not be published")
         self.metrics = metrics
+
+
+def _isolated_copy(value):
+    """Independent copy of JSON-like data. Same isolation as deepcopy, several times faster."""
+    return pickle.loads(pickle.dumps(value, pickle.HIGHEST_PROTOCOL))
 
 
 class CandidateEngine:
@@ -128,6 +156,20 @@ class CandidateEngine:
         self.blocks: dict[tuple[str, tuple[str, ...]], set[str]] = defaultdict(set)
         self.excluded: dict[str, int] = defaultdict(int)
 
+    def _retained(self, fields: dict) -> dict:
+        """Independent copy of the fields later passes read (TF-IDF text and partitions).
+
+        Blocking keys are derived here, at ingest, so the rest of the record is not kept.
+        The sparse TF-IDF path digests whole records, so it keeps everything.
+        """
+        if self.config.sparse_tfidf:
+            return _isolated_copy(fields)
+        kept = {key: fields[key] for key in ("name", "address", "dob") if key in fields}
+        address_parts = fields.get("address_parts")
+        if isinstance(address_parts, dict) and "province" in address_parts:
+            kept["address_parts"] = {"province": address_parts["province"]}
+        return _isolated_copy(kept)
+
     def add_records(self, records):
         for record in records:
             record_id = record["id"]
@@ -135,8 +177,8 @@ class CandidateEngine:
                 raise ValueError("Snapshot record ID must be a nonempty string")
             if record_id in self.records:
                 raise ValueError("Duplicate snapshot record ID")
-            fields = deepcopy(record["normalized_fields"])
-            self.records[record_id] = {"id": record_id, "normalized_fields": fields}
+            fields = record["normalized_fields"]
+            self.records[record_id] = {"id": record_id, "normalized_fields": self._retained(fields)}
             for field_name, collection in (("phone", "phones"), ("email", "emails")):
                 source = f"exact_{field_name}"
                 values = {item["value"] for item in fields.get(collection, [])
@@ -173,7 +215,9 @@ class CandidateEngine:
         limits = {rule.source: rule.max_block_size for rule in config.composites}
         limits.update({source: config.contact_block_size for source in ("exact_phone", "exact_email", "exact_gov_id")})
         limits.update(exact_name=config.name_block_size, name_gram=config.gram_block_size, address_gram=config.gram_block_size)
-        pairs = defaultdict(set)
+        # canonical pair -> bitmask of the sources that generated it; sets per pair cost several times more memory.
+        pairs: dict[tuple[str, str], int] = {}
+        source_bits: dict[str, int] = {}
         metrics = {"record_count": len(self.records), "candidate_count": 0,
                    "generated_observations": 0, "skipped_pair_observations": 0,
                    "duplicate_observations": 0, "skip_reasons": {}, "sources": {}}
@@ -217,9 +261,11 @@ class CandidateEngine:
                 stats = metrics["sources"].setdefault(source, {"generated_pairs": 0, "skipped_pairs": 0})
                 stats["generated_pairs"] += 1
                 metrics["generated_observations"] += 1
-                if source in pairs[pair]:
+                bit = source_bits.setdefault(source, 1 << len(source_bits))
+                mask = pairs.get(pair, 0)
+                if mask & bit:
                     metrics["duplicate_observations"] += 1
-                pairs[pair].add(source)
+                pairs[pair] = mask | bit
             metrics["candidate_count"] = len(pairs)
             if config.max_unique_pairs is not None and len(pairs) > config.max_unique_pairs:
                 metrics["failure_reason"] = "global_pair_limit_exceeded"
@@ -269,7 +315,7 @@ class CandidateEngine:
                     merge(left, right, sources)
         metrics["union_collapsed_observations"] = metrics["generated_observations"] - len(pairs)
         logging.getLogger(__name__).info("candidate_workload %s", json.dumps(metrics, sort_keys=True))
-        return CandidateResult(dict(sorted(pairs.items())), metrics, block_log)
+        return CandidateResult(_PairSources(pairs, source_bits), metrics, block_log)
 
     def generate(self, records) -> CandidateResult:
         self.add_records(records)
