@@ -20,6 +20,7 @@ from hashlib import sha256
 from importlib.metadata import version
 from itertools import islice
 from pathlib import Path
+from time import perf_counter
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -778,3 +779,17 @@ class ScoringEngine:
 def iter_score_batches(path, batch_size):
     for batch in pq.ParquetFile(path).iter_batches(batch_size=batch_size):
         yield [ScoreResult.from_row(row) for row in batch.to_pylist()]
+
+
+def timed_score_batches(path, batch_size, timings):
+    """Accumulate SCORE artifact read/decode time without per-batch log writes."""
+    iterator = iter(iter_score_batches(path, batch_size))
+    while True:
+        started = perf_counter()
+        try:
+            batch = next(iterator)
+        except StopIteration:
+            break
+        timings["score_read_ms"] = timings.get("score_read_ms", 0.0) + (perf_counter() - started) * 1000
+        timings["batch_count"] = timings.get("batch_count", 0) + 1
+        yield batch

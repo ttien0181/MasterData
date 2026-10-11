@@ -19,6 +19,7 @@ from masterone.db.session import create_database
 from masterone.mdm import models as mdm_models  # noqa: F401 - registers SQLAlchemy models
 from masterone.mdm.input_schema import InputMappingError
 from masterone.mdm.migrate import require_current, validate_current
+from masterone.mdm.resolution_worker import ResolutionWorker
 
 
 @asynccontextmanager
@@ -39,10 +40,21 @@ async def lifespan(app: FastAPI):
         raise
     app.state.engine = engine
     app.state.session_factory = factory
+    worker = None
+    if settings.app_env != "test" and settings.mdm_embedded_worker_enabled:
+        try:
+            worker = ResolutionWorker(factory)
+            worker.start()
+        except BaseException:
+            engine.dispose()
+            raise
+        app.state.resolution_worker = worker
     print(f"Starting {settings.app_name} in {settings.app_env} mode")
     try:
         yield
     finally:
+        if worker is not None:
+            worker.close()
         engine.dispose()
     print("Shutting down...")
 

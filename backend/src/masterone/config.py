@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8001, ge=1, le=65535)
     app_host: str = "0.0.0.0"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    mdm_embedded_worker_enabled: bool = True
+    mdm_trace_enabled: bool = True
+    mdm_trace_dir: str = "./data/trace"
+    mdm_stage_runner_threshold: int = Field(default=10000, ge=0)
     cors_origins: str = "http://localhost:3000"
     auth_csrf_secret: str = ""
 

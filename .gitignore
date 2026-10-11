@@ -196,3 +196,4 @@ sandbox/
 *.temp
 
 backend/data/export-artifacts/
+.agents/skills/
