@@ -29,34 +29,30 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     if settings.app_env == "production" and len(settings.auth_csrf_secret) < 32:
         raise RuntimeError("AUTH_CSRF_SECRET must be at least 32 characters in production")
+    from masterone.llm.policy import validate_startup
+    validate_startup(settings)
     engine, factory = create_database(settings.active_mdm_database_url)
+    worker = None
     try:
         if settings.app_env == "production":
             validate_current(engine)
         else:
             require_current(engine)
-    except BaseException:
-        engine.dispose()
-        raise
-    app.state.engine = engine
-    app.state.session_factory = factory
-    worker = None
-    if settings.app_env != "test" and settings.mdm_embedded_worker_enabled:
-        try:
-            worker = ResolutionWorker(factory)
-            worker.start()
-        except BaseException:
-            engine.dispose()
-            raise
-        app.state.resolution_worker = worker
-    print(f"Starting {settings.app_name} in {settings.app_env} mode")
-    try:
+        app.state.engine = engine
+        app.state.session_factory = factory
+        started_worker = ResolutionWorker(factory)
+        started_worker.start()
+        worker = started_worker
+        print(f"Starting {settings.app_name} in {settings.app_env} mode")
         yield
     finally:
-        if worker is not None:
-            worker.close()
-        engine.dispose()
-    print("Shutting down...")
+        try:
+            if worker is not None:
+                worker.close()
+        finally:
+            engine.dispose()
+        print("Shutting down...")
+
 
 
 app = FastAPI(

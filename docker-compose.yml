@@ -45,6 +45,7 @@ services:
       timeout: 10s
       retries: 3
 
+  # The backend starts its own worker; this service runs an additional worker on the same DB queue.
   worker:
     build:
       context: .

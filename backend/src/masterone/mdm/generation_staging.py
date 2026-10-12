@@ -324,7 +324,9 @@ class GenerationPublisher:
             for p in computed["proposals"]:
                 yield {k: v for k, v in p.items() if k != "golden_fields"}
 
-        sources = {"pair": computed["pairs"], "proposal": proposals(),
+        from masterone.mdm.pipeline.semantic_address import with_annotations
+        pairs = with_annotations(computed["pairs"], computed.get("semantic_annotations") or {})
+        sources = {"pair": pairs, "proposal": proposals(),
             "membership": ({"record_id": rid, "proposal_id": p["id"]} for p in computed["proposals"] for rid in p["member_record_ids"]),
             "golden": ({"proposal_id": p["id"], "golden_fields": p["golden_fields"]} for p in computed["proposals"]),
             "review": computed["review_cases"]}

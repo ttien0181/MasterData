@@ -25,7 +25,7 @@ from masterone.mdm.pipeline.scoring_engine import (
     ScoringEngine,
     iter_score_batches,
 )
-from masterone.mdm.pipeline.semantic_address import enrich_pairs_with_semantic
+from masterone.mdm.pipeline.semantic_address import run_annotations
 from masterone.mdm.pipeline.standardization import standardize
 
 
@@ -373,18 +373,15 @@ class StageRunner:
         from masterone.config import get_settings
         from masterone.mdm.pipeline.cluster_policy import enabled as cluster_enabled
         from masterone.mdm.pipeline.decision_store import DecisionStore
-        # Optional semantic enrichment retains its existing global budget/cache.
-        disk_decisions = cluster_enabled() and not get_settings().semantic_address_enabled
+        # Decisions spool to disk whenever clustering does; LLM settings never change that.
+        disk_decisions = cluster_enabled()
         self.decision_store = DecisionStore(self.output_dir) if disk_decisions else None
         decision_pairs = []
-        by_id = {}
-        # Only semantic enrichment reads records here; clustering looks them up on demand.
-        keep_hydrated = get_settings().semantic_address_enabled
         insufficient_count = 0
         score_rows = pq.ParquetFile(score_path).metadata.num_rows
-        for batch, hydrated, decisions in self.scoring_engine.decided_batches(
+        for batch, _hydrated, decisions in self.scoring_engine.decided_batches(
                 iter_score_batches(score_path, self.scoring_engine.config.batch_size), score_rows,
-                need_hydrated=keep_hydrated):
+                need_hydrated=False):
             for scored, result_pair in zip(batch, decisions):
                 if result_pair["decision"] == "INSUFFICIENT_EVIDENCE":
                     insufficient_count += 1
@@ -395,15 +392,11 @@ class StageRunner:
                     self.decision_store.add(payload)
                 else:
                     decision_pairs.append(payload)
-                    if keep_hydrated:
-                        for rid in (scored.left_id, scored.right_id):
-                            by_id[rid] = hydrated[rid]
         if disk_decisions:
             self.decision_store.seal()
             self.decision_store.write_parquet(decide_path, self.scoring_engine.config.batch_size)
             decisions_sorted = self.decision_store
         elif decision_pairs:
-            enrich_pairs_with_semantic(decision_pairs, by_id)
             for p in decision_pairs:
                 for k in ["blocking_reasons", "field_evidence", "comparisons", "matched_subgroups", "normalization_tags"]:
                     p[k] = json.dumps(p[k])
@@ -419,7 +412,7 @@ class StageRunner:
                         p[k] = json.loads(p[k])
         else:
             decisions_sorted = []
-        del decision_pairs, by_id
+        del decision_pairs
             
         self.stage_results.append(StageResult("DECIDE", self.run_id, self.attempt_id, True, int((time.monotonic() - t0)*1000), {"pair_count": len(decisions_sorted)}))
 
@@ -448,6 +441,13 @@ class StageRunner:
             review_cases.append({**case, **classification})
             
         output = {**clusters, "review_cases": review_cases}
+        # After clustering, triage is final. Annotate the published decisions with streamed, bounded lookups.
+        from masterone.llm.policy import factory_for
+        postgres = bool(self.db_url) and self.db_url.startswith("postgresql")
+        semantic = run_annotations(decisions_sorted, snapshot.get_records, run_id=self.run_id,
+                                   factory=factory_for(self.db_url) if self.db_url else None, parallel=postgres)
+        output["semantic_annotations"] = semantic.annotations
+        output["llm_stats"] = semantic.stats
         self.stage_results.append(StageResult("CLUSTER", self.run_id, self.attempt_id, True, int((time.monotonic() - t0)*1000), {}))
 
         # ---------------------------------------------------------
@@ -462,7 +462,6 @@ class StageRunner:
         output["scoring_metrics"] = scoring_metrics
         output["scoring_artifact"] = score_path
         output["insufficient_count"] = insufficient_count
-        output["llm_stats"] = {}
         output["streaming"] = {"mode": "serial", "reason": serial_reason}
         
         if not return_data and self.db_url:

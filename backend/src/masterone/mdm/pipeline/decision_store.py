@@ -28,6 +28,7 @@ class DecisionStore:
         self.con.execute("PRAGMA temp_store=FILE")
         self.con.execute("CREATE TABLE edges (id TEXT PRIMARY KEY, left_id TEXT, right_id TEXT, weight REAL, decision TEXT, payload TEXT, UNIQUE(left_id,right_id))")
         self.con.execute("CREATE INDEX edge_order ON edges(weight DESC,left_id,right_id)")
+        self.con.execute("CREATE INDEX edge_decision_order ON edges(decision, weight DESC, left_id, right_id)")
         self.con.execute("CREATE TABLE checks (left_id TEXT, right_id TEXT, reason TEXT, PRIMARY KEY(left_id,right_id))")
         self.sealed = False
 
@@ -60,6 +61,15 @@ class DecisionStore:
 
     def __iter__(self):
         return self.ordered()
+
+    def iter_decision(self, decision):
+        """Pairs with one observed decision, in global edge order, through an index: no full-spool scan."""
+        if not self.sealed:
+            raise ValueError("Complete decision barrier required before selection")
+        cursor = self.con.execute("SELECT payload FROM edges WHERE decision=? ORDER BY weight DESC NULLS LAST, "
+                                  "left_id ASC, right_id ASC", (decision,))
+        for row in cursor:
+            yield json.loads(row[0])
 
     def __len__(self):
         return self.con.execute("SELECT count(*) FROM edges").fetchone()[0]

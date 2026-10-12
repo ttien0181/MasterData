@@ -8,7 +8,7 @@ from alembic.config import Config
 
 from masterone.config import get_settings
 
-HEAD = "0026_run_summaries"
+HEAD = "0027_llm_policy"
 
 
 def alembic_config(url: str, config_path: str | Path | None = None) -> Config:

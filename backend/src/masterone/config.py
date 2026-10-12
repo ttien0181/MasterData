@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     auth_csrf_secret: str = ""
 
-    # LLM
+    # LLM (see masterone/llm/policy.py: every outbound call is gated there)
     openai_api_key: str = ""
     model_name: str = "gpt-4o-mini"
     gemini_api_key: str = ""
@@ -37,7 +37,9 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.5-flash-lite"
     gemini_max_output_tokens: int = Field(default=512, ge=1, le=8192)
     gemini_max_retries: int = Field(default=1, ge=0, le=3)
-    llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    # 0 disables internal reasoning: classification and short explanations do not need it, and with a
+    # thinking model the reasoning tokens otherwise consume maxOutputTokens and the JSON is cut off.
+    gemini_thinking_budget: int | None = Field(default=0, ge=0, le=32768)
     semantic_address_enabled: bool = False
     decision_semantics_v2_enabled: bool = False
     cluster_safety_v2_enabled: bool = False
@@ -61,25 +63,37 @@ class Settings(BaseSettings):
     semantic_address_max_pairs_per_run: int = Field(default=100, ge=0, le=1000)
     semantic_address_timeout_seconds: int = Field(default=15, ge=1, le=60)
 
-    # New LLM Subsystem Fields
+    # LLM gateway policy. Defaults fail closed: no provider, model or price is approved.
     llm_enabled: bool = False
-    llm_semantic_enabled: bool = False
     llm_explanation_enabled: bool = False
+    llm_approved_providers: str = ""  # CSV, subset of: gemini, openrouter
+    llm_approved_models: str = ""  # CSV of exact model ids that may be sent
+    llm_policy_revision: str = "p119-llm-v1"
+    llm_request_timeout_seconds: int = Field(default=30, ge=1, le=120)
+    llm_max_concurrency: int = Field(default=5, ge=1, le=32)
+    llm_cache_ttl_seconds: int = Field(default=86400, ge=0)
+    # Sized for one full address batch (10 pairs with 64-char pair ids) plus fixed prompt overhead.
+    llm_max_input_tokens_per_request: int = Field(default=8000, ge=1)
+    llm_max_semantic_calls_per_run: int = Field(default=1000, ge=0)
+    llm_max_explanation_calls_per_run: int = Field(default=1000, ge=0)
+    llm_global_call_cap: int = Field(default=10000, ge=0)
+    llm_user_call_cap: int = Field(default=5000, ge=0)
+    llm_calls_per_minute: int = Field(default=120, ge=0)
+    llm_token_cap: int = Field(default=50_000_000, ge=0)
+    llm_cost_cap_microusd: int = Field(default=100_000_000, ge=0)
+    llm_consecutive_failure_limit: int = Field(default=3, ge=1)
+
+    # Gemini is primary. OpenRouter is the backup used only after Gemini quota is exhausted.
+    gemini_retention_verified: bool = False
+    gemini_retention_contract: str = ""
+    gemini_token_price_microusd: int = Field(default=0, ge=0)  # 0 = unverified price, denied
+    gemini_quota_cooldown_seconds: int = Field(default=900, ge=0)
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    llm_semantic_model: str = "google/gemini-2.5-flash"
-    llm_explanation_model: str = "google/gemini-2.5-flash"
-    llm_semantic_batch_size: int = 10
-    llm_max_concurrency: int = 5
-    llm_request_timeout_seconds: int = 30
-    llm_max_retries: int = 3
-    llm_cache_ttl_seconds: int = 86400
-    llm_allow_auto_merge_evidence: bool = False
-    llm_max_semantic_calls_per_run: int = 1000
-    llm_max_explanation_calls_per_run: int = 1000
-    llm_max_input_tokens_per_request: int = 4000
-    llm_max_output_tokens_semantic: int = 1000
-    llm_max_output_tokens_explanation: int = 2000
+    openrouter_model: str = "google/gemini-2.5-flash"
+    openrouter_retention_verified: bool = False
+    openrouter_retention_contract: str = ""
+    openrouter_token_price_microusd: int = Field(default=0, ge=0)
 
     # Database
     mdm_database_profile: Literal["neon", "local"] = "neon"
@@ -147,8 +161,8 @@ class Settings(BaseSettings):
                 missing.append("AUTH_CSRF_SECRET")
             if self.r2_endpoint_url and not (self.r2_access_key_id and self.r2_secret_access_key):
                 missing.append("R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY")
-            if self.llm_enabled and not self.openrouter_api_key:
-                missing.append("OPENROUTER_API_KEY (required when LLM_ENABLED=true)")
+            if self.llm_enabled and not (self.gemini_api_key or self.openrouter_api_key):
+                missing.append("GEMINI_API_KEY or OPENROUTER_API_KEY (required when LLM_ENABLED=true)")
             if missing:
                 raise ValueError(
                     f"Production config missing required fields: {', '.join(missing)}"

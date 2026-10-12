@@ -22,8 +22,9 @@ from masterone.mdm.pipeline.clustering import build_proposals
 from masterone.mdm.pipeline.decision_semantics import load_cannot_links
 from masterone.mdm.pipeline.golden_v2 import record_payload
 from masterone.mdm.pipeline.review_grouping import classify_pair
-from masterone.mdm.pipeline.scoring_engine import MemorySnapshot, ScoringConfig, ScoringEngine, timed_score_batches
-from masterone.mdm.pipeline.semantic_address import enrich_pairs_with_semantic
+from masterone.mdm.pipeline.scoring_engine import MemorySnapshot, ScoringConfig, ScoringEngine, iter_score_batches
+from masterone.mdm.pipeline.semantic_address import run_annotations, with_annotations
+
 from masterone.mdm.resolution_persistence import persist_snapshot
 from masterone.mdm.trace import emit, span, trace_context
 from masterone.mdm.trace import enabled as trace_enabled
@@ -36,7 +37,7 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
              scoring_output_dir: Path | None = None,
              execution_blocked_pairs: frozenset = frozenset(),
              _stream_store=None, _stream_event=None, _normalize=False, _attempt_id=None,
-             _checkpoint_factory=None, _checkpoint_fault=None) -> dict:
+             _checkpoint_factory=None, _checkpoint_fault=None, _policy_factory=None) -> dict:
     from masterone.config import get_settings
     from masterone.mdm.pipeline import streaming
     from masterone.storage.r2 import get_store
@@ -81,12 +82,14 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
     by_id = {record["id"]: record for record in records}
     from masterone.mdm.pipeline.cluster_policy import enabled as cluster_enabled
     from masterone.mdm.pipeline.decision_store import DecisionStore
-    disk_decisions = cluster_enabled() and not get_settings().semantic_address_enabled
+    # Spool decisions to disk whenever clustering does, independent of LLM settings: keeping them in memory
+    # would make an LLM-enabled run hold every candidate decision at once.
+    disk_decisions = cluster_enabled()
     pairs = DecisionStore(score_dir) if disk_decisions else []
     insufficient_count = 0
     decide_timings = {}
     def decisions_from_scores():
-        for batch in timed_score_batches(score_path, scoring_engine.config.batch_size, decide_timings):
+        for batch in iter_score_batches(score_path, scoring_engine.config.batch_size):
             started = perf_counter()
             decided = [{"left_id": scored.left_id, "right_id": scored.right_id,
                         "result": scoring_engine.decide(scored, by_id)} for scored in batch]
@@ -117,15 +120,10 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
             emit("pipeline.decide." + step, "completed", duration_ms=round(decide_timings[key], 3),
                  batch_count=decide_timings.get("batch_count"), candidate_count=len(candidate_blocks))
     if disk_decisions:
-        with span("pipeline.decide.spool_seal"):
-            pairs.seal()
-    with span("pipeline.decide.semantic"):
-        llm_stats = {"eligible": 0, "checked": 0, "changed": 0, "errors": 0} if disk_decisions else enrich_pairs_with_semantic(pairs, by_id)
-    with span("pipeline.cluster") as metrics:
-        clusters = build_proposals(records, pairs, run_id, policy_version, negative_pairs=negative_pairs,
-                                   execution_blocked_pairs=execution_blocked_pairs)
-        metrics["auto_proposal_count"] = len(clusters["proposals"])
-        metrics["review_case_count"] = len(clusters["review_cases"])
+        pairs.seal()
+    clusters = build_proposals(records, pairs, run_id, policy_version, negative_pairs=negative_pairs,
+                               execution_blocked_pairs=execution_blocked_pairs)
+
     review_cases = []
     pairs_by_id = None if disk_decisions else {item["id"]: item for item in pairs}
     for case in clusters["review_cases"]:
@@ -136,9 +134,14 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
         if classification is None:
             continue
         review_cases.append({**case, **classification})
+    # After clustering: triage fields are final, so the baseline the annotations bind to is the published one.
+    semantic = run_annotations(pairs, lambda ids: {rid: by_id[rid] for rid in ids if rid in by_id},
+                               run_id=run_id, factory=_policy_factory or _checkpoint_factory,
+                               parallel=get_settings().active_mdm_database_url.startswith("postgresql"))
     computed = {"pairs": pairs, "proposals": clusters["proposals"], "review_cases": review_cases,
             "candidate_count": len(candidate_blocks), "insufficient_count": insufficient_count,
-            "llm_stats": llm_stats, "candidate_metrics": candidate_result.metrics,
+            "llm_stats": semantic.stats, "semantic_annotations": semantic.annotations,
+            "candidate_metrics": candidate_result.metrics,
             "scoring_metrics": scoring_metrics, "scoring_artifact": str(score_path),
             "cluster_metrics": clusters.get("cluster_metrics", {}),
             "streaming": {"mode": "serial" if fallback else "streaming", "reason": fallback},
@@ -252,27 +255,28 @@ def _run_selected_pipeline(run_id, factory, progress, *, scoring_config=None):
                 records = [record_payload(item) for item in db.query(ResolutionRecord)
                            .filter_by(run_id=run_id).order_by(ResolutionRecord.id).all()]
         computed = _compute(records, run_id, policy_version, negative_pairs=negative_pairs,
-                            scoring_config=scoring_config, execution_blocked_pairs=execution_blocked_pairs)
+                            scoring_config=scoring_config, execution_blocked_pairs=execution_blocked_pairs,
+                            _policy_factory=factory)
     progress("persisting", record_count, record_count)
     try:
-        with span("pipeline.persist", record_count=record_count):
-            with factory.begin() as db:
-                guard(db, run_id)
-                run = db.get(ResolutionRun, run_id)
-                task = db.query(ResolutionTask).filter_by(run_id=run_id).one()
-                persist_snapshot(db, run_id, computed)
-                completed(db, run_id)
-                task.status = "COMPLETED"
-                task.phase = "completed"
-                task.processed_count = record_count
-                task.total_count = record_count
-                task.updated_at = now_utc()
-                run.status = "COMPLETED"
-                run.phase = "completed"
-                run.candidate_count = computed["candidate_count"]
-                run.insufficient_count = computed["insufficient_count"]
-                run.completed_at = now_utc()
-        _safe_summary(factory, run_id, "stage_runner" if record_count > get_settings().mdm_stage_runner_threshold else "memory")
+        with factory.begin() as db:
+            guard(db, run_id)
+            run = db.get(ResolutionRun, run_id)
+            task = db.query(ResolutionTask).filter_by(run_id=run_id).one()
+            persist_snapshot(db, run_id, {**computed, "pairs": with_annotations(
+                computed["pairs"], computed.get("semantic_annotations") or {})})
+            completed(db, run_id)
+            task.status = "COMPLETED"
+            task.phase = "completed"
+            task.processed_count = record_count
+            task.total_count = record_count
+            task.updated_at = now_utc()
+            run.status = "COMPLETED"
+            run.phase = "completed"
+            run.candidate_count = computed["candidate_count"]
+            run.insufficient_count = computed["insufficient_count"]
+            run.completed_at = now_utc()
+
     finally:
         from masterone.mdm.pipeline.decision_store import DecisionStore
         if isinstance(computed["pairs"], DecisionStore):

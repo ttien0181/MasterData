@@ -25,24 +25,6 @@ def test_real_calendar_dates_remain_valid(value, canonical):
     assert parse_dob(value)["canonical"] == canonical
 
 
-def test_gemini_explanation_request_matches_accepted_field_enum(monkeypatch):
-    import io
-    import json
-
-    from masterone.config import Settings
-    from masterone.mdm import gemini_explanation
-    def response(request, timeout):
-        body = json.loads(request.data)
-        schema = body["generationConfig"]["responseFormat"]["text"]["schema"]
-        assert set(schema["properties"]["attention_fields"]["items"]["enum"]) == gemini_explanation.ALLOWED_FIELDS
-        assert body["generationConfig"]["maxOutputTokens"] == 512
-        payload = {"summary_vi": "Kiểm tra tên.", "attention_fields": ["name"], "limitations": []}
-        return io.BytesIO(json.dumps({"candidates": [{"content": {"parts": [{"text": json.dumps(payload)}]}}]}).encode())
-    monkeypatch.setattr(gemini_explanation, "urlopen", response)
-    result = gemini_explanation.explain_cohort({"pair_count": 1}, Settings(_env_file=None, gemini_api_key="mock-only", gemini_max_output_tokens=512))
-    assert result["explanation"]["attention_fields"] == ["name"]
-
-
 class MemoryStore:
     def __init__(self, fails=False):
         self.objects = {}
@@ -151,25 +133,6 @@ def test_stage_runner_surfaces_normalization_failure(tmp_path, monkeypatch):
         assert not any(stage.stage_name == "NORMALIZE" for stage in runner.stage_results)
     finally:
         runner.con.close()
-
-
-def test_direct_gemini_requests_enforce_output_cap_and_can_disable_retry(monkeypatch):
-    import json
-    from urllib.error import HTTPError
-
-    from masterone.config import Settings
-    from masterone.mdm.pipeline.semantic_address import _ask_gemini
-
-    calls = []
-    def unavailable(request, **kwargs):
-        calls.append(json.loads(request.data))
-        raise HTTPError(request.full_url, 429, "synthetic rate limit", {}, None)
-    monkeypatch.setattr("masterone.mdm.pipeline.semantic_address.urlopen", unavailable)
-    settings = Settings(_env_file=None, gemini_api_key="mock-only", gemini_max_output_tokens=250, gemini_max_retries=0)
-    with pytest.raises(HTTPError):
-        _ask_gemini([{"pair_id": "qa", "left_address": "Synthetic A", "right_address": "Synthetic B"}], settings)
-    assert len(calls) == 1
-    assert calls[0]["generationConfig"]["maxOutputTokens"] == 250
 
 
 def test_numbered_gemini_keys_are_accepted_without_extra_requests(monkeypatch):

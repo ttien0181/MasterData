@@ -122,11 +122,14 @@ def test_mixed_review_cluster_is_visible_in_each_matching_category(client, monke
 
     aggregates = []
 
-    def explain(aggregate, _settings):
+    def explain(aggregate, _settings, *, context, factory=None):
         aggregates.append(aggregate)
-        return {"explanation": {"summary_vi": "Cần kiểm tra tên", "attention_fields": ["name"],
-                                "limitations": []}, "model_version": "test", "usage": {}}
+        return {"status": "READY", "explanation": {"summary_vi": "Cần kiểm tra tên",
+                "attention_fields": ["name"], "limitations": []}, "model_version": "test", "usage": {}}
 
+    from masterone.config import get_settings
+    monkeypatch.setattr(get_settings(), "llm_enabled", True)
+    monkeypatch.setattr(get_settings(), "llm_explanation_enabled", True)
     monkeypatch.setattr("masterone.api.mdm_resolution.explain_cohort", explain)
     response = client.post(f"{prefix}/categories/{category['signature_hash']}/explanation")
     assert response.status_code == 200, response.text
