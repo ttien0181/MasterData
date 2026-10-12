@@ -31,22 +31,27 @@ async def lifespan(app: FastAPI):
     from masterone.llm.policy import validate_startup
     validate_startup(settings)
     engine, factory = create_database(settings.active_mdm_database_url)
+    worker = None
     try:
         if settings.app_env == "production":
             validate_current(engine)
         else:
             require_current(engine)
-    except BaseException:
-        engine.dispose()
-        raise
-    app.state.engine = engine
-    app.state.session_factory = factory
-    print(f"Starting {settings.app_name} in {settings.app_env} mode")
-    try:
+        app.state.engine = engine
+        app.state.session_factory = factory
+        from masterone.mdm.resolution_worker import ResolutionWorker
+        started_worker = ResolutionWorker(factory)
+        started_worker.start()
+        worker = started_worker
+        print(f"Starting {settings.app_name} in {settings.app_env} mode")
         yield
     finally:
-        engine.dispose()
-    print("Shutting down...")
+        try:
+            if worker is not None:
+                worker.close()
+        finally:
+            engine.dispose()
+        print("Shutting down...")
 
 
 app = FastAPI(
