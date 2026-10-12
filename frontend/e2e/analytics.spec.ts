@@ -19,7 +19,8 @@ for (const theme of ["light", "dark"]) {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
     });
     await page.setViewportSize({ width: 1500, height: 1000 });
-    await page.goto("/app?run=r");
+    await page.route("**/api/v1/mdm/runs/*/workflow", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ workflow_version: 1 }) }));
+  await page.goto("/app/legacy?run=r");
     await expect(page.getByRole("img", { name: "25% bản ghi được phân loại tự xử lý" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "SỐ LƯỢNG BẢN GHI THEO NGUỒN" })).toBeVisible();
     await expect(page.getByTitle("CRM: 2 bản ghi")).toContainText("2");

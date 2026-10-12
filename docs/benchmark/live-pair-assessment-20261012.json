@@ -1,0 +1,119 @@
+{
+  "checks": {
+    "baseline_hash": true,
+    "decisions_hash": true,
+    "negative_edges_hash": true,
+    "history_preserved": true,
+    "decision_revision_unchanged": true,
+    "no_unclassified": true,
+    "all_pairs_assessed": true
+  },
+  "summary": {
+    "total": 79364,
+    "needs_review": 55577,
+    "accepted": 15369,
+    "denied": 0,
+    "kept_separate": 0,
+    "deferred": 0,
+    "blocked": 17639,
+    "manual_available": 55577,
+    "auto_available": 0,
+    "decision_revision": 458,
+    "assessment_id": "b5374e46-d62d-47aa-af24-e010d78f68fe",
+    "assessment": {
+      "input_hash": "38bd16a9d8e0742e335477b4adc37e580c472b89e9354f5c96eb90bffe59f46f",
+      "source_input_hash": "bd4565bed4da8884a882c37a6f419fbe5860ceb36bf068887e816aa0ef549c1f",
+      "source_profile_identity": "6782165cf3e6b133433ec202a1e3bfb3c1d4dcc1b78fa83a0454e4516ced73b4",
+      "profile": {
+        "decision_semantics_v2_enabled": true,
+        "cluster_safety_v2_enabled": true,
+        "generation_staging_enabled": false
+      },
+      "profile_identity": "0e6403267f7300f7ff0bc1e2ad7c9923c8642b7406b15ec389ae60dd44aa7400",
+      "policy_version": "person-review-assessment-v1",
+      "execution_identity": "35994a13fbd96d066bf5579e247e5ba232d9c8d7264aa736da4f32070465d282",
+      "negative_pairs_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "groups": {
+        "D": 61672,
+        "BLOCKED": 17639,
+        "C": 19,
+        "A": 34
+      },
+      "model": {
+        "status": "EVALUATED",
+        "scope": "synthetic-benchmark",
+        "model_hash": "19598836d45b93fea070fbb94d31a5ab74db39a05fad8e14eba9c4eba99cc4da",
+        "report_hash": "97619ba60c0f74885d4ebe53a276bddc59576c86b59d3bcdb104159b3c6be2d3"
+      },
+      "assessment_code_identity": "5e8e4ebcb205e20bf28f9e975f140abce569124713ede9eee13fb736863fe8b4"
+    },
+    "groups": [
+      {
+        "key": "D",
+        "total": 61672,
+        "pending": 55533,
+        "subgroups": [
+          {
+            "key": "D2_NAME_CONFLICT",
+            "total": 7
+          },
+          {
+            "key": "D4_DOB_CONFLICT",
+            "total": 7132
+          },
+          {
+            "key": "D_MULTI",
+            "total": 54291
+          },
+          {
+            "key": "D_UNVERIFIED_ID_CONFLICT",
+            "total": 242
+          }
+        ]
+      },
+      {
+        "key": "A",
+        "total": 34,
+        "pending": 33,
+        "subgroups": [
+          {
+            "key": "A3_NAME_PHONE_DOB",
+            "total": 34
+          }
+        ]
+      },
+      {
+        "key": "BLOCKED",
+        "total": 17639,
+        "pending": 0,
+        "subgroups": [
+          {
+            "key": "PERSON_ORG_MISMATCH",
+            "total": 1623
+          },
+          {
+            "key": "PERSON_POLICY_OUT_OF_SCOPE",
+            "total": 16016
+          }
+        ]
+      },
+      {
+        "key": "C",
+        "total": 19,
+        "pending": 11,
+        "subgroups": [
+          {
+            "key": "C_NO_VALID_IDENTITY_ANCHOR",
+            "total": 19
+          }
+        ]
+      }
+    ]
+  },
+  "decisions": {
+    "UNDECIDED": 63995,
+    "ACCEPTED": 15369
+  },
+  "negative_edge_count": 0,
+  "audit_count": 15378
+}

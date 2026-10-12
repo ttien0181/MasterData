@@ -18,7 +18,8 @@ test("upload and session history open in a slide-out panel with full-screen expa
     status: 200, contentType: "application/json", body: JSON.stringify({ items: [] }),
   }));
 
-  await page.goto("/app");
+  await page.route("**/api/v1/mdm/runs/*/workflow", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ workflow_version: 1 }) }));
+  await page.goto("/app/legacy");
   await expect(page.locator(".upload-orbit")).toBeVisible();
   await page.locator(".upload-orbit").click();
 

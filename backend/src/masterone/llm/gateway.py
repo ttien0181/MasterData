@@ -21,9 +21,9 @@ from masterone.llm.policy import (
     validate_output,
 )
 
-PURPOSES = ("ADDRESS_COMPARE", "EXPLANATION")
-PROMPT_VERSION = {"ADDRESS_COMPARE": "address-v3", "EXPLANATION": "explanation-v3"}
-SCHEMA_VERSION = {"ADDRESS_COMPARE": "address-response-v3", "EXPLANATION": "explanation-response-v3"}
+PURPOSES = ("ADDRESS_COMPARE", "EXPLANATION", "PAIR_ASSESSMENT")
+PROMPT_VERSION = {"ADDRESS_COMPARE": "address-v3", "EXPLANATION": "explanation-v3", 'PAIR_ASSESSMENT': 'pair-advice-v1'}
+SCHEMA_VERSION = {"ADDRESS_COMPARE": "address-response-v3", "EXPLANATION": "explanation-response-v3", 'PAIR_ASSESSMENT': 'pair-advice-response-v1'}
 MAX_RESPONSE_BYTES = 64 * 1024
 RETRYABLE_HTTP = frozenset({500, 502, 503, 504})
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -51,8 +51,20 @@ EXPLANATION_SCHEMA = {
     "required": ["summary_vi", "attention_fields", "limitations"],
     "additionalProperties": False,
 }
-SCHEMAS = {"ADDRESS_COMPARE": ADDRESS_SCHEMA, "EXPLANATION": EXPLANATION_SCHEMA}
+from masterone.llm.pair_advice_contract import SCHEMA as PAIR_SCHEMA
+SCHEMAS = {"ADDRESS_COMPARE": ADDRESS_SCHEMA, "EXPLANATION": EXPLANATION_SCHEMA, 'PAIR_ASSESSMENT': PAIR_SCHEMA}
 INSTRUCTIONS = {
+    'PAIR_ASSESSMENT': (
+        'Đánh giá khả năng hai bản ghi thuộc cùng người, chỉ dựa trên bằng chứng được cung cấp. '
+        'Trả LIKELY_SAME_PERSON / LIKELY_DIFFERENT_PERSON / INSUFFICIENT_BASIS và lý do tiếng Việt. '
+        'Không quyết định Accept/Deny, không khuyên gộp hoặc từ chối, không suy đoán dữ liệu thiếu. '
+        'Tên phổ biến, liên hệ dùng chung và cùng địa chỉ không chứng minh cùng người. '
+        'Giấy tờ đúng định dạng chưa được xác minh; DIFFERENT_VALUE chỉ là mâu thuẫn mềm. '
+        'EX/NX=khớp, NA=tương đương sau bỏ dấu, HS/MS/WS=tương tự, CL=gần nhau, DF/CF=khác, MI=thiếu, IV=không hợp lệ, SH=dùng chung, NC=không thể đối chiếu. '
+        'evidence chỉ trích field/state đúng tín hiệu đã nhận, không thay state; MI/IV không phải bằng chứng. '
+        'Không lặp lại giá trị dữ liệu cá nhân, không bịa bằng chứng hay xác suất. '
+        'Chỉ trả reason_codes theo bằng chứng, không viết văn bản tự do. Luôn có limitation_codes SOURCE_NOT_VERIFIED và HUMAN_REVIEW_REQUIRED. Khi thiếu căn cứ trả INSUFFICIENT_BASIS.'
+    ),
     "ADDRESS_COMPARE": (
         "So sánh hai cách viết địa chỉ cho từng pair_id. Trả EQUIVALENT khi cùng địa chỉ rõ ràng, "
         "DIFFERENT khi khác rõ ràng, UNCERTAIN khi thiếu căn cứ. Cùng phường không chứng minh cùng đường "
@@ -127,7 +139,10 @@ def _gemini_request(settings, model, prompt, schema):
         "responseSchema": _gemini_schema(schema),
     }
     if settings.gemini_thinking_budget is not None:
-        generation["thinkingConfig"] = {"thinkingBudget": settings.gemini_thinking_budget}
+        if model.startswith('gemini-3'):
+            generation["thinkingConfig"] = {"thinkingLevel": 'MINIMAL' if settings.gemini_thinking_budget == 0 else 'HIGH'}
+        else:
+            generation["thinkingConfig"] = {"thinkingBudget": settings.gemini_thinking_budget}
     body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}], "generationConfig": generation}
     return Request(GEMINI_URL.format(model=model), data=json.dumps(body, ensure_ascii=False).encode(),
                    headers={"Content-Type": "application/json", "x-goog-api-key": provider_key(settings, "gemini")},

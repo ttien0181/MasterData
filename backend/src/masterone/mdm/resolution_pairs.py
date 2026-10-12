@@ -35,6 +35,20 @@ def pair_categories(db: Session, run_id: str):
             .order_by(ResolutionPair.primary_group, ResolutionPair.subgroup).all()]
 
 
+def reviewed_members(proposals, endpoints):
+    """Shared mechanical member expansion for pair approval; no publication."""
+    members = set(endpoints)
+    changed = True
+    while changed:
+        changed = False
+        for proposal in proposals:
+            group = set(proposal.member_record_ids)
+            if group & members and not group <= members:
+                members.update(group)
+                changed = True
+    return members
+
+
 def decide_review_pair(db: Session, run_id: str, pair_id: str, decision: str, revision: int, actor: str):
     # Serialize decisions within this run so two reviewers cannot create overlapping proposals.
     run = db.query(ResolutionRun).filter_by(id=run_id).with_for_update().one()
@@ -51,14 +65,7 @@ def decide_review_pair(db: Session, run_id: str, pair_id: str, decision: str, re
     members = {pair.left_record_id, pair.right_record_id}
     proposal_id = None
     if decision == "merge":
-        changed = True
-        while changed:
-            changed = False
-            for proposal in proposals:
-                group = set(proposal.member_record_ids)
-                if group & members and not group <= members:
-                    members.update(group)
-                    changed = True
+        members = reviewed_members(proposals, members)
         if any(_is_blocked(other) for other in _internal_pairs(db, run_id, members)):
             raise HTTPException(409, "Không thể gộp: nhóm liên quan có cặp đã xác định Không gộp")
         require_manual_merge(db, run_id, members)

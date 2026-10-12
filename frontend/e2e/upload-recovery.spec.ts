@@ -40,7 +40,8 @@ test("closing panels keeps uploads alive; reload recovers a commit whose respons
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
   });
 
-  await page.goto("/app");
+  await page.route("**/api/v1/mdm/runs/*/workflow", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ workflow_version: 1 }) }));
+  await page.goto("/app/legacy");
   await page.locator(".upload-orbit").click();
   const panel = page.getByRole("dialog", { name: "Nạp dữ liệu" });
   await panel.getByLabel("Chọn các file CSV").setInputFiles({ name: "resume.csv", mimeType: "text/csv", buffer: Buffer.from("record_id,source,name\n1,CRM,Ada\n") });

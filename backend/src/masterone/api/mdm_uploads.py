@@ -3,7 +3,7 @@
 import hashlib
 import tempfile
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi import Path as PathParam
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -45,6 +45,19 @@ class CreateUploadSessionRequest(BaseModel):
 
 class RenameUploadSessionRequest(BaseModel):
     name: str | None = Field(default=None, max_length=255)
+
+
+class AddUploadFilesRequest(BaseModel):
+    request_id: str = Field(min_length=1, max_length=128)
+    files: list[UploadFileSpec] = Field(min_length=1, max_length=10)
+
+
+@router.post('/{session_id}/files')
+def add_files(session_id: str, body: AddUploadFilesRequest, db: Session = Depends(get_session),
+              auth: CurrentSession = Depends(require_mutation_capability('create_run'))):
+    from masterone.mdm.upload_sessions import add_upload_files
+    session = add_upload_files(db, session_id, auth.user.id, [f.model_dump() for f in body.files], body.request_id)
+    return serialize_upload_session(db, session)
 
 
 class ReplaceUploadFileRequest(BaseModel):
@@ -211,8 +224,8 @@ def validate_draft(
         session = validate_upload_session(db, session)
         return serialize_upload_session(db, session)
     # Validation can take minutes for a large draft: mark it, then run it in a job. The client polls the draft.
-    begin_validation(db, session)
-    import_jobs.start("validate", session.id, auth.user.id, import_jobs.database_url(request))
+    import_jobs.start("validate", session.id, auth.user.id, import_jobs.database_url(request),
+                      before_start=lambda: begin_validation(db, session))
     response.status_code = status.HTTP_202_ACCEPTED
     return serialize_upload_session(db, session)
 
@@ -222,16 +235,23 @@ def commit_draft(
     session_id: str,
     request: Request,
     response: Response,
+    workflow_version: int = Query(1, ge=1, le=2),
     db: Session = Depends(get_session),
     auth: CurrentSession = Depends(require_mutation_capability("create_run")),
 ):
     session = owned_upload_session(db, session_id, auth.user.id)
+    from masterone.mdm.workflow_service import validate_version
+    validate_version(workflow_version)
+    if session.status not in ('COMMITTING', 'COMMITTED'):
+        session.workflow_version = workflow_version
+    elif session.workflow_version != workflow_version:
+        raise HTTPException(409, 'WORKFLOW_VERSION_MISMATCH')
     already_created = db.query(ResolutionRun.id).filter_by(upload_session_id=session.id).first() is not None
     if import_jobs.inline() or already_created:
         run, profile = commit_upload_session(db, session, auth.user.id)
         return {"run_id": run.id, "status": run.status, "profile": profile}
-    begin_commit(db, session, auth.user.id)
-    import_jobs.start("commit", session.id, auth.user.id, import_jobs.database_url(request))
+    import_jobs.start("commit", session.id, auth.user.id, import_jobs.database_url(request),
+                      before_start=lambda: begin_commit(db, session, auth.user.id))
     response.status_code = status.HTTP_202_ACCEPTED
     return {"run_id": None, "status": "COMMITTING", "profile": None}
 

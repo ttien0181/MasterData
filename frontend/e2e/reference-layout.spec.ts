@@ -58,7 +58,8 @@ for (const theme of ["light", "dark"] as const) {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
     });
 
-    await page.goto("/app?run=run-1");
+    await page.route("**/api/v1/mdm/runs/*/workflow", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ workflow_version: 1 }) }));
+  await page.goto("/app/legacy?run=run-1");
     await expect(page.getByText("Bản ghi", { exact: true })).toBeVisible();
     await expect(page.locator(".analytics-decisions")).toBeVisible();
     await page.screenshot({ path: `test-results/overview-${theme}.png`, fullPage: true });

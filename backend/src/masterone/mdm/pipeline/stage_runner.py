@@ -4,8 +4,8 @@ import json
 import os
 import time
 from dataclasses import dataclass, field
-from itertools import islice
 from hashlib import sha256
+from itertools import islice
 from pathlib import Path
 from tempfile import mkdtemp
 from typing import Any
@@ -137,6 +137,17 @@ class StageRunner:
         return self.scoring_engine.write_scores(candidates(), score_path, expected_count=reader.metadata.num_rows)
 
     def run_all(self, records_raw: list[dict] = None, policy_version: str = "person-v3", negative_pairs: frozenset | None = None, return_data: bool = True, candidate_config: CandidateConfig | None = None, scoring_config: ScoringConfig | None = None, execution_blocked_pairs: frozenset = frozenset()) -> dict:
+        if self.db_url:
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import Session
+
+            from masterone.mdm.workflow_service import require_legacy
+            engine = create_engine(self.db_url)
+            try:
+                with Session(engine) as db:
+                    require_legacy(db, self.run_id)
+            finally:
+                engine.dispose()
         if not return_data and self.db_url:
             from sqlalchemy import create_engine
             from sqlalchemy.orm import sessionmaker
@@ -152,6 +163,25 @@ class StageRunner:
                 engine.dispose()
         return self._run_with_profile(records_raw, policy_version, negative_pairs, return_data,
             candidate_config, scoring_config, execution_blocked_pairs)
+
+    def run_prepare(self, records_raw):
+        """Imported normalized fields are authoritative, as on the full path."""
+        from masterone.mdm.pipeline.standardization import standardize
+        result = []
+        for record in records_raw:
+            row = dict(record)
+            if not row.get('normalized_fields'):
+                row['normalized_fields'], row['quality_flags'] = standardize(row['raw_fields'], row.get('entity_type', 'UNKNOWN'))
+            result.append(row)
+        return result
+
+    def run_decide(self, records_raw, policy_version='person-v3', negative_pairs=None, candidate_config=None,
+                   scoring_config=None, store=None, factory=None):
+        from masterone.mdm.resolution_service import _compute
+        return _compute(records_raw, self.run_id, policy_version, negative_pairs=negative_pairs,
+                        candidate_config=candidate_config, scoring_config=scoring_config,
+                        scoring_output_dir=self.output_dir, _stream_store=store,
+                        _checkpoint_factory=factory, _attempt_id=self.attempt_id, _stop_after_decide=True)
 
     def _run_with_profile(self, records_raw, policy_version, negative_pairs, return_data, candidate_config, scoring_config, execution_blocked_pairs):
         if return_data or not self.db_url:
@@ -266,7 +296,7 @@ class StageRunner:
         ctx_prep = self._ctx("PREPARE")
         t0 = time.monotonic()
         prep_path = _artifact_path(ctx_prep, "prepared.parquet")
-        
+
         if records_raw is not None:
             # For tests or memory-bound runs
             prepared_records = []
@@ -283,7 +313,7 @@ class StageRunner:
                 nr["quality_flags"] = json.dumps(r.get("quality_flags", {}))
                 prepared_records.append(nr)
             if prepared_records:
-                df = pa.Table.from_pylist(prepared_records)
+                df = pa.Table.from_pylist(prepared_records)  # noqa: F841 -- DuckDB replacement scan
                 self.con.execute(f"COPY (SELECT * FROM df) TO '{prep_path}' (FORMAT PARQUET)")
             else:
                 self.con.execute(f"COPY (SELECT '' as id, '' as external_id, '' as source_system, '' as entity_type, '' as raw_fields, '' as normalized_fields, '' as quality_flags LIMIT 0) TO '{prep_path}' (FORMAT PARQUET)")
@@ -293,7 +323,7 @@ class StageRunner:
             # psycopg streams the indexed run_id lookup straight into parquet. DuckDB's postgres
             # scanner took ~5-8 min to move the JSON columns of one 10k-record run.
             self._copy_snapshot_from_postgres(prep_path)
-        
+
         count = self.con.execute(f"SELECT COUNT(*) FROM read_parquet('{prep_path}')").fetchone()[0]
         self.stage_results.append(StageResult("PREPARE", self.run_id, self.attempt_id, True, int((time.monotonic() - t0)*1000), {"record_count": count}))
 
@@ -304,7 +334,7 @@ class StageRunner:
         t0 = time.monotonic()
         norm_tmp = _artifact_path(ctx_norm, "normalized_pass1.parquet")
         norm_final = _artifact_path(ctx_norm, "normalized.parquet")
-        
+
         if count > 0:
             reader = pq.ParquetFile(prep_path)
             writer = None
@@ -323,8 +353,9 @@ class StageRunner:
                 if writer is None:
                     writer = pq.ParquetWriter(norm_tmp, out_table.schema)
                 writer.write_table(out_table)
-            if writer: writer.close()
-            
+            if writer:
+                writer.close()
+
             # Pass 2: Aggregate to assign SHARED
             # In a real environment, DuckDB would aggregate values here.
             self.con.execute(f"CREATE TEMP TABLE norm1 AS SELECT * FROM read_parquet('{norm_tmp}')")
@@ -332,7 +363,7 @@ class StageRunner:
         else:
             self.con.execute(f"COPY (SELECT * FROM read_parquet('{prep_path}')) TO '{norm_final}' (FORMAT PARQUET)")
             self.con.execute(f"CREATE TEMP TABLE norm1 AS SELECT * FROM read_parquet('{norm_final}')")
-        
+
         self.stage_results.append(StageResult("NORMALIZE", self.run_id, self.attempt_id, True, int((time.monotonic() - t0)*1000), {"record_count": count}))
 
         # ---------------------------------------------------------
@@ -341,7 +372,7 @@ class StageRunner:
         ctx_build = self._ctx("BUILD_CANDIDATES")
         t0 = time.monotonic()
         cand_path = _artifact_path(ctx_build, "candidates.parquet")
-        
+
         candidate_result = self.build_candidates(norm_final, cand_path, config=candidate_config)
         cand_count = len(candidate_result.pairs)
         self.stage_results.append(StageResult(
@@ -354,7 +385,7 @@ class StageRunner:
         ctx_score = self._ctx("SCORE")
         t0 = time.monotonic()
         score_path = _artifact_path(ctx_score, "scored.parquet")
-        
+
         scoring_metrics = self.score_candidates(norm_final, cand_path, score_path, scoring_config, negative_pairs)
         ctx_score.config_hash = scoring_metrics["config_hash"]
         self.stage_results.append(StageResult("SCORE", self.run_id, self.attempt_id, True,
@@ -366,7 +397,7 @@ class StageRunner:
         ctx_decide = self._ctx("DECIDE")
         t0 = time.monotonic()
         decide_path = _artifact_path(ctx_decide, "decisions.parquet")
-        
+
         # SCORE contains every candidate. Filtering and enrichment belong here.
         # The existing decision/cluster consumer still materializes decisions;
         # it does not keep an additional full list of numerical SCORE results.
@@ -400,9 +431,9 @@ class StageRunner:
             for p in decision_pairs:
                 for k in ["blocking_reasons", "field_evidence", "comparisons", "matched_subgroups", "normalization_tags"]:
                     p[k] = json.dumps(p[k])
-            dec_table = pa.Table.from_pylist(decision_pairs)
+            dec_table = pa.Table.from_pylist(decision_pairs)  # noqa: F841 -- DuckDB replacement scan
             self.con.execute(f"COPY (SELECT * FROM dec_table ORDER BY match_weight DESC NULLS LAST, left_id ASC, right_id ASC) TO '{decide_path}' (FORMAT PARQUET)")
-            
+
             # Keep nullable contract fields as None. Pandas converts SQL NULL
             # into NaN, which the strict serving adapter correctly rejects.
             decisions_sorted = pq.read_table(decide_path).to_pylist()
@@ -413,13 +444,13 @@ class StageRunner:
         else:
             decisions_sorted = []
         del decision_pairs
-            
+
         self.stage_results.append(StageResult("DECIDE", self.run_id, self.attempt_id, True, int((time.monotonic() - t0)*1000), {"pair_count": len(decisions_sorted)}))
 
         # ---------------------------------------------------------
         # STG-06: CLUSTER
         # ---------------------------------------------------------
-        ctx_cluster = self._ctx("CLUSTER")
+        self._ctx("CLUSTER")
         t0 = time.monotonic()
         # Records are looked up by id from the snapshot index instead of loading every record here.
         snapshot = self.scoring_engine.snapshot
@@ -427,7 +458,7 @@ class StageRunner:
         by_id_full = RecordView(snapshot)
         clusters = build_proposals(by_id_full, decisions_sorted, self.run_id, policy_version, negative_pairs=negative_pairs,
                                    execution_blocked_pairs=execution_blocked_pairs)
-        
+
         review_cases = []
         pairs_by_id = None if disk_decisions else {}
         if pairs_by_id is not None:
@@ -435,11 +466,13 @@ class StageRunner:
                 pairs_by_id.setdefault(item["id"], item)
         for case in clusters["review_cases"]:
             pair = decisions_sorted.get_id(case["pair_ids"][0]) if disk_decisions else pairs_by_id.get(case["pair_ids"][0])
-            if pair is None: continue
+            if pair is None:
+                continue
             classification = classify_pair(pair, by_id_full)
-            if classification is None: continue
+            if classification is None:
+                continue
             review_cases.append({**case, **classification})
-            
+
         output = {**clusters, "review_cases": review_cases}
         # After clustering, triage is final. Annotate the published decisions with streamed, bounded lookups.
         from masterone.llm.policy import factory_for
@@ -453,9 +486,9 @@ class StageRunner:
         # ---------------------------------------------------------
         # STG-07: MATERIALIZE
         # ---------------------------------------------------------
-        ctx_mat = self._ctx("MATERIALIZE")
+        self._ctx("MATERIALIZE")
         t0 = time.monotonic()
-        
+
         output["pairs"] = decisions_sorted
         output["candidate_count"] = cand_count
         output["candidate_metrics"] = candidate_result.metrics
@@ -463,7 +496,7 @@ class StageRunner:
         output["scoring_artifact"] = score_path
         output["insufficient_count"] = insufficient_count
         output["streaming"] = {"mode": "serial", "reason": serial_reason}
-        
+
         if not return_data and self.db_url:
             from sqlalchemy import create_engine
             from sqlalchemy.orm import Session

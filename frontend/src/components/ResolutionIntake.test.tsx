@@ -9,6 +9,7 @@ const api = vi.hoisted(() => ({
   getUploadSession: vi.fn(), getUploadSessions: vi.fn(), presignUploadParts: vi.fn(), putPartToStorage: vi.fn(),
   renameUploadSession: vi.fn(), replaceUploadSessionFile: vi.fn(), uploadResolutionUploadPart: vi.fn(),
   validateUploadSession: vi.fn(),
+  addUploadSessionFiles: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -48,6 +49,22 @@ describe("ResolutionIntake", () => {
     } });
   });
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks(); localStorage.clear(); });
+
+  it('offers adding files while keeping the existing draft', async () => {
+    const ready = uploadSession(3, 'READY', 3);
+    api.getUploadSessions.mockResolvedValue({items:[ready]});
+    api.getUploadSession.mockResolvedValue(ready);
+    render(<ResolutionIntake userId="u" initialSessionId="upload-1" onRunCreated={vi.fn()} />);
+    expect(await screen.findByLabelText('Thêm các file CSV')).toBeEnabled();
+  });
+
+  it('disables adding files until asynchronous validation finishes', async () => {
+    const validating = uploadSession(3, 'VALIDATING', 3);
+    api.getUploadSessions.mockResolvedValue({items:[validating]});
+    api.getUploadSession.mockResolvedValue(validating);
+    render(<ResolutionIntake userId="u" initialSessionId="upload-1" onRunCreated={vi.fn()} />);
+    expect(await screen.findByLabelText('Thêm các file CSV')).toBeDisabled();
+  });
 
   it("uploads and commits a file larger than the old 5 MiB limit", async () => {
     const onRunCreated = vi.fn().mockResolvedValue(undefined);
@@ -251,6 +268,18 @@ describe("ResolutionIntake", () => {
       expect(api.putPartToStorage).toHaveBeenCalledTimes(2);
     });
 
+    it("falls back to the existing API transport after repeated direct network failures", async () => {
+      api.createUploadSession.mockResolvedValue(uploadSession(3, "UPLOADING", 0, "direct"));
+      api.getUploadSession.mockResolvedValue(uploadSession(3, "UPLOADING", 3, "direct"));
+      presignEcho(); api.putPartToStorage.mockRejectedValue(new Error('network/CORS unavailable'));
+      const { container } = render(<ResolutionIntake workflowVersion={2} onRunCreated={vi.fn()} />);
+      fireEvent.change(container.querySelector('input[type="file"][multiple]')!, { target: { files: [new File(['csv'], 'large.csv')] } });
+      await waitFor(() => expect(api.uploadResolutionUploadPart).toHaveBeenCalledTimes(1), { timeout: 3000 });
+      expect(api.uploadResolutionUploadPart).toHaveBeenCalledWith('upload-1', 'file-1', 0, expect.any(Blob), '00'.repeat(32), expect.any(Function));
+      expect(api.commitUploadPart).not.toHaveBeenCalled();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Tạo phiên từ dữ liệu đã kiểm tra' })).toBeEnabled());
+    });
+
     it("does not retry a checksum rejection, because the same bytes would fail again", async () => {
       api.createUploadSession.mockResolvedValue(uploadSession(3, "UPLOADING", 0, "direct"));
       presignEcho();
@@ -263,6 +292,7 @@ describe("ResolutionIntake", () => {
       await screen.findByText(/Kho lưu trữ từ chối khối \(400\)/);
       expect(api.presignUploadParts).toHaveBeenCalledTimes(1);
       expect(api.commitUploadPart).not.toHaveBeenCalled();
+      expect(api.uploadResolutionUploadPart).not.toHaveBeenCalled();
     });
   });
 });

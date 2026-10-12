@@ -43,7 +43,8 @@ RECORD_JSON_COLUMNS = frozenset({"original_fields", "mapping_provenance", "linea
 # rows are streamed into bounded insert batches below.
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
 
-CORE_RAW_FIELDS = {"name", "phone", "email", "address", "dob", "government_id", "government_id_type"}
+VERIFICATION_FIELDS = {'email_verification_status', 'government_id_identity_unique', 'government_id_single_valued', 'phone_verified', 'government_id_namespace', 'government_id_verified', 'email_verified', 'dob_verification_status', 'dob_verified', 'phone_verification_status', 'government_id_verification_status'}
+CORE_RAW_FIELDS = {"name", "phone", "email", "address", "dob", "government_id", "government_id_type"} | VERIFICATION_FIELDS
 
 
 @dataclass(frozen=True)
@@ -196,7 +197,10 @@ def _insert_records(db: Session, batch: list[dict]) -> None:
 def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, BinaryIO]],
                                        owner_user_id: str, name: str | None = None,
                                        upload_session_id: str | None = None,
-                                       known_hashes: Sequence[str | None] | None = None) -> tuple[ResolutionRun, dict]:
+                                       known_hashes: Sequence[str | None] | None = None,
+                                       workflow_version: int = 1) -> tuple[ResolutionRun, dict]:
+    from masterone.mdm.workflow_service import initialize_workflow, validate_version
+    validate_version(workflow_version)
     if not files:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Chọn ít nhất một file records.csv")
     if len(files) > MAX_FILES_PER_RUN:
@@ -258,7 +262,7 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
         raise
 
     run = ResolutionRun(id=run_id, owner_user_id=owner_user_id, upload_session_id=upload_session_id,
-                        name=normalized_name, record_count=0,
+                        name=normalized_name, record_count=0, workflow_version=workflow_version,
                         file_count=len(files), policy_version=POLICY_VERSION)
     db.add(run)
     total_rows = 0
@@ -305,6 +309,7 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
             file_profiles.append({"filename": filename, "row_count": file_rows, "sha256": digest,
                                   "mapping_report": mapping_report})
         run.record_count = total_rows
+        initialize_workflow(db, run)
         # Source counts are final once the records are written; overview reads them from here.
         db.add(ResolutionRunSummary(run_id=run.id, source_counts=source_counts, version=0))
         db.add(ResolutionAuditEvent(

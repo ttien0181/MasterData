@@ -58,7 +58,7 @@ def test_upload_links_upgrade_preserves_existing_sessions_and_runs(tmp_path, ear
     from masterone.api.mdm_runs import list_runs
     from masterone.auth.models import User
     from masterone.auth.security import CurrentSession
-    from masterone.mdm.models import ResolutionRun, ResolutionUploadFile, ResolutionUploadSession
+    from masterone.mdm.models import ResolutionRun, ResolutionUploadFile
 
     url = f"sqlite:///{(tmp_path / 'upload-links.db').as_posix()}"
     command.upgrade(alembic_config(url), "0018_upload_sessions")
@@ -69,10 +69,10 @@ def test_upload_links_upgrade_preserves_existing_sessions_and_runs(tmp_path, ear
                         password_hash="unused", role="STEWARD")
             db.add(user)
             db.flush()
-            db.add(ResolutionUploadSession(id="draft", owner_user_id=user.id, total_bytes=10))
-            db.flush()
-            db.add(ResolutionRun(id="existing-run", owner_user_id=user.id, name="Existing session",
-                                 upload_session_id=None if early_schema else "draft", record_count=3))
+            # Seed the historical schema with historical columns. The latest
+            # ORM legitimately contains columns introduced after 0018.
+            db.execute(text("INSERT INTO mdm_resolution_upload_sessions (id, owner_user_id, status, storage_backend, total_bytes, created_at, updated_at) VALUES ('draft', 'owner', 'UPLOADING', 'local', 10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"))
+            db.execute(text("INSERT INTO mdm_resolution_runs (id, owner_user_id, name, upload_session_id, status, phase, policy_version, record_count, file_count, candidate_count, insufficient_count, created_at) VALUES ('existing-run', 'owner', 'Existing session', :upload, 'UPLOADED', 'upload', 'person-v3', 3, 0, 0, 0, CURRENT_TIMESTAMP)"), {'upload': None if early_schema else 'draft'})
             db.add(ResolutionUploadFile(id="original", session_id="draft", position=0,
                                         filename="original.csv", expected_size=10))
             db.flush()

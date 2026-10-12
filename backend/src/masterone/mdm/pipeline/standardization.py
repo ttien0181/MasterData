@@ -454,6 +454,8 @@ def standardize(raw_fields: dict[str, str], entity_type: str = "PERSON") -> tupl
     }
     normalized["_field_quality"] = quality
 
+    preserve_verification(raw_fields, normalized)
+
     flags = []
     if not normalized["name"]:
         flags.append("MISSING_NAME")
@@ -472,3 +474,21 @@ def standardize(raw_fields: dict[str, str], entity_type: str = "PERSON") -> tupl
     if raw_gov_id and gov_id_quality == "INVALID":
         flags.append("INVALID_GOV_ID_FORMAT")
     return normalized, flags
+
+
+def preserve_verification(raw_fields: dict, normalized: dict) -> None:
+    """Only explicit source metadata grants verification; syntax never does."""
+    for field in ('government_id', 'dob', 'phone', 'email'):
+        value = raw_fields.get(f'{field}_verification_status', raw_fields.get(f'{field}_verified',
+            raw_fields.get(f'_{field}_verified', normalized.get(f'{field}_verification_status',
+                                                             normalized.get(f'_{field}_verified')))))
+        token = str(value).strip().lower() if value is not None else ''
+        status = 'verified' if token in {'true', 'verified', '1'} else (
+            'unverified' if token in {'false', 'unverified', '0'} else 'unknown')
+        normalized[f'{field}_verification_status'] = status
+        normalized[f'_{field}_verified'] = status == 'verified'
+    namespace = raw_fields.get('government_id_namespace')
+    if isinstance(namespace, str) and namespace.strip():
+        normalized['government_id_namespace'] = namespace.strip().upper()
+    for key in ('government_id_identity_unique', 'government_id_single_valued'):
+        normalized[key] = str(raw_fields.get(key, normalized.get(key, ''))).strip().lower() in {'true', '1'}

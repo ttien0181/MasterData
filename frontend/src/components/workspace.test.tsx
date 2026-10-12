@@ -56,7 +56,7 @@ describe("Resolution item flow", () => {
     vi.mocked(executeResolutionPreview).mockResolvedValue(undefined);
     vi.mocked(resolveMergeConflict).mockResolvedValue({ rejected_pair_count: 1 });
   });
-  afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks(); localStorage.clear(); window.history.replaceState({}, "", "/app"); });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.clearAllMocks(); localStorage.clear(); window.history.replaceState({}, "", "/app"); });
 
   it("lets a viewer inspect records but prevents decisions and field edits", async () => {
     const viewer: AuthUser = { ...steward, role: "VIEWER", capabilities: ["read"] };
@@ -388,7 +388,7 @@ describe("Resolution item flow", () => {
     expect(localStorage.getItem("masterone.resolution-run.v1.user-1")).toBe("url-run");
   });
 
-  it("keeps the last processing state and marks it stale when overview polling loses connection", async () => {
+  it("keeps the last processing state and marks it stale when overview WebSocket loses connection", async () => {
     vi.useFakeTimers();
     localStorage.setItem("masterone.resolution-run.v1.user-1", "run-1");
     vi.mocked(getResolutionRuns).mockResolvedValue({ total: 0, items: [] });
@@ -397,12 +397,18 @@ describe("Resolution item flow", () => {
       estimated_entity_count: 4, duplicate_record_count: 0, eligible_merge_group_count: 0,
       counts: { auto: 0, review: 0, separate: 0, rejected: 0, review_cases: 0, manual: 0,
         hard_blocked: 0, insufficient: 0, group_a: 0, group_c: 0, group_d: 0 } };
-    vi.mocked(getResolutionOverview).mockResolvedValueOnce(running).mockRejectedValueOnce(new Error("offline"));
+    vi.mocked(getResolutionOverview).mockResolvedValue(running);
+    let socket: { onerror?: () => void } | undefined;
+    vi.stubGlobal("WebSocket", class {
+      static OPEN = 1; static CONNECTING = 0;
+      readyState = 1; onerror?: () => void; close() {}
+      constructor() { socket = this; }
+    });
     render(<ResolutionWorkspace user={steward} onLogout={vi.fn()} />);
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(screen.getByText("Đang đối chiếu")).toBeInTheDocument();
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    act(() => socket?.onerror?.());
     expect(screen.getByText("Chưa kết nối được để cập nhật phiên; đang giữ trạng thái gần nhất.")).toBeInTheDocument();
     expect(screen.getByText("Đang đối chiếu")).toBeInTheDocument();
   });

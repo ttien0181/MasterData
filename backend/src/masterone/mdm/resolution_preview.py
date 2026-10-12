@@ -114,6 +114,9 @@ def record_merge_events(db: Session, preview: ResolutionPreview, snapshot: Resol
 
 def prepare_preview(db: Session, run_id: str, actor_user_id: str,
                     choices: dict, acknowledge_unreviewed: bool) -> dict:
+    if db.get(ResolutionRun, run_id).workflow_version == 2:
+        from masterone.mdm.workflow_exports import prepare_preview as workflow_preview
+        return workflow_preview(db, run_id, actor_user_id, choices, acknowledge_unreviewed)
     run = db.get(ResolutionRun, run_id)
     if run is None or run.status != "COMPLETED":
         raise HTTPException(409, "Lần nạp chưa xử lý xong")
@@ -147,6 +150,9 @@ def prepare_preview(db: Session, run_id: str, actor_user_id: str,
 
 def execute_preview(db: Session, run_id: str, preview_id: str, request_id: str,
                     actor_user_id: str) -> ResolutionExport:
+    if db.get(ResolutionRun, run_id).workflow_version == 2:
+        from masterone.mdm.workflow_exports import execute_preview as workflow_execute
+        return workflow_execute(db, run_id, preview_id, request_id, actor_user_id)
     db.query(ResolutionRun).filter_by(id=run_id).with_for_update().one()
     preview = db.query(ResolutionPreview).filter_by(id=preview_id).populate_existing().first()
     if preview is None or preview.run_id != run_id or preview.actor_user_id != actor_user_id:

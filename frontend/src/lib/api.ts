@@ -6,7 +6,7 @@ import type { ResolutionOverview, ResolutionRunHistory, ResolutionRun, ReviewCat
 
 export const getResolutionAnalytics = (runId: string) => request<ResolutionAnalytics>(`/runs/${runId}/analytics`);
 
-function apiBase() {
+export function apiBase() {
   if (process.env.NEXT_PUBLIC_API_BASE_URL) return process.env.NEXT_PUBLIC_API_BASE_URL;
   const host = typeof window !== "undefined" ? window.location.hostname : "localhost";
   return `http://${host === "127.0.0.1" ? host : "localhost"}:8001`;
@@ -15,7 +15,7 @@ let csrfToken = "";
 export function setCsrfToken(token: string) { csrfToken = token; }
 
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly detail?: unknown) {
     super(message);
   }
 }
@@ -24,14 +24,14 @@ function errorMessage(detail: unknown, status: number) {
   return typeof detail === "string" ? detail : `Yêu cầu thất bại (${status})`;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method?.toUpperCase() ?? "GET";
   const headers = new Headers(init?.headers);
   if (method !== "GET" && method !== "HEAD") headers.set("X-CSRF-Token", csrfToken);
   const response = await fetch(`${apiBase()}/api/v1/mdm${path}`, { ...init, credentials: "include", headers });
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
-    throw new ApiError(errorMessage(detail?.detail, response.status), response.status);
+    throw new ApiError(errorMessage(detail?.detail, response.status), response.status, detail?.detail);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -94,6 +94,9 @@ export const createUploadSession = (name: string, files: File[]) =>
 export const renameUploadSession = (sessionId: string, name: string) =>
   request<UploadSession>(`/upload-sessions/${sessionId}`, { method: "PATCH", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name: name.trim() || null }) });
+export const addUploadSessionFiles = (sessionId: string, files: File[], requestId = crypto.randomUUID()) =>
+  request<UploadSession>(`/upload-sessions/${sessionId}/files`, {method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({request_id:requestId,files:files.map(file => ({filename:file.name,size:file.size}))})});
 export const replaceUploadSessionFile = (sessionId: string, fileId: string, file: File) =>
   request<UploadSession>(`/upload-sessions/${sessionId}/files/${fileId}/replace`, {
     method: "PUT", headers: { "Content-Type": "application/json" },
@@ -102,9 +105,9 @@ export const replaceUploadSessionFile = (sessionId: string, fileId: string, file
 export const validateUploadSession = (sessionId: string) =>
   request<UploadSession>(`/upload-sessions/${sessionId}/validate`, { method: "POST" });
 // 201 with the run when created inline; 202 with run_id and profile null while the import job runs.
-export const commitUploadSession = (sessionId: string) =>
+export const commitUploadSession = (sessionId: string, workflowVersion: 1 | 2 = 1) =>
   request<{ run_id: string | null; status: string; profile: RunCommitProfile | null }>(
-    `/upload-sessions/${sessionId}/commit`, { method: "POST" });
+    `/upload-sessions/${sessionId}/commit${workflowVersion === 2 ? '?workflow_version=2' : ''}`, { method: "POST" });
 export const deleteUploadSession = (sessionId: string) =>
   request<void>(`/upload-sessions/${sessionId}`, { method: "DELETE" });
 
@@ -257,8 +260,14 @@ export const createResolutionPreview = (runId: string, acknowledgeUnreviewed: bo
   });
 export const executeResolutionPreview = (runId: string, previewId: string, executeRequestId: string) =>
   requestCsv(`/runs/${runId}/previews/${previewId}/execute`, "POST", { execute_request_id: executeRequestId });
-export const downloadResolutionExport = (runId: string, exportId: string) =>
-  requestCsv(`/runs/${runId}/exports/${exportId}/download`, "GET");
+export const downloadResolutionExport = async (runId: string, exportId: string) => {
+  // This authenticated GET may redirect to a signed storage URL. Native downloads
+  // follow it without cross-origin fetch permissions or forwarding CSRF headers.
+  const link = document.createElement("a");
+  link.href = `${apiBase()}/api/v1/mdm/runs/${encodeURIComponent(runId)}/exports/${encodeURIComponent(exportId)}/download`;
+  link.download = `masterone-${runId.slice(0, 8)}.csv`;
+  document.body.append(link); link.click(); link.remove();
+};
 export const downloadResolutionSource = (runId: string) =>
   requestCsv(`/runs/${runId}/source-records.csv`, "GET");
 export const compareResolutionExport = (runId: string, exportId: string) =>

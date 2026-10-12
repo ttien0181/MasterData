@@ -16,6 +16,7 @@ from contextlib import closing
 from datetime import UTC, timedelta
 from pathlib import Path
 from typing import BinaryIO
+from uuid import UUID, uuid5
 
 from fastapi import HTTPException, status
 from sqlalchemy import func
@@ -166,6 +167,52 @@ def serialize_upload_session(db: Session, session: ResolutionUploadSession,
         "created_at": session.created_at, "updated_at": session.updated_at,
         "files": serialized_files,
     }
+
+
+def lock_upload_session(db: Session, session_id: str):
+    # Reserve SQLite's writer before reading positions/status; FOR UPDATE is ignored there.
+    if db.get_bind().dialect.name == 'sqlite':
+        connection = db.connection()
+        if not connection.connection.driver_connection.in_transaction:
+            connection.exec_driver_sql('BEGIN IMMEDIATE')
+    return db.query(ResolutionUploadSession).filter_by(id=session_id).with_for_update().populate_existing().one_or_none()
+
+
+def add_upload_files(db: Session, session_id: str, owner_user_id: str, files: Sequence[dict], request_id: str):
+    session = lock_upload_session(db, session_id)
+    if session is None or session.owner_user_id != owner_user_id:
+        raise HTTPException(404, 'Upload draft not found')
+    prepared = []
+    for index, item in enumerate(files):
+        filename = str(item['filename']).replace('\\', '/').rsplit('/', 1)[-1].strip()
+        size = item['size']
+        if not filename or len(filename) > 255 or not filename.lower().endswith('.csv') or type(size) is not int or size <= 0:
+            raise HTTPException(422, 'Invalid CSV specification')
+        prepared.append((str(uuid5(UUID(session.id), request_id + ':' + str(index))), filename, size))
+    if not prepared:
+        raise HTTPException(422, 'Choose at least one file')
+    existing = [db.get(ResolutionUploadFile, fid) for fid, _, _ in prepared]
+    if any(existing):
+        if not all(row and row.filename == filename and row.expected_size == size for row, (_, filename, size) in zip(existing, prepared)):
+            raise HTTPException(409, 'Request ID payload mismatch')
+        # A smaller replay is also a different payload.
+        extra_id = str(uuid5(UUID(session.id), request_id + ':' + str(len(prepared))))
+        if db.get(ResolutionUploadFile, extra_id):
+            raise HTTPException(409, 'Request ID payload mismatch')
+        return session
+    if session.status in ('VALIDATING', 'COMMITTING', 'COMMITTED', 'CANCELLED'):
+        raise HTTPException(409, 'Upload draft is locked')
+    query = db.query(ResolutionUploadFile).filter_by(session_id=session.id)
+    if query.filter(ResolutionUploadFile.replaces_file_id.is_(None)).count() + len(prepared) > MAX_FILES_PER_RUN:
+        raise HTTPException(413, 'Maximum 10 CSV files per draft')
+    last = query.with_entities(func.max(ResolutionUploadFile.position)).scalar()
+    for index, (fid, filename, size) in enumerate(prepared):
+        db.add(ResolutionUploadFile(id=fid, session_id=session.id, position=(last if last is not None else -1) + index + 1,
+                                   filename=filename, expected_size=size, received_size=0, status='UPLOADING', source_counts={}))
+    session.total_bytes += sum(size for _, _, size in prepared)
+    session.status, session.error_message = 'UPLOADING', None
+    db.commit()
+    return session
 
 
 def update_upload_session_name(db: Session, session: ResolutionUploadSession,
@@ -496,6 +543,7 @@ def _fail_draft(db: Session, session_id: str, expected_status: str, status_after
 
 
 def begin_validation(db: Session, session: ResolutionUploadSession) -> None:
+    session = lock_upload_session(db, session.id)
     busy = session.status == "VALIDATING" and not _job_is_stale(session)
     if session.status in {"COMMITTED", "CANCELLED", "COMMITTING"} or busy:
         raise HTTPException(status.HTTP_409_CONFLICT, "Không thể validate draft ở trạng thái hiện tại")
@@ -628,6 +676,7 @@ def run_profile(db: Session, run: ResolutionRun) -> dict:
 
 
 def begin_commit(db: Session, session: ResolutionUploadSession, owner_user_id: str) -> None:
+    session = lock_upload_session(db, session.id)
     if session.owner_user_id != owner_user_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Upload draft không tồn tại")
     if session.status == "COMMITTING" and not _job_is_stale(session):
@@ -666,7 +715,8 @@ def _commit_files(db: Session, session: ResolutionUploadSession,
     try:
         streams = [(filename, path.open("rb")) for filename, path in paths]
         run, profile = create_resolution_run_from_streams(
-            db, streams, owner_user_id, session.name, upload_session_id=session.id, known_hashes=known_hashes)
+            db, streams, owner_user_id, session.name, upload_session_id=session.id, known_hashes=known_hashes,
+            workflow_version=session.workflow_version)
         session.status = "COMMITTED"
         db.commit()
     finally:

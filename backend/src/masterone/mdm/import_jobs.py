@@ -28,10 +28,14 @@ def database_url(request: Request) -> str:
     return request.app.state.session_factory.kw["bind"].url.render_as_string(hide_password=False)
 
 
-def start(kind: str, session_id: str, owner_user_id: str, url: str) -> None:
+def start(kind: str, session_id: str, owner_user_id: str, url: str, *, before_start=None) -> None:
     with _lock:
         if session_id in _running:
             raise HTTPException(status.HTTP_409_CONFLICT, "Phiên đang được xử lý; hãy đợi hoàn tất")
+        # A previous child may have committed READY before its supervisor exits.
+        # Reject that overlap before committing a new VALIDATING/COMMITTING state.
+        if before_start is not None:
+            before_start()
         _running.add(session_id)
     threading.Thread(target=_supervise, args=(kind, session_id, owner_user_id, url),
                      name=f"import-{kind}-{session_id[:8]}", daemon=True).start()

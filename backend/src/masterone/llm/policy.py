@@ -29,7 +29,7 @@ from masterone.mdm.models import (
     ResolutionTask,
 )
 
-PURPOSES = ("ADDRESS_COMPARE", "EXPLANATION")
+PURPOSES = ("ADDRESS_COMPARE", "EXPLANATION", "PAIR_ASSESSMENT")
 PROVIDERS = ("gemini", "openrouter")
 # Provider-specific denials move on to the next provider. Every other denial stops the request.
 PROVIDER_SKIP_CODES = frozenset({
@@ -65,7 +65,7 @@ _ADDRESS_CONTEXT = re.compile(
 _CODE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,47}")
 _MODEL = re.compile(r"[A-Za-z0-9_./-]{1,100}")
 _FIELDS = frozenset({"name", "phone", "email", "address"})
-_STATES = frozenset({"EX", "NX", "NA", "HS", "MS", "WS", "DF", "CF", "MI", "IV", "SH", "NC"})
+_STATES = frozenset({"EX", "NX", "NA", "HS", "MS", "WS", "CL", "DF", "CF", "MI", "IV", "SH", "NC"})
 _BANDS = frozenset({"exact", "similar", "different", "ambiguous", "missing"})
 _MAX_COUNT = 10_000_000
 
@@ -114,6 +114,8 @@ def enforce(settings, provider, purpose):
         raise PolicyDenied("PURPOSE_DISABLED")
     if purpose == "EXPLANATION" and not settings.llm_explanation_enabled:
         raise PolicyDenied("PURPOSE_DISABLED")
+    if purpose == 'PAIR_ASSESSMENT' and not settings.llm_pair_assessment_enabled:
+        raise PolicyDenied('PURPOSE_DISABLED')
     if provider not in PROVIDERS or provider not in _approved(settings.llm_approved_providers):
         raise PolicyDenied("PROVIDER_DENIED")
     model = provider_model(settings, provider)
@@ -150,6 +152,24 @@ def validate_startup(settings):
 
 def allowed_payload(purpose, payload):
     """Reject unknown keys. Source values never enter a prompt; only counts, bands and codes do."""
+    if purpose == 'PAIR_ASSESSMENT':
+        if not isinstance(payload, dict) or set(payload) != {'pair_token', 'left', 'right', 'signals', 'unverified_identifier_relation'}:
+            raise PolicyDenied('PAYLOAD_DENIED')
+        if not isinstance(payload['pair_token'], str) or not re.fullmatch(r'pair-[a-zA-Z0-9-]{1,40}', payload['pair_token']):
+            raise PolicyDenied('PAYLOAD_DENIED')
+        for side in ('left', 'right'):
+            if not isinstance(payload[side], dict) or set(payload[side]) != {'name', 'address'}:
+                raise PolicyDenied('PAYLOAD_DENIED')
+            for value in payload[side].values():
+                if not isinstance(value, str) or len(value) > 300 or _OUTPUT_UNSAFE.search(value) or re.search(r'\b\d{4}-\d{2}-\d{2}\b', value):
+                    raise PolicyDenied('PAYLOAD_DENIED')
+        if not isinstance(payload['signals'], dict) or set(payload['signals']) - (_FIELDS | {'dob', 'government_id'}):
+            raise PolicyDenied('PAYLOAD_DENIED')
+        if any(value not in _STATES for value in payload['signals'].values()):
+            raise PolicyDenied('PAYLOAD_DENIED')
+        if payload['unverified_identifier_relation'] not in {'SAME_VALUE', 'DIFFERENT_VALUE', 'NOT_COMPARABLE', 'VERIFIED_METADATA'}:
+            raise PolicyDenied('PAYLOAD_DENIED')
+        return payload
     if purpose == "ADDRESS_COMPARE":
         if not isinstance(payload, list) or not 1 <= len(payload) <= 10:
             raise PolicyDenied("PAYLOAD_DENIED")
@@ -211,6 +231,46 @@ def validate_output(purpose, output, payload):
     """Strict schema check. Provider output is untrusted until this passes."""
     if not isinstance(output, dict):
         raise PolicyDenied("SCHEMA_INVALID")
+    if purpose == 'PAIR_ASSESSMENT':
+        from masterone.llm.pair_advice_contract import REASONS, LIMITATIONS
+        if (set(output) != {'pair_token', 'recommendation', 'evidence', 'reason_codes', 'limitation_codes'}
+                or output['pair_token'] != payload['pair_token']
+                or output['recommendation'] not in {'LIKELY_SAME_PERSON', 'LIKELY_DIFFERENT_PERSON', 'INSUFFICIENT_BASIS'}):
+            raise PolicyDenied('SCHEMA_INVALID')
+        evidence = output['evidence']
+        if not isinstance(evidence, list) or len(evidence) > 6:
+            raise PolicyDenied('SCHEMA_INVALID')
+        found = set()
+        for item in evidence:
+            if (not isinstance(item, dict) or set(item) != {'field', 'state'} or not isinstance(item['field'], str)
+                    or item['field'] not in payload['signals'] or item['field'] in found
+                    or item['state'] != payload['signals'][item['field']] or item['state'] in {'MI', 'IV'}):
+                raise PolicyDenied('SCHEMA_INVALID')
+            found.add(item['field'])
+        for key, allowed in [('reason_codes', REASONS), ('limitation_codes', LIMITATIONS)]:
+            codes = output[key]
+            if (not isinstance(codes, list) or not 1 <= len(codes) <= len(allowed)
+                    or any(not isinstance(v, str) or v not in allowed for v in codes) or len(set(codes)) != len(codes)):
+                raise PolicyDenied('SCHEMA_INVALID')
+        states = [item['state'] for item in evidence]
+        relation = payload['unverified_identifier_relation']
+        predicates = {
+            'CORROBORATING_SIGNALS': sum(s in {'EX','NX','NA','HS','MS','CL'} for s in states) >= 2,
+            'CONFLICTING_SIGNALS': any(s in {'DF','CF'} for s in states) or ('government_id' in found and relation == 'DIFFERENT_VALUE'),
+            'SPARSE_SIGNALS': sum(s not in {'MI','IV','NC','SH'} for s in payload['signals'].values()) < 3,
+            'NORMALIZATION_VARIANT': any(s in {'NX','NA'} for s in states),
+            'UNVERIFIED_IDENTIFIER': 'government_id' in found and relation in {'SAME_VALUE','DIFFERENT_VALUE'},
+            'NO_VERIFIED_ANCHOR': relation != 'VERIFIED_METADATA',
+        }
+        if any(not predicates[code] for code in output['reason_codes']):
+            raise PolicyDenied('SCHEMA_INVALID')
+        if output['recommendation'] == 'LIKELY_SAME_PERSON' and not any(s in {'EX','NX','NA','HS','MS','CL'} for s in states):
+            raise PolicyDenied('SCHEMA_INVALID')
+        if output['recommendation'] == 'LIKELY_DIFFERENT_PERSON' and not predicates['CONFLICTING_SIGNALS']:
+            raise PolicyDenied('SCHEMA_INVALID')
+        if not {'SOURCE_NOT_VERIFIED','HUMAN_REVIEW_REQUIRED'} <= set(output['limitation_codes']):
+            raise PolicyDenied('SCHEMA_INVALID')
+        return output
     if purpose == "ADDRESS_COMPARE":
         if set(output) != {"items"} or not isinstance(output["items"], list):
             raise PolicyDenied("SCHEMA_INVALID")
@@ -398,7 +458,8 @@ class PolicyEnforcer:
                 ([], s.llm_global_call_cap),
                 ([LLMReservation.user_id == row.user_id], s.llm_user_call_cap),
                 ([LLMReservation.run_id == row.run_id], s.llm_max_explanation_calls_per_run
-                 if purpose == "EXPLANATION" else s.llm_max_semantic_calls_per_run),
+                 if purpose == "EXPLANATION" else s.llm_max_pair_assessment_calls_per_run
+                 if purpose == 'PAIR_ASSESSMENT' else s.llm_max_semantic_calls_per_run),
             ]
             for filters, cap in scopes:
                 if db.scalar(select(func.coalesce(func.sum(LLMReservation.calls), 0)).where(*filters)) >= cap:

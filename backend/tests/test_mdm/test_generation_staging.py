@@ -460,7 +460,7 @@ def test_generation_migration_preservation_and_nondestructive_rollback(tmp_path,
     engine = create_engine(url)
     with engine.begin() as db:
         db.execute(User.__table__.insert().values(id="owner", email="owner@example.test", email_normalized="owner@example.test", password_hash="unused", role="STEWARD"))
-        db.execute(ResolutionRun.__table__.insert().values(id="run", owner_user_id="owner", name="Legacy", record_count=2))
+        db.execute(text("INSERT INTO mdm_resolution_runs (id, owner_user_id, name, status, phase, policy_version, record_count, file_count, candidate_count, insufficient_count, created_at) VALUES ('run', 'owner', 'Legacy', 'UPLOADED', 'upload', 'person-v1', 2, 0, 0, 0, CURRENT_TIMESTAMP)"))
     factory = sessionmaker(engine, expire_on_commit=False)
     with factory.begin() as db:
         db.add(ResolutionFile(id="file", run_id="run", filename="test.csv", sha256="test", row_count=2))

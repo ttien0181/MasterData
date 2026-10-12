@@ -1,0 +1,3897 @@
+{
+  "False": {
+    "bridge": {
+      "clusters": {
+        "proposals": [
+          {
+            "edge_order": [
+              {
+                "decision_subgroup": "A1_NAME_PHONE",
+                "left_id": "a",
+                "pair_id": "ab",
+                "policy_id": null,
+                "right_id": "b",
+                "score": 6.0,
+                "seq": 0
+              },
+              {
+                "decision_subgroup": "A2_NAME_EMAIL",
+                "left_id": "b",
+                "pair_id": "bc",
+                "policy_id": null,
+                "right_id": "c",
+                "score": 6.0,
+                "seq": 1
+              }
+            ],
+            "golden_fields": {
+              "fields": {
+                "email": {
+                  "provenance": "SURVIVORSHIP",
+                  "value": "bridge@example.test",
+                  "values": [
+                    {
+                      "quality": "VALID",
+                      "source_record_id": "b",
+                      "source_system": "source-b",
+                      "value": "bridge@example.test"
+                    }
+                  ]
+                },
+                "name": {
+                  "provenance": "SURVIVORSHIP",
+                  "quality": "VALID",
+                  "source_record_id": "c",
+                  "source_system": "source-c",
+                  "value": "Nguyen Van An"
+                },
+                "phone": {
+                  "provenance": "SURVIVORSHIP",
+                  "value": "0912345678",
+                  "values": [
+                    {
+                      "quality": "VALID",
+                      "source_record_id": "a",
+                      "source_system": "source-a",
+                      "value": "0912345678"
+                    },
+                    {
+                      "quality": "VALID",
+                      "source_record_id": "c",
+                      "source_system": "source-c",
+                      "value": "0987654321"
+                    }
+                  ]
+                }
+              },
+              "member_record_ids": [
+                "a",
+                "b",
+                "c"
+              ]
+            },
+            "id": "228c52e98c1e6cc852a65142920647ef81e91041c95206bf1062baa3343a0655",
+            "member_record_ids": [
+              "a",
+              "b",
+              "c"
+            ],
+            "revision": 1,
+            "status": "AUTO_READY"
+          }
+        ],
+        "review_cases": [],
+        "risky_pairs": []
+      },
+      "pairs": [
+        {
+          "blocking_reasons": [],
+          "comparisons": {
+            "address": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "dob": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "email": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "government_id": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "name": {
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "phone": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "EX"
+            }
+          },
+          "conflict_rule_version": "v3.1.0",
+          "decision": "MERGEABLE",
+          "decision_subgroup": "A1_NAME_PHONE",
+          "field_evidence": [
+            {
+              "field": "name",
+              "is_hard_conflict": false,
+              "left": "nguyen van an",
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "right": "nguyen van an",
+              "similarity": 1.0,
+              "state": "EX"
+            },
+            {
+              "field": "phone",
+              "is_hard_conflict": false,
+              "left": "0912345678",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "0912345678",
+              "similarity": 1.0,
+              "state": "EX"
+            },
+            {
+              "field": "email",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "bridge@example.test",
+              "similarity": 0.0,
+              "state": "MI"
+            },
+            {
+              "field": "dob",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            },
+            {
+              "field": "address",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            },
+            {
+              "field": "government_id",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            }
+          ],
+          "id": "ab",
+          "left_id": "a",
+          "match_weight": 15,
+          "matched_subgroups": [],
+          "normalization_tags": [
+            "GIVEN_NAME_COMPATIBLE"
+          ],
+          "policy_file_version": "person-v3",
+          "policy_id": null,
+          "policy_version": "person-linh-v2-selective",
+          "primary_group": "A",
+          "reason": "NO_ELIGIBLE_SUBGROUP",
+          "right_id": "b",
+          "score": 6.0,
+          "signature": "N:EX|P:EX|E:MI|DOB:MI|A:MI|G:MI",
+          "subgroup": "A1_NAME_PHONE",
+          "triage_reason": "SAFE_COMPONENT_EDGE",
+          "triage_status": "HIGH_CONFIDENCE_PROPOSAL"
+        },
+        {
+          "blocking_reasons": [],
+          "comparisons": {
+            "address": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "dob": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "email": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "government_id": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "name": {
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "phone": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "DF"
+            }
+          },
+          "conflict_rule_version": "v3.1.0",
+          "decision": "MERGEABLE",
+          "decision_subgroup": "A2_NAME_EMAIL",
+          "field_evidence": [
+            {
+              "field": "name",
+              "is_hard_conflict": false,
+              "left": "nguyen van an",
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "right": "nguyen van an",
+              "similarity": 1.0,
+              "state": "EX"
+            },
+            {
+              "field": "phone",
+              "is_hard_conflict": false,
+              "left": "0912345678",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "0987654321",
+              "similarity": 0.0,
+              "state": "DF"
+            },
+            {
+              "field": "email",
+              "is_hard_conflict": false,
+              "left": "bridge@example.test",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "bridge@example.test",
+              "similarity": 1.0,
+              "state": "EX"
+            },
+            {
+              "field": "dob",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            },
+            {
+              "field": "address",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            },
+            {
+              "field": "government_id",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            }
+          ],
+          "id": "bc",
+          "left_id": "b",
+          "match_weight": 14,
+          "matched_subgroups": [],
+          "normalization_tags": [
+            "GIVEN_NAME_COMPATIBLE"
+          ],
+          "policy_file_version": "person-v3",
+          "policy_id": null,
+          "policy_version": "person-linh-v2-selective",
+          "primary_group": "A",
+          "reason": "NO_ELIGIBLE_SUBGROUP",
+          "right_id": "c",
+          "score": 6.0,
+          "signature": "N:EX|P:DF|E:EX|DOB:MI|A:MI|G:MI",
+          "subgroup": "A2_NAME_EMAIL",
+          "triage_reason": "SAFE_COMPONENT_EDGE",
+          "triage_status": "HIGH_CONFIDENCE_PROPOSAL"
+        }
+      ]
+    },
+    "candidate_count": 1,
+    "candidate_metrics": {
+      "candidate_count": 1,
+      "disabled_passes": [],
+      "duplicate_observations": 12,
+      "excluded_records_by_source": {
+        "address_gram": 3,
+        "exact_email": 2,
+        "exact_gov_id": 3,
+        "name_prefix_year": 3,
+        "name_province": 3,
+        "phone_suffix_year": 3,
+        "surname_year": 3
+      },
+      "exclusion_reason": "missing_value_or_required_valid_quality",
+      "generated_observations": 16,
+      "record_count": 3,
+      "skip_reasons": {},
+      "skipped_pair_observations": 0,
+      "sources": {
+        "exact_email": {
+          "generated_pairs": 0,
+          "skipped_pairs": 0
+        },
+        "exact_name": {
+          "generated_pairs": 1,
+          "skipped_pairs": 0
+        },
+        "exact_phone": {
+          "generated_pairs": 1,
+          "skipped_pairs": 0
+        },
+        "name_gram": {
+          "generated_pairs": 13,
+          "skipped_pairs": 0
+        },
+        "tfidf_name": {
+          "generated_pairs": 1,
+          "skipped_pairs": 0
+        }
+      },
+      "union_collapsed_observations": 15
+    },
+    "cannot": {
+      "clusters": {
+        "proposals": [
+          {
+            "edge_order": [
+              {
+                "decision_subgroup": "A1_NAME_PHONE",
+                "left_id": "a",
+                "pair_id": "ab",
+                "policy_id": null,
+                "right_id": "b",
+                "score": 6.0,
+                "seq": 0
+              }
+            ],
+            "golden_fields": {
+              "fields": {
+                "email": {
+                  "provenance": "SURVIVORSHIP",
+                  "value": "bridge@example.test",
+                  "values": [
+                    {
+                      "quality": "VALID",
+                      "source_record_id": "b",
+                      "source_system": "source-b",
+                      "value": "bridge@example.test"
+                    }
+                  ]
+                },
+                "name": {
+                  "provenance": "SURVIVORSHIP",
+                  "quality": "VALID",
+                  "source_record_id": "b",
+                  "source_system": "source-b",
+                  "value": "Nguyen Van An"
+                },
+                "phone": {
+                  "provenance": "SURVIVORSHIP",
+                  "value": "0912345678",
+                  "values": [
+                    {
+                      "quality": "VALID",
+                      "source_record_id": "a",
+                      "source_system": "source-a",
+                      "value": "0912345678"
+                    }
+                  ]
+                }
+              },
+              "member_record_ids": [
+                "a",
+                "b"
+              ]
+            },
+            "id": "4e2341bd40980ed9b43cd026a8d64ef4a7fbd6b665c0412a0d8e16c3f012208f",
+            "member_record_ids": [
+              "a",
+              "b"
+            ],
+            "revision": 1,
+            "status": "AUTO_READY"
+          }
+        ],
+        "review_cases": [
+          {
+            "id": "d26ff85176b17065dff5642fbad6bee0244502e179e2bc575a11e4994a6bd050",
+            "member_record_ids": [
+              "b",
+              "c"
+            ],
+            "pair_ids": [
+              "bc"
+            ],
+            "revision": 1,
+            "triage_reason": "CLUSTER_NEGATIVE_EDGE"
+          }
+        ],
+        "risky_pairs": [
+          {
+            "blocking_reasons": [],
+            "comparisons": {
+              "address": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "MI"
+              },
+              "dob": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "MI"
+              },
+              "email": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "EX"
+              },
+              "government_id": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "MI"
+              },
+              "name": {
+                "normalization_tags": [
+                  "GIVEN_NAME_COMPATIBLE"
+                ],
+                "provenance": "RULE",
+                "state": "EX"
+              },
+              "phone": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "DF"
+              }
+            },
+            "conflict_rule_version": "v3.1.0",
+            "decision": "MERGEABLE",
+            "decision_subgroup": "A2_NAME_EMAIL",
+            "field_evidence": [
+              {
+                "field": "name",
+                "is_hard_conflict": false,
+                "left": "nguyen van an",
+                "normalization_tags": [
+                  "GIVEN_NAME_COMPATIBLE"
+                ],
+                "provenance": "RULE",
+                "right": "nguyen van an",
+                "similarity": 1.0,
+                "state": "EX"
+              },
+              {
+                "field": "phone",
+                "is_hard_conflict": false,
+                "left": "0912345678",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "0987654321",
+                "similarity": 0.0,
+                "state": "DF"
+              },
+              {
+                "field": "email",
+                "is_hard_conflict": false,
+                "left": "bridge@example.test",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "bridge@example.test",
+                "similarity": 1.0,
+                "state": "EX"
+              },
+              {
+                "field": "dob",
+                "is_hard_conflict": false,
+                "left": "",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "",
+                "similarity": 0.0,
+                "state": "MI"
+              },
+              {
+                "field": "address",
+                "is_hard_conflict": false,
+                "left": "",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "",
+                "similarity": 0.0,
+                "state": "MI"
+              },
+              {
+                "field": "government_id",
+                "is_hard_conflict": false,
+                "left": "",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "",
+                "similarity": 0.0,
+                "state": "MI"
+              }
+            ],
+            "guard_violations": [
+              {
+                "guard": "NEGATIVE_EDGE_GUARD",
+                "reason": "CLUSTER_NEGATIVE_EDGE",
+                "severity": "BLOCK"
+              },
+              {
+                "guard": "SHARED_VALUE_GUARD",
+                "reason": "CLUSTER_SHARED_VALUE_DOMINANT",
+                "severity": "WARN"
+              }
+            ],
+            "id": "bc",
+            "left_id": "b",
+            "match_weight": 14,
+            "matched_subgroups": [],
+            "normalization_tags": [
+              "GIVEN_NAME_COMPATIBLE"
+            ],
+            "policy_file_version": "person-v3",
+            "policy_id": null,
+            "policy_version": "person-linh-v2-selective",
+            "primary_group": "A",
+            "reason": "NO_ELIGIBLE_SUBGROUP",
+            "right_id": "c",
+            "score": 6.0,
+            "signature": "N:EX|P:DF|E:EX|DOB:MI|A:MI|G:MI",
+            "subgroup": "A2_NAME_EMAIL",
+            "triage_reason": "CLUSTER_NEGATIVE_EDGE",
+            "triage_status": "REVIEW"
+          }
+        ]
+      },
+      "pairs": [
+        {
+          "blocking_reasons": [],
+          "comparisons": {
+            "address": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "dob": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "email": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "government_id": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "name": {
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "phone": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "EX"
+            }
+          },
+          "conflict_rule_version": "v3.1.0",
+          "decision": "MERGEABLE",
+          "decision_subgroup": "A1_NAME_PHONE",
+          "field_evidence": [
+            {
+              "field": "name",
+              "is_hard_conflict": false,
+              "left": "nguyen van an",
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "right": "nguyen van an",
+              "similarity": 1.0,
+              "state": "EX"
+            },
+            {
+              "field": "phone",
+              "is_hard_conflict": false,
+              "left": "0912345678",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "0912345678",
+              "similarity": 1.0,
+              "state": "EX"
+            },
+            {
+              "field": "email",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "bridge@example.test",
+              "similarity": 0.0,
+              "state": "MI"
+            },
+            {
+              "field": "dob",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            },
+            {
+              "field": "address",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            },
+            {
+              "field": "government_id",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            }
+          ],
+          "id": "ab",
+          "left_id": "a",
+          "match_weight": 15,
+          "matched_subgroups": [],
+          "normalization_tags": [
+            "GIVEN_NAME_COMPATIBLE"
+          ],
+          "policy_file_version": "person-v3",
+          "policy_id": null,
+          "policy_version": "person-linh-v2-selective",
+          "primary_group": "A",
+          "reason": "NO_ELIGIBLE_SUBGROUP",
+          "right_id": "b",
+          "score": 6.0,
+          "signature": "N:EX|P:EX|E:MI|DOB:MI|A:MI|G:MI",
+          "subgroup": "A1_NAME_PHONE",
+          "triage_reason": "SAFE_COMPONENT_EDGE",
+          "triage_status": "HIGH_CONFIDENCE_PROPOSAL"
+        },
+        {
+          "blocking_reasons": [],
+          "comparisons": {
+            "address": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "dob": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "email": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "government_id": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "name": {
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "phone": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "DF"
+            }
+          },
+          "conflict_rule_version": "v3.1.0",
+          "decision": "MERGEABLE",
+          "decision_subgroup": "A2_NAME_EMAIL",
+          "field_evidence": [
+            {
+              "field": "name",
+              "is_hard_conflict": false,
+              "left": "nguyen van an",
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "right": "nguyen van an",
+              "similarity": 1.0,
+              "state": "EX"
+            },
+            {
+              "field": "phone",
+              "is_hard_conflict": false,
+              "left": "0912345678",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "0987654321",
+              "similarity": 0.0,
+              "state": "DF"
+            },
+            {
+              "field": "email",
+              "is_hard_conflict": false,
+              "left": "bridge@example.test",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "bridge@example.test",
+              "similarity": 1.0,
+              "state": "EX"
+            },
+            {
+              "field": "dob",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            },
+            {
+              "field": "address",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            },
+            {
+              "field": "government_id",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            }
+          ],
+          "guard_violations": [
+            {
+              "guard": "NEGATIVE_EDGE_GUARD",
+              "reason": "CLUSTER_NEGATIVE_EDGE",
+              "severity": "BLOCK"
+            },
+            {
+              "guard": "SHARED_VALUE_GUARD",
+              "reason": "CLUSTER_SHARED_VALUE_DOMINANT",
+              "severity": "WARN"
+            }
+          ],
+          "id": "bc",
+          "left_id": "b",
+          "match_weight": 14,
+          "matched_subgroups": [],
+          "normalization_tags": [
+            "GIVEN_NAME_COMPATIBLE"
+          ],
+          "policy_file_version": "person-v3",
+          "policy_id": null,
+          "policy_version": "person-linh-v2-selective",
+          "primary_group": "A",
+          "reason": "NO_ELIGIBLE_SUBGROUP",
+          "right_id": "c",
+          "score": 6.0,
+          "signature": "N:EX|P:DF|E:EX|DOB:MI|A:MI|G:MI",
+          "subgroup": "A2_NAME_EMAIL",
+          "triage_reason": "CLUSTER_NEGATIVE_EDGE",
+          "triage_status": "REVIEW"
+        }
+      ]
+    },
+    "golden": {
+      "fields": {
+        "name": {
+          "provenance": "SURVIVORSHIP",
+          "quality": "VALID",
+          "source_record_id": "b",
+          "source_system": "CRM",
+          "value": "Second"
+        },
+        "phone": {
+          "provenance": "SURVIVORSHIP",
+          "value": "0912345678",
+          "values": [
+            {
+              "quality": "VALID",
+              "source_record_id": "b",
+              "source_system": "CRM",
+              "value": "0912345678"
+            }
+          ]
+        }
+      },
+      "member_record_ids": [
+        "a",
+        "b"
+      ]
+    },
+    "insufficient_count": 0,
+    "manual": {
+      "_golden_override": {
+        "name": "Manual"
+      },
+      "fields": {
+        "name": {
+          "provenance": "SURVIVORSHIP",
+          "quality": "VALID",
+          "source_record_id": "b",
+          "source_system": "CRM",
+          "value": "Second"
+        },
+        "phone": {
+          "provenance": "SURVIVORSHIP",
+          "value": "0912345678",
+          "values": [
+            {
+              "quality": "VALID",
+              "source_record_id": "b",
+              "source_system": "CRM",
+              "value": "0912345678"
+            }
+          ]
+        }
+      },
+      "member_record_ids": [
+        "a",
+        "b"
+      ]
+    },
+    "pairs": [
+      {
+        "blocking_reasons": [
+          "exact_name",
+          "exact_phone",
+          "name_gram",
+          "tfidf_name"
+        ],
+        "comparisons": {
+          "address": {
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "state": "MI"
+          },
+          "dob": {
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "state": "MI"
+          },
+          "email": {
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "state": "MI"
+          },
+          "government_id": {
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "state": "MI"
+          },
+          "name": {
+            "normalization_tags": [
+              "GIVEN_NAME_COMPATIBLE"
+            ],
+            "provenance": "RULE",
+            "state": "EX"
+          },
+          "phone": {
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "state": "EX"
+          }
+        },
+        "conflict_rule_version": "v3.1.0",
+        "decision": "REVIEW",
+        "decision_subgroup": "A1_NAME_PHONE",
+        "field_evidence": [
+          {
+            "field": "name",
+            "is_hard_conflict": false,
+            "left": "nguyen van an",
+            "normalization_tags": [
+              "GIVEN_NAME_COMPATIBLE"
+            ],
+            "provenance": "RULE",
+            "right": "nguyen van an",
+            "similarity": 1.0,
+            "state": "EX"
+          },
+          {
+            "field": "phone",
+            "is_hard_conflict": false,
+            "left": "0912345678",
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "right": "0912345678",
+            "similarity": 1.0,
+            "state": "EX"
+          },
+          {
+            "field": "email",
+            "is_hard_conflict": false,
+            "left": "",
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "right": "",
+            "similarity": 0.0,
+            "state": "MI"
+          },
+          {
+            "field": "dob",
+            "is_hard_conflict": false,
+            "left": "",
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "right": "",
+            "similarity": 0.0,
+            "state": "MI"
+          },
+          {
+            "field": "address",
+            "is_hard_conflict": false,
+            "left": "",
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "right": "",
+            "similarity": 0.0,
+            "state": "MI"
+          },
+          {
+            "field": "government_id",
+            "is_hard_conflict": false,
+            "left": "",
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "right": "",
+            "similarity": 0.0,
+            "state": "MI"
+          }
+        ],
+        "id": "0d4c6395de7e41cf666805d6c310da6451f64e68d03175cebd10f1a90a832f7e",
+        "left_id": "a",
+        "match_probability": null,
+        "match_weight": 6.0,
+        "matched_subgroups": [],
+        "normalization_tags": [
+          "GIVEN_NAME_COMPATIBLE"
+        ],
+        "policy_file_version": "person-v3",
+        "policy_id": null,
+        "policy_version": "person-linh-v2-selective",
+        "primary_group": "A",
+        "reason": "NO_ELIGIBLE_SUBGROUP",
+        "right_id": "b",
+        "rule_score": 6.0,
+        "score": 6.0,
+        "scoring_config_hash": "f0ef0a11bc3e613488941e964fd4f53ba5ef157f6fc363e2c28b2bb1d2cb7504",
+        "scoring_model_hash": "e62f12138326c3f9a92d9e79d9f71ad44447bee55cc7cdf102522968f287a80b",
+        "scoring_model_version": "p119_rule_v1",
+        "signature": "N:EX|P:EX|E:MI|DOB:MI|A:MI|G:MI",
+        "splink_match_weight": null,
+        "subgroup": "A1_NAME_PHONE",
+        "triage_reason": "NO_ELIGIBLE_SUBGROUP",
+        "triage_status": "REVIEW"
+      }
+    ],
+    "proposals": [],
+    "veto": {
+      "clusters": {
+        "proposals": [
+          {
+            "edge_order": [
+              {
+                "decision_subgroup": "A1_NAME_PHONE",
+                "left_id": "a",
+                "pair_id": "ab",
+                "policy_id": null,
+                "right_id": "b",
+                "score": 6.0,
+                "seq": 0
+              }
+            ],
+            "golden_fields": {
+              "fields": {
+                "email": {
+                  "provenance": "SURVIVORSHIP",
+                  "value": "bridge@example.test",
+                  "values": [
+                    {
+                      "quality": "VALID",
+                      "source_record_id": "b",
+                      "source_system": "source-b",
+                      "value": "bridge@example.test"
+                    }
+                  ]
+                },
+                "name": {
+                  "provenance": "SURVIVORSHIP",
+                  "quality": "VALID",
+                  "source_record_id": "b",
+                  "source_system": "source-b",
+                  "value": "Nguyen Van An"
+                },
+                "phone": {
+                  "provenance": "SURVIVORSHIP",
+                  "value": "0912345678",
+                  "values": [
+                    {
+                      "quality": "VALID",
+                      "source_record_id": "a",
+                      "source_system": "source-a",
+                      "value": "0912345678"
+                    }
+                  ]
+                }
+              },
+              "member_record_ids": [
+                "a",
+                "b"
+              ]
+            },
+            "id": "4e2341bd40980ed9b43cd026a8d64ef4a7fbd6b665c0412a0d8e16c3f012208f",
+            "member_record_ids": [
+              "a",
+              "b"
+            ],
+            "revision": 1,
+            "status": "AUTO_READY"
+          }
+        ],
+        "review_cases": [
+          {
+            "id": "67d57017aa2bf412f7d59898c850ccf7700edf157f44e1edde8bde2a34113fa6",
+            "member_record_ids": [
+              "b",
+              "c"
+            ],
+            "pair_ids": [
+              "bc"
+            ],
+            "revision": 1,
+            "triage_reason": "CLUSTER_RISK"
+          }
+        ],
+        "risky_pairs": [
+          {
+            "blocking_reasons": [],
+            "comparisons": {
+              "address": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "MI"
+              },
+              "dob": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "MI"
+              },
+              "email": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "EX"
+              },
+              "government_id": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "MI"
+              },
+              "name": {
+                "normalization_tags": [
+                  "GIVEN_NAME_COMPATIBLE"
+                ],
+                "provenance": "RULE",
+                "state": "EX"
+              },
+              "phone": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "DF"
+              }
+            },
+            "conflict_rule_version": "v3.1.0",
+            "decision": "MERGEABLE",
+            "decision_subgroup": "A2_NAME_EMAIL",
+            "field_evidence": [
+              {
+                "field": "name",
+                "is_hard_conflict": false,
+                "left": "nguyen van an",
+                "normalization_tags": [
+                  "GIVEN_NAME_COMPATIBLE"
+                ],
+                "provenance": "RULE",
+                "right": "nguyen van an",
+                "similarity": 1.0,
+                "state": "EX"
+              },
+              {
+                "field": "phone",
+                "is_hard_conflict": false,
+                "left": "0912345678",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "0987654321",
+                "similarity": 0.0,
+                "state": "DF"
+              },
+              {
+                "field": "email",
+                "is_hard_conflict": false,
+                "left": "bridge@example.test",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "bridge@example.test",
+                "similarity": 1.0,
+                "state": "EX"
+              },
+              {
+                "field": "dob",
+                "is_hard_conflict": false,
+                "left": "",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "",
+                "similarity": 0.0,
+                "state": "MI"
+              },
+              {
+                "field": "address",
+                "is_hard_conflict": false,
+                "left": "",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "",
+                "similarity": 0.0,
+                "state": "MI"
+              },
+              {
+                "field": "government_id",
+                "is_hard_conflict": false,
+                "left": "",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "",
+                "similarity": 0.0,
+                "state": "MI"
+              }
+            ],
+            "guard_violations": [
+              {
+                "guard": "SHARED_VALUE_GUARD",
+                "reason": "CLUSTER_SHARED_VALUE_DOMINANT",
+                "severity": "WARN"
+              }
+            ],
+            "id": "bc",
+            "left_id": "b",
+            "match_weight": 14,
+            "matched_subgroups": [],
+            "normalization_tags": [
+              "GIVEN_NAME_COMPATIBLE"
+            ],
+            "policy_file_version": "person-v3",
+            "policy_id": null,
+            "policy_version": "person-linh-v2-selective",
+            "primary_group": "A",
+            "reason": "NO_ELIGIBLE_SUBGROUP",
+            "right_id": "c",
+            "score": 6.0,
+            "signature": "N:EX|P:DF|E:EX|DOB:MI|A:MI|G:MI",
+            "subgroup": "A2_NAME_EMAIL",
+            "triage_reason": "CLUSTER_RISK",
+            "triage_status": "REVIEW"
+          }
+        ]
+      },
+      "pairs": [
+        {
+          "blocking_reasons": [],
+          "comparisons": {
+            "address": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "dob": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "email": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "government_id": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "name": {
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "phone": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "EX"
+            }
+          },
+          "conflict_rule_version": "v3.1.0",
+          "decision": "MERGEABLE",
+          "decision_subgroup": "A1_NAME_PHONE",
+          "field_evidence": [
+            {
+              "field": "name",
+              "is_hard_conflict": false,
+              "left": "nguyen van an",
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "right": "nguyen van an",
+              "similarity": 1.0,
+              "state": "EX"
+            },
+            {
+              "field": "phone",
+              "is_hard_conflict": false,
+              "left": "0912345678",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "0912345678",
+              "similarity": 1.0,
+              "state": "EX"
+            },
+            {
+              "field": "email",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "bridge@example.test",
+              "similarity": 0.0,
+              "state": "MI"
+            },
+            {
+              "field": "dob",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            },
+            {
+              "field": "address",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            },
+            {
+              "field": "government_id",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            }
+          ],
+          "id": "ab",
+          "left_id": "a",
+          "match_weight": 15,
+          "matched_subgroups": [],
+          "normalization_tags": [
+            "GIVEN_NAME_COMPATIBLE"
+          ],
+          "policy_file_version": "person-v3",
+          "policy_id": null,
+          "policy_version": "person-linh-v2-selective",
+          "primary_group": "A",
+          "reason": "NO_ELIGIBLE_SUBGROUP",
+          "right_id": "b",
+          "score": 6.0,
+          "signature": "N:EX|P:EX|E:MI|DOB:MI|A:MI|G:MI",
+          "subgroup": "A1_NAME_PHONE",
+          "triage_reason": "SAFE_COMPONENT_EDGE",
+          "triage_status": "HIGH_CONFIDENCE_PROPOSAL"
+        },
+        {
+          "blocking_reasons": [],
+          "comparisons": {
+            "address": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "dob": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "email": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "government_id": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "name": {
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "phone": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "DF"
+            }
+          },
+          "conflict_rule_version": "v3.1.0",
+          "decision": "MERGEABLE",
+          "decision_subgroup": "A2_NAME_EMAIL",
+          "field_evidence": [
+            {
+              "field": "name",
+              "is_hard_conflict": false,
+              "left": "nguyen van an",
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "right": "nguyen van an",
+              "similarity": 1.0,
+              "state": "EX"
+            },
+            {
+              "field": "phone",
+              "is_hard_conflict": false,
+              "left": "0912345678",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "0987654321",
+              "similarity": 0.0,
+              "state": "DF"
+            },
+            {
+              "field": "email",
+              "is_hard_conflict": false,
+              "left": "bridge@example.test",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "bridge@example.test",
+              "similarity": 1.0,
+              "state": "EX"
+            },
+            {
+              "field": "dob",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            },
+            {
+              "field": "address",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            },
+            {
+              "field": "government_id",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI"
+            }
+          ],
+          "guard_violations": [
+            {
+              "guard": "SHARED_VALUE_GUARD",
+              "reason": "CLUSTER_SHARED_VALUE_DOMINANT",
+              "severity": "WARN"
+            }
+          ],
+          "id": "bc",
+          "left_id": "b",
+          "match_weight": 14,
+          "matched_subgroups": [],
+          "normalization_tags": [
+            "GIVEN_NAME_COMPATIBLE"
+          ],
+          "policy_file_version": "person-v3",
+          "policy_id": null,
+          "policy_version": "person-linh-v2-selective",
+          "primary_group": "A",
+          "reason": "NO_ELIGIBLE_SUBGROUP",
+          "right_id": "c",
+          "score": 6.0,
+          "signature": "N:EX|P:DF|E:EX|DOB:MI|A:MI|G:MI",
+          "subgroup": "A2_NAME_EMAIL",
+          "triage_reason": "CLUSTER_RISK",
+          "triage_status": "REVIEW"
+        }
+      ]
+    }
+  },
+  "True": {
+    "bridge": {
+      "clusters": {
+        "cluster_metrics": {
+          "blocked": 0,
+          "cache_hits": 1,
+          "checked": 2,
+          "edge_order": "match_weight DESC NULLS LAST, left_id ASC, right_id ASC",
+          "policy": {
+            "max_cluster_size": 20,
+            "max_pair_checks_per_run": 1000000,
+            "max_pair_checks_per_union": 190,
+            "source_priority": [
+              [
+                "BILL",
+                2
+              ],
+              [
+                "CRM",
+                0
+              ],
+              [
+                "ERP",
+                1
+              ]
+            ],
+            "unique_sources": [],
+            "version": "p119_cluster_person_v2"
+          },
+          "visited": 3
+        },
+        "proposals": [
+          {
+            "edge_order": [
+              {
+                "decision_subgroup": "A1_NAME_PHONE",
+                "left_id": "a",
+                "pair_id": "ab",
+                "policy_id": null,
+                "right_id": "b",
+                "score": 6.0,
+                "seq": 0
+              }
+            ],
+            "golden_fields": {
+              "fields": {
+                "email": {
+                  "alternatives": [],
+                  "external_id": "b",
+                  "observed_at": null,
+                  "provenance": "SURVIVORSHIP",
+                  "quality": "VALID",
+                  "shared_risk": false,
+                  "source_record_id": "b",
+                  "source_system": "source-b",
+                  "sources": [
+                    {
+                      "external_id": "b",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "b",
+                      "source_system": "source-b",
+                      "value": "bridge@example.test",
+                      "verified": false
+                    }
+                  ],
+                  "value": "bridge@example.test",
+                  "values": [
+                    {
+                      "external_id": "b",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "b",
+                      "source_system": "source-b",
+                      "sources": [
+                        {
+                          "external_id": "b",
+                          "observed_at": null,
+                          "provenance": "SOURCE_OBSERVATION",
+                          "quality": "VALID",
+                          "shared_risk": false,
+                          "source_record_id": "b",
+                          "source_system": "source-b",
+                          "value": "bridge@example.test",
+                          "verified": false
+                        }
+                      ],
+                      "value": "bridge@example.test",
+                      "verified": false
+                    }
+                  ],
+                  "verified": false
+                },
+                "name": {
+                  "alternatives": [],
+                  "external_id": "a",
+                  "observed_at": null,
+                  "provenance": "SURVIVORSHIP",
+                  "quality": "VALID",
+                  "shared_risk": false,
+                  "source_record_id": "a",
+                  "source_system": "source-a",
+                  "sources": [
+                    {
+                      "external_id": "a",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "a",
+                      "source_system": "source-a",
+                      "value": "Nguyen Van An",
+                      "verified": false
+                    },
+                    {
+                      "external_id": "b",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "b",
+                      "source_system": "source-b",
+                      "value": "Nguyen Van An",
+                      "verified": false
+                    }
+                  ],
+                  "value": "Nguyen Van An",
+                  "verified": false
+                },
+                "phone": {
+                  "alternatives": [],
+                  "external_id": "a",
+                  "observed_at": null,
+                  "provenance": "SURVIVORSHIP",
+                  "quality": "VALID",
+                  "shared_risk": false,
+                  "source_record_id": "a",
+                  "source_system": "source-a",
+                  "sources": [
+                    {
+                      "external_id": "a",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "a",
+                      "source_system": "source-a",
+                      "value": "0912345678",
+                      "verified": false
+                    },
+                    {
+                      "external_id": "b",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "b",
+                      "source_system": "source-b",
+                      "value": "0912345678",
+                      "verified": false
+                    }
+                  ],
+                  "value": "0912345678",
+                  "values": [
+                    {
+                      "external_id": "a",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "a",
+                      "source_system": "source-a",
+                      "sources": [
+                        {
+                          "external_id": "a",
+                          "observed_at": null,
+                          "provenance": "SOURCE_OBSERVATION",
+                          "quality": "VALID",
+                          "shared_risk": false,
+                          "source_record_id": "a",
+                          "source_system": "source-a",
+                          "value": "0912345678",
+                          "verified": false
+                        },
+                        {
+                          "external_id": "b",
+                          "observed_at": null,
+                          "provenance": "SOURCE_OBSERVATION",
+                          "quality": "VALID",
+                          "shared_risk": false,
+                          "source_record_id": "b",
+                          "source_system": "source-b",
+                          "value": "0912345678",
+                          "verified": false
+                        }
+                      ],
+                      "value": "0912345678",
+                      "verified": false
+                    }
+                  ],
+                  "verified": false
+                }
+              },
+              "member_record_ids": [
+                "a",
+                "b"
+              ],
+              "survivorship_version": "p119_golden_v2"
+            },
+            "id": "4e2341bd40980ed9b43cd026a8d64ef4a7fbd6b665c0412a0d8e16c3f012208f",
+            "member_record_ids": [
+              "a",
+              "b"
+            ],
+            "revision": 1,
+            "status": "AUTO_READY"
+          }
+        ],
+        "review_cases": [
+          {
+            "id": "2feb6a31a6b9433c53bcf7b7492286269ef4d6eecc9c79626e49bd980f107c0d",
+            "member_record_ids": [
+              "b",
+              "c"
+            ],
+            "pair_ids": [
+              "bc"
+            ],
+            "revision": 1,
+            "triage_reason": "CLUSTER_BRIDGE_MISSING_EVIDENCE"
+          }
+        ],
+        "risky_pairs": [
+          {
+            "blocking_reasons": [],
+            "comparisons": {
+              "address": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "MI"
+              },
+              "dob": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "MI"
+              },
+              "email": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "EX"
+              },
+              "government_id": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "MI"
+              },
+              "name": {
+                "normalization_tags": [
+                  "GIVEN_NAME_COMPATIBLE"
+                ],
+                "provenance": "RULE",
+                "state": "EX"
+              },
+              "phone": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "DF"
+              }
+            },
+            "conflict_rule_version": "v3.1.0",
+            "decision": "MERGEABLE",
+            "decision_subgroup": "A2_NAME_EMAIL",
+            "field_evidence": [
+              {
+                "field": "name",
+                "is_hard_conflict": false,
+                "left": "nguyen van an",
+                "normalization_tags": [
+                  "GIVEN_NAME_COMPATIBLE"
+                ],
+                "provenance": "RULE",
+                "right": "nguyen van an",
+                "similarity": 1.0,
+                "state": "EX",
+                "verified_both": false
+              },
+              {
+                "conflict_meaning": "CHANGE_OR_MULTI_CONTACT",
+                "field": "phone",
+                "is_hard_conflict": false,
+                "left": "0912345678",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "0987654321",
+                "similarity": 0.0,
+                "state": "DF",
+                "verified_both": false
+              },
+              {
+                "field": "email",
+                "is_hard_conflict": false,
+                "left": "bridge@example.test",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "bridge@example.test",
+                "similarity": 1.0,
+                "state": "EX",
+                "verified_both": false
+              },
+              {
+                "field": "dob",
+                "is_hard_conflict": false,
+                "left": "",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "",
+                "similarity": 0.0,
+                "state": "MI",
+                "verified_both": false
+              },
+              {
+                "field": "address",
+                "is_hard_conflict": false,
+                "left": "",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "",
+                "similarity": 0.0,
+                "state": "MI",
+                "verified_both": false
+              },
+              {
+                "field": "government_id",
+                "is_hard_conflict": false,
+                "left": "",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "",
+                "similarity": 0.0,
+                "state": "MI",
+                "verified_both": false
+              }
+            ],
+            "guard_violations": [
+              {
+                "guard": "COMPONENT_CONSISTENCY",
+                "reason": "CLUSTER_BRIDGE_MISSING_EVIDENCE",
+                "severity": "BLOCK"
+              }
+            ],
+            "id": "bc",
+            "left_id": "b",
+            "match_weight": 14,
+            "matched_subgroups": [],
+            "normalization_tags": [
+              "GIVEN_NAME_COMPATIBLE"
+            ],
+            "policy_file_version": "person-v3",
+            "policy_id": null,
+            "policy_version": "person-linh-v2-selective",
+            "primary_group": "A",
+            "reason": "NO_ELIGIBLE_SUBGROUP",
+            "right_id": "c",
+            "score": 6.0,
+            "signature": "N:EX|P:DF|E:EX|DOB:MI|A:MI|G:MI",
+            "subgroup": "A2_NAME_EMAIL",
+            "triage_reason": "CLUSTER_BRIDGE_MISSING_EVIDENCE",
+            "triage_status": "REVIEW"
+          }
+        ]
+      },
+      "pairs": [
+        {
+          "blocking_reasons": [],
+          "comparisons": {
+            "address": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "dob": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "email": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "government_id": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "name": {
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "phone": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "EX"
+            }
+          },
+          "conflict_rule_version": "v3.1.0",
+          "decision": "MERGEABLE",
+          "decision_subgroup": "A1_NAME_PHONE",
+          "field_evidence": [
+            {
+              "field": "name",
+              "is_hard_conflict": false,
+              "left": "nguyen van an",
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "right": "nguyen van an",
+              "similarity": 1.0,
+              "state": "EX",
+              "verified_both": false
+            },
+            {
+              "field": "phone",
+              "is_hard_conflict": false,
+              "left": "0912345678",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "0912345678",
+              "similarity": 1.0,
+              "state": "EX",
+              "verified_both": false
+            },
+            {
+              "field": "email",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "bridge@example.test",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            },
+            {
+              "field": "dob",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            },
+            {
+              "field": "address",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            },
+            {
+              "field": "government_id",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            }
+          ],
+          "id": "ab",
+          "left_id": "a",
+          "match_weight": 15,
+          "matched_subgroups": [],
+          "normalization_tags": [
+            "GIVEN_NAME_COMPATIBLE"
+          ],
+          "policy_file_version": "person-v3",
+          "policy_id": null,
+          "policy_version": "person-linh-v2-selective",
+          "primary_group": "A",
+          "reason": "NO_ELIGIBLE_SUBGROUP",
+          "right_id": "b",
+          "score": 6.0,
+          "signature": "N:EX|P:EX|E:MI|DOB:MI|A:MI|G:MI",
+          "subgroup": "A1_NAME_PHONE",
+          "triage_reason": "SAFE_COMPONENT_EDGE",
+          "triage_status": "HIGH_CONFIDENCE_PROPOSAL"
+        },
+        {
+          "blocking_reasons": [],
+          "comparisons": {
+            "address": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "dob": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "email": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "government_id": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "name": {
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "phone": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "DF"
+            }
+          },
+          "conflict_rule_version": "v3.1.0",
+          "decision": "MERGEABLE",
+          "decision_subgroup": "A2_NAME_EMAIL",
+          "field_evidence": [
+            {
+              "field": "name",
+              "is_hard_conflict": false,
+              "left": "nguyen van an",
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "right": "nguyen van an",
+              "similarity": 1.0,
+              "state": "EX",
+              "verified_both": false
+            },
+            {
+              "conflict_meaning": "CHANGE_OR_MULTI_CONTACT",
+              "field": "phone",
+              "is_hard_conflict": false,
+              "left": "0912345678",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "0987654321",
+              "similarity": 0.0,
+              "state": "DF",
+              "verified_both": false
+            },
+            {
+              "field": "email",
+              "is_hard_conflict": false,
+              "left": "bridge@example.test",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "bridge@example.test",
+              "similarity": 1.0,
+              "state": "EX",
+              "verified_both": false
+            },
+            {
+              "field": "dob",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            },
+            {
+              "field": "address",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            },
+            {
+              "field": "government_id",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            }
+          ],
+          "guard_violations": [
+            {
+              "guard": "COMPONENT_CONSISTENCY",
+              "reason": "CLUSTER_BRIDGE_MISSING_EVIDENCE",
+              "severity": "BLOCK"
+            }
+          ],
+          "id": "bc",
+          "left_id": "b",
+          "match_weight": 14,
+          "matched_subgroups": [],
+          "normalization_tags": [
+            "GIVEN_NAME_COMPATIBLE"
+          ],
+          "policy_file_version": "person-v3",
+          "policy_id": null,
+          "policy_version": "person-linh-v2-selective",
+          "primary_group": "A",
+          "reason": "NO_ELIGIBLE_SUBGROUP",
+          "right_id": "c",
+          "score": 6.0,
+          "signature": "N:EX|P:DF|E:EX|DOB:MI|A:MI|G:MI",
+          "subgroup": "A2_NAME_EMAIL",
+          "triage_reason": "CLUSTER_BRIDGE_MISSING_EVIDENCE",
+          "triage_status": "REVIEW"
+        }
+      ]
+    },
+    "candidate_count": 1,
+    "candidate_metrics": {
+      "candidate_count": 1,
+      "disabled_passes": [],
+      "duplicate_observations": 12,
+      "excluded_records_by_source": {
+        "address_gram": 3,
+        "exact_email": 2,
+        "exact_gov_id": 3,
+        "name_prefix_year": 3,
+        "name_province": 3,
+        "phone_suffix_year": 3,
+        "surname_year": 3
+      },
+      "exclusion_reason": "missing_value_or_required_valid_quality",
+      "generated_observations": 16,
+      "record_count": 3,
+      "skip_reasons": {},
+      "skipped_pair_observations": 0,
+      "sources": {
+        "exact_email": {
+          "generated_pairs": 0,
+          "skipped_pairs": 0
+        },
+        "exact_name": {
+          "generated_pairs": 1,
+          "skipped_pairs": 0
+        },
+        "exact_phone": {
+          "generated_pairs": 1,
+          "skipped_pairs": 0
+        },
+        "name_gram": {
+          "generated_pairs": 13,
+          "skipped_pairs": 0
+        },
+        "tfidf_name": {
+          "generated_pairs": 1,
+          "skipped_pairs": 0
+        }
+      },
+      "union_collapsed_observations": 15
+    },
+    "cannot": {
+      "clusters": {
+        "cluster_metrics": {
+          "blocked": 0,
+          "cache_hits": 1,
+          "checked": 1,
+          "edge_order": "match_weight DESC NULLS LAST, left_id ASC, right_id ASC",
+          "policy": {
+            "max_cluster_size": 20,
+            "max_pair_checks_per_run": 1000000,
+            "max_pair_checks_per_union": 190,
+            "source_priority": [
+              [
+                "BILL",
+                2
+              ],
+              [
+                "CRM",
+                0
+              ],
+              [
+                "ERP",
+                1
+              ]
+            ],
+            "unique_sources": [],
+            "version": "p119_cluster_person_v2"
+          },
+          "visited": 2
+        },
+        "proposals": [
+          {
+            "edge_order": [
+              {
+                "decision_subgroup": "A1_NAME_PHONE",
+                "left_id": "a",
+                "pair_id": "ab",
+                "policy_id": null,
+                "right_id": "b",
+                "score": 6.0,
+                "seq": 0
+              }
+            ],
+            "golden_fields": {
+              "fields": {
+                "email": {
+                  "alternatives": [],
+                  "external_id": "b",
+                  "observed_at": null,
+                  "provenance": "SURVIVORSHIP",
+                  "quality": "VALID",
+                  "shared_risk": false,
+                  "source_record_id": "b",
+                  "source_system": "source-b",
+                  "sources": [
+                    {
+                      "external_id": "b",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "b",
+                      "source_system": "source-b",
+                      "value": "bridge@example.test",
+                      "verified": false
+                    }
+                  ],
+                  "value": "bridge@example.test",
+                  "values": [
+                    {
+                      "external_id": "b",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "b",
+                      "source_system": "source-b",
+                      "sources": [
+                        {
+                          "external_id": "b",
+                          "observed_at": null,
+                          "provenance": "SOURCE_OBSERVATION",
+                          "quality": "VALID",
+                          "shared_risk": false,
+                          "source_record_id": "b",
+                          "source_system": "source-b",
+                          "value": "bridge@example.test",
+                          "verified": false
+                        }
+                      ],
+                      "value": "bridge@example.test",
+                      "verified": false
+                    }
+                  ],
+                  "verified": false
+                },
+                "name": {
+                  "alternatives": [],
+                  "external_id": "a",
+                  "observed_at": null,
+                  "provenance": "SURVIVORSHIP",
+                  "quality": "VALID",
+                  "shared_risk": false,
+                  "source_record_id": "a",
+                  "source_system": "source-a",
+                  "sources": [
+                    {
+                      "external_id": "a",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "a",
+                      "source_system": "source-a",
+                      "value": "Nguyen Van An",
+                      "verified": false
+                    },
+                    {
+                      "external_id": "b",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "b",
+                      "source_system": "source-b",
+                      "value": "Nguyen Van An",
+                      "verified": false
+                    }
+                  ],
+                  "value": "Nguyen Van An",
+                  "verified": false
+                },
+                "phone": {
+                  "alternatives": [],
+                  "external_id": "a",
+                  "observed_at": null,
+                  "provenance": "SURVIVORSHIP",
+                  "quality": "VALID",
+                  "shared_risk": false,
+                  "source_record_id": "a",
+                  "source_system": "source-a",
+                  "sources": [
+                    {
+                      "external_id": "a",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "a",
+                      "source_system": "source-a",
+                      "value": "0912345678",
+                      "verified": false
+                    },
+                    {
+                      "external_id": "b",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "b",
+                      "source_system": "source-b",
+                      "value": "0912345678",
+                      "verified": false
+                    }
+                  ],
+                  "value": "0912345678",
+                  "values": [
+                    {
+                      "external_id": "a",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "a",
+                      "source_system": "source-a",
+                      "sources": [
+                        {
+                          "external_id": "a",
+                          "observed_at": null,
+                          "provenance": "SOURCE_OBSERVATION",
+                          "quality": "VALID",
+                          "shared_risk": false,
+                          "source_record_id": "a",
+                          "source_system": "source-a",
+                          "value": "0912345678",
+                          "verified": false
+                        },
+                        {
+                          "external_id": "b",
+                          "observed_at": null,
+                          "provenance": "SOURCE_OBSERVATION",
+                          "quality": "VALID",
+                          "shared_risk": false,
+                          "source_record_id": "b",
+                          "source_system": "source-b",
+                          "value": "0912345678",
+                          "verified": false
+                        }
+                      ],
+                      "value": "0912345678",
+                      "verified": false
+                    }
+                  ],
+                  "verified": false
+                }
+              },
+              "member_record_ids": [
+                "a",
+                "b"
+              ],
+              "survivorship_version": "p119_golden_v2"
+            },
+            "id": "4e2341bd40980ed9b43cd026a8d64ef4a7fbd6b665c0412a0d8e16c3f012208f",
+            "member_record_ids": [
+              "a",
+              "b"
+            ],
+            "revision": 1,
+            "status": "AUTO_READY"
+          }
+        ],
+        "review_cases": [
+          {
+            "id": "8ff120b7009b1ba9dc09bba402073f6af153c8dc8455f54566b1c57799ba3c37",
+            "member_record_ids": [
+              "b",
+              "c"
+            ],
+            "pair_ids": [
+              "bc"
+            ],
+            "revision": 1,
+            "triage_reason": "CLUSTER_CONFIRMED_CANNOT_LINK"
+          }
+        ],
+        "risky_pairs": [
+          {
+            "blocking_reasons": [],
+            "comparisons": {
+              "address": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "MI"
+              },
+              "dob": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "MI"
+              },
+              "email": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "EX"
+              },
+              "government_id": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "MI"
+              },
+              "name": {
+                "normalization_tags": [
+                  "GIVEN_NAME_COMPATIBLE"
+                ],
+                "provenance": "RULE",
+                "state": "EX"
+              },
+              "phone": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "DF"
+              }
+            },
+            "conflict_rule_version": "v3.1.0",
+            "decision": "MERGEABLE",
+            "decision_subgroup": "A2_NAME_EMAIL",
+            "field_evidence": [
+              {
+                "field": "name",
+                "is_hard_conflict": false,
+                "left": "nguyen van an",
+                "normalization_tags": [
+                  "GIVEN_NAME_COMPATIBLE"
+                ],
+                "provenance": "RULE",
+                "right": "nguyen van an",
+                "similarity": 1.0,
+                "state": "EX",
+                "verified_both": false
+              },
+              {
+                "conflict_meaning": "CHANGE_OR_MULTI_CONTACT",
+                "field": "phone",
+                "is_hard_conflict": false,
+                "left": "0912345678",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "0987654321",
+                "similarity": 0.0,
+                "state": "DF",
+                "verified_both": false
+              },
+              {
+                "field": "email",
+                "is_hard_conflict": false,
+                "left": "bridge@example.test",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "bridge@example.test",
+                "similarity": 1.0,
+                "state": "EX",
+                "verified_both": false
+              },
+              {
+                "field": "dob",
+                "is_hard_conflict": false,
+                "left": "",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "",
+                "similarity": 0.0,
+                "state": "MI",
+                "verified_both": false
+              },
+              {
+                "field": "address",
+                "is_hard_conflict": false,
+                "left": "",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "",
+                "similarity": 0.0,
+                "state": "MI",
+                "verified_both": false
+              },
+              {
+                "field": "government_id",
+                "is_hard_conflict": false,
+                "left": "",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "",
+                "similarity": 0.0,
+                "state": "MI",
+                "verified_both": false
+              }
+            ],
+            "guard_violations": [
+              {
+                "guard": "COMPONENT_CONSISTENCY",
+                "reason": "CLUSTER_CONFIRMED_CANNOT_LINK",
+                "severity": "BLOCK"
+              }
+            ],
+            "id": "bc",
+            "left_id": "b",
+            "match_weight": 14,
+            "matched_subgroups": [],
+            "normalization_tags": [
+              "GIVEN_NAME_COMPATIBLE"
+            ],
+            "policy_file_version": "person-v3",
+            "policy_id": null,
+            "policy_version": "person-linh-v2-selective",
+            "primary_group": "A",
+            "reason": "NO_ELIGIBLE_SUBGROUP",
+            "right_id": "c",
+            "score": 6.0,
+            "signature": "N:EX|P:DF|E:EX|DOB:MI|A:MI|G:MI",
+            "subgroup": "A2_NAME_EMAIL",
+            "triage_reason": "CLUSTER_CONFIRMED_CANNOT_LINK",
+            "triage_status": "REVIEW"
+          }
+        ]
+      },
+      "pairs": [
+        {
+          "blocking_reasons": [],
+          "comparisons": {
+            "address": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "dob": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "email": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "government_id": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "name": {
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "phone": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "EX"
+            }
+          },
+          "conflict_rule_version": "v3.1.0",
+          "decision": "MERGEABLE",
+          "decision_subgroup": "A1_NAME_PHONE",
+          "field_evidence": [
+            {
+              "field": "name",
+              "is_hard_conflict": false,
+              "left": "nguyen van an",
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "right": "nguyen van an",
+              "similarity": 1.0,
+              "state": "EX",
+              "verified_both": false
+            },
+            {
+              "field": "phone",
+              "is_hard_conflict": false,
+              "left": "0912345678",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "0912345678",
+              "similarity": 1.0,
+              "state": "EX",
+              "verified_both": false
+            },
+            {
+              "field": "email",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "bridge@example.test",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            },
+            {
+              "field": "dob",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            },
+            {
+              "field": "address",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            },
+            {
+              "field": "government_id",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            }
+          ],
+          "id": "ab",
+          "left_id": "a",
+          "match_weight": 15,
+          "matched_subgroups": [],
+          "normalization_tags": [
+            "GIVEN_NAME_COMPATIBLE"
+          ],
+          "policy_file_version": "person-v3",
+          "policy_id": null,
+          "policy_version": "person-linh-v2-selective",
+          "primary_group": "A",
+          "reason": "NO_ELIGIBLE_SUBGROUP",
+          "right_id": "b",
+          "score": 6.0,
+          "signature": "N:EX|P:EX|E:MI|DOB:MI|A:MI|G:MI",
+          "subgroup": "A1_NAME_PHONE",
+          "triage_reason": "SAFE_COMPONENT_EDGE",
+          "triage_status": "HIGH_CONFIDENCE_PROPOSAL"
+        },
+        {
+          "blocking_reasons": [],
+          "comparisons": {
+            "address": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "dob": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "email": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "government_id": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "name": {
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "phone": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "DF"
+            }
+          },
+          "conflict_rule_version": "v3.1.0",
+          "decision": "MERGEABLE",
+          "decision_subgroup": "A2_NAME_EMAIL",
+          "field_evidence": [
+            {
+              "field": "name",
+              "is_hard_conflict": false,
+              "left": "nguyen van an",
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "right": "nguyen van an",
+              "similarity": 1.0,
+              "state": "EX",
+              "verified_both": false
+            },
+            {
+              "conflict_meaning": "CHANGE_OR_MULTI_CONTACT",
+              "field": "phone",
+              "is_hard_conflict": false,
+              "left": "0912345678",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "0987654321",
+              "similarity": 0.0,
+              "state": "DF",
+              "verified_both": false
+            },
+            {
+              "field": "email",
+              "is_hard_conflict": false,
+              "left": "bridge@example.test",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "bridge@example.test",
+              "similarity": 1.0,
+              "state": "EX",
+              "verified_both": false
+            },
+            {
+              "field": "dob",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            },
+            {
+              "field": "address",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            },
+            {
+              "field": "government_id",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            }
+          ],
+          "guard_violations": [
+            {
+              "guard": "COMPONENT_CONSISTENCY",
+              "reason": "CLUSTER_CONFIRMED_CANNOT_LINK",
+              "severity": "BLOCK"
+            }
+          ],
+          "id": "bc",
+          "left_id": "b",
+          "match_weight": 14,
+          "matched_subgroups": [],
+          "normalization_tags": [
+            "GIVEN_NAME_COMPATIBLE"
+          ],
+          "policy_file_version": "person-v3",
+          "policy_id": null,
+          "policy_version": "person-linh-v2-selective",
+          "primary_group": "A",
+          "reason": "NO_ELIGIBLE_SUBGROUP",
+          "right_id": "c",
+          "score": 6.0,
+          "signature": "N:EX|P:DF|E:EX|DOB:MI|A:MI|G:MI",
+          "subgroup": "A2_NAME_EMAIL",
+          "triage_reason": "CLUSTER_CONFIRMED_CANNOT_LINK",
+          "triage_status": "REVIEW"
+        }
+      ]
+    },
+    "golden": {
+      "fields": {
+        "name": {
+          "alternatives": [
+            {
+              "external_id": "a",
+              "observed_at": null,
+              "provenance": "SOURCE_OBSERVATION",
+              "quality": "VALID",
+              "shared_risk": false,
+              "source_record_id": "a",
+              "source_system": "BILL",
+              "sources": [
+                {
+                  "external_id": "a",
+                  "observed_at": null,
+                  "provenance": "SOURCE_OBSERVATION",
+                  "quality": "VALID",
+                  "shared_risk": false,
+                  "source_record_id": "a",
+                  "source_system": "BILL",
+                  "value": "First",
+                  "verified": true
+                }
+              ],
+              "value": "First",
+              "verified": true
+            }
+          ],
+          "external_id": "b",
+          "observed_at": null,
+          "provenance": "SURVIVORSHIP",
+          "quality": "VALID",
+          "shared_risk": false,
+          "source_record_id": "b",
+          "source_system": "CRM",
+          "sources": [
+            {
+              "external_id": "b",
+              "observed_at": null,
+              "provenance": "SOURCE_OBSERVATION",
+              "quality": "VALID",
+              "shared_risk": false,
+              "source_record_id": "b",
+              "source_system": "CRM",
+              "value": "Second",
+              "verified": false
+            }
+          ],
+          "value": "Second",
+          "verified": false
+        },
+        "phone": {
+          "alternatives": [],
+          "external_id": "b",
+          "observed_at": null,
+          "provenance": "SURVIVORSHIP",
+          "quality": "VALID",
+          "shared_risk": false,
+          "source_record_id": "b",
+          "source_system": "CRM",
+          "sources": [
+            {
+              "external_id": "b",
+              "observed_at": null,
+              "provenance": "SOURCE_OBSERVATION",
+              "quality": "VALID",
+              "shared_risk": false,
+              "source_record_id": "b",
+              "source_system": "CRM",
+              "value": "0912345678",
+              "verified": false
+            },
+            {
+              "external_id": "a",
+              "observed_at": null,
+              "provenance": "SOURCE_OBSERVATION",
+              "quality": "VALID",
+              "shared_risk": false,
+              "source_record_id": "a",
+              "source_system": "BILL",
+              "value": "0912345678",
+              "verified": false
+            }
+          ],
+          "value": "0912345678",
+          "values": [
+            {
+              "external_id": "b",
+              "observed_at": null,
+              "provenance": "SOURCE_OBSERVATION",
+              "quality": "VALID",
+              "shared_risk": false,
+              "source_record_id": "b",
+              "source_system": "CRM",
+              "sources": [
+                {
+                  "external_id": "b",
+                  "observed_at": null,
+                  "provenance": "SOURCE_OBSERVATION",
+                  "quality": "VALID",
+                  "shared_risk": false,
+                  "source_record_id": "b",
+                  "source_system": "CRM",
+                  "value": "0912345678",
+                  "verified": false
+                },
+                {
+                  "external_id": "a",
+                  "observed_at": null,
+                  "provenance": "SOURCE_OBSERVATION",
+                  "quality": "VALID",
+                  "shared_risk": false,
+                  "source_record_id": "a",
+                  "source_system": "BILL",
+                  "value": "0912345678",
+                  "verified": false
+                }
+              ],
+              "value": "0912345678",
+              "verified": false
+            }
+          ],
+          "verified": false
+        }
+      },
+      "member_record_ids": [
+        "a",
+        "b"
+      ],
+      "survivorship_version": "p119_golden_v2"
+    },
+    "insufficient_count": 0,
+    "manual": {
+      "_golden_override": {
+        "name": "Manual"
+      },
+      "fields": {
+        "name": {
+          "alternatives": [
+            {
+              "external_id": "b",
+              "observed_at": null,
+              "provenance": "SURVIVORSHIP",
+              "quality": "VALID",
+              "shared_risk": false,
+              "source_record_id": "b",
+              "source_system": "CRM",
+              "sources": [
+                {
+                  "external_id": "b",
+                  "observed_at": null,
+                  "provenance": "SOURCE_OBSERVATION",
+                  "quality": "VALID",
+                  "shared_risk": false,
+                  "source_record_id": "b",
+                  "source_system": "CRM",
+                  "value": "Second",
+                  "verified": false
+                }
+              ],
+              "value": "Second",
+              "verified": false
+            },
+            {
+              "external_id": "a",
+              "observed_at": null,
+              "provenance": "SOURCE_OBSERVATION",
+              "quality": "VALID",
+              "shared_risk": false,
+              "source_record_id": "a",
+              "source_system": "BILL",
+              "sources": [
+                {
+                  "external_id": "a",
+                  "observed_at": null,
+                  "provenance": "SOURCE_OBSERVATION",
+                  "quality": "VALID",
+                  "shared_risk": false,
+                  "source_record_id": "a",
+                  "source_system": "BILL",
+                  "value": "First",
+                  "verified": true
+                }
+              ],
+              "value": "First",
+              "verified": true
+            }
+          ],
+          "external_id": null,
+          "observed_at": null,
+          "provenance": "STEWARD_OVERRIDE",
+          "quality": "STEWARD",
+          "shared_risk": false,
+          "source_record_id": null,
+          "source_system": null,
+          "sources": [],
+          "value": "Manual",
+          "verified": false
+        },
+        "phone": {
+          "alternatives": [],
+          "external_id": "b",
+          "observed_at": null,
+          "provenance": "SURVIVORSHIP",
+          "quality": "VALID",
+          "shared_risk": false,
+          "source_record_id": "b",
+          "source_system": "CRM",
+          "sources": [
+            {
+              "external_id": "b",
+              "observed_at": null,
+              "provenance": "SOURCE_OBSERVATION",
+              "quality": "VALID",
+              "shared_risk": false,
+              "source_record_id": "b",
+              "source_system": "CRM",
+              "value": "0912345678",
+              "verified": false
+            },
+            {
+              "external_id": "a",
+              "observed_at": null,
+              "provenance": "SOURCE_OBSERVATION",
+              "quality": "VALID",
+              "shared_risk": false,
+              "source_record_id": "a",
+              "source_system": "BILL",
+              "value": "0912345678",
+              "verified": false
+            }
+          ],
+          "value": "0912345678",
+          "values": [
+            {
+              "external_id": "b",
+              "observed_at": null,
+              "provenance": "SOURCE_OBSERVATION",
+              "quality": "VALID",
+              "shared_risk": false,
+              "source_record_id": "b",
+              "source_system": "CRM",
+              "sources": [
+                {
+                  "external_id": "b",
+                  "observed_at": null,
+                  "provenance": "SOURCE_OBSERVATION",
+                  "quality": "VALID",
+                  "shared_risk": false,
+                  "source_record_id": "b",
+                  "source_system": "CRM",
+                  "value": "0912345678",
+                  "verified": false
+                },
+                {
+                  "external_id": "a",
+                  "observed_at": null,
+                  "provenance": "SOURCE_OBSERVATION",
+                  "quality": "VALID",
+                  "shared_risk": false,
+                  "source_record_id": "a",
+                  "source_system": "BILL",
+                  "value": "0912345678",
+                  "verified": false
+                }
+              ],
+              "value": "0912345678",
+              "verified": false
+            }
+          ],
+          "verified": false
+        }
+      },
+      "member_record_ids": [
+        "a",
+        "b"
+      ],
+      "survivorship_version": "p119_golden_v2"
+    },
+    "pairs": [
+      {
+        "blocking_reasons": [
+          "exact_name",
+          "exact_phone",
+          "name_gram",
+          "tfidf_name"
+        ],
+        "comparisons": {
+          "address": {
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "state": "MI"
+          },
+          "dob": {
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "state": "MI"
+          },
+          "email": {
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "state": "MI"
+          },
+          "government_id": {
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "state": "MI"
+          },
+          "name": {
+            "normalization_tags": [
+              "GIVEN_NAME_COMPATIBLE"
+            ],
+            "provenance": "RULE",
+            "state": "EX"
+          },
+          "phone": {
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "state": "EX"
+          }
+        },
+        "conflict_rule_version": "v3.1.0",
+        "decision": "REVIEW",
+        "decision_subgroup": "A1_NAME_PHONE",
+        "field_evidence": [
+          {
+            "field": "name",
+            "is_hard_conflict": false,
+            "left": "nguyen van an",
+            "normalization_tags": [
+              "GIVEN_NAME_COMPATIBLE"
+            ],
+            "provenance": "RULE",
+            "right": "nguyen van an",
+            "similarity": 1.0,
+            "state": "EX",
+            "verified_both": false
+          },
+          {
+            "field": "phone",
+            "is_hard_conflict": false,
+            "left": "0912345678",
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "right": "0912345678",
+            "similarity": 1.0,
+            "state": "EX",
+            "verified_both": false
+          },
+          {
+            "field": "email",
+            "is_hard_conflict": false,
+            "left": "",
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "right": "",
+            "similarity": 0.0,
+            "state": "MI",
+            "verified_both": false
+          },
+          {
+            "field": "dob",
+            "is_hard_conflict": false,
+            "left": "",
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "right": "",
+            "similarity": 0.0,
+            "state": "MI",
+            "verified_both": false
+          },
+          {
+            "field": "address",
+            "is_hard_conflict": false,
+            "left": "",
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "right": "",
+            "similarity": 0.0,
+            "state": "MI",
+            "verified_both": false
+          },
+          {
+            "field": "government_id",
+            "is_hard_conflict": false,
+            "left": "",
+            "normalization_tags": [],
+            "provenance": "RULE",
+            "right": "",
+            "similarity": 0.0,
+            "state": "MI",
+            "verified_both": false
+          }
+        ],
+        "id": "0d4c6395de7e41cf666805d6c310da6451f64e68d03175cebd10f1a90a832f7e",
+        "left_id": "a",
+        "match_probability": null,
+        "match_weight": 6.0,
+        "matched_subgroups": [],
+        "normalization_tags": [
+          "GIVEN_NAME_COMPATIBLE"
+        ],
+        "policy_file_version": "person-v3",
+        "policy_id": null,
+        "policy_version": "person-linh-v2-selective",
+        "primary_group": "A",
+        "reason": "NO_ELIGIBLE_SUBGROUP",
+        "right_id": "b",
+        "rule_score": 6.0,
+        "score": 6.0,
+        "scoring_config_hash": "f0ef0a11bc3e613488941e964fd4f53ba5ef157f6fc363e2c28b2bb1d2cb7504",
+        "scoring_model_hash": "e62f12138326c3f9a92d9e79d9f71ad44447bee55cc7cdf102522968f287a80b",
+        "scoring_model_version": "p119_rule_v1",
+        "signature": "N:EX|P:EX|E:MI|DOB:MI|A:MI|G:MI",
+        "splink_match_weight": null,
+        "subgroup": "A1_NAME_PHONE",
+        "triage_reason": "NO_ELIGIBLE_SUBGROUP",
+        "triage_status": "REVIEW"
+      }
+    ],
+    "proposals": [],
+    "veto": {
+      "clusters": {
+        "cluster_metrics": {
+          "blocked": 0,
+          "cache_hits": 1,
+          "checked": 1,
+          "edge_order": "match_weight DESC NULLS LAST, left_id ASC, right_id ASC",
+          "policy": {
+            "max_cluster_size": 20,
+            "max_pair_checks_per_run": 1000000,
+            "max_pair_checks_per_union": 190,
+            "source_priority": [
+              [
+                "BILL",
+                2
+              ],
+              [
+                "CRM",
+                0
+              ],
+              [
+                "ERP",
+                1
+              ]
+            ],
+            "unique_sources": [],
+            "version": "p119_cluster_person_v2"
+          },
+          "visited": 2
+        },
+        "proposals": [
+          {
+            "edge_order": [
+              {
+                "decision_subgroup": "A1_NAME_PHONE",
+                "left_id": "a",
+                "pair_id": "ab",
+                "policy_id": null,
+                "right_id": "b",
+                "score": 6.0,
+                "seq": 0
+              }
+            ],
+            "golden_fields": {
+              "fields": {
+                "email": {
+                  "alternatives": [],
+                  "external_id": "b",
+                  "observed_at": null,
+                  "provenance": "SURVIVORSHIP",
+                  "quality": "VALID",
+                  "shared_risk": false,
+                  "source_record_id": "b",
+                  "source_system": "source-b",
+                  "sources": [
+                    {
+                      "external_id": "b",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "b",
+                      "source_system": "source-b",
+                      "value": "bridge@example.test",
+                      "verified": false
+                    }
+                  ],
+                  "value": "bridge@example.test",
+                  "values": [
+                    {
+                      "external_id": "b",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "b",
+                      "source_system": "source-b",
+                      "sources": [
+                        {
+                          "external_id": "b",
+                          "observed_at": null,
+                          "provenance": "SOURCE_OBSERVATION",
+                          "quality": "VALID",
+                          "shared_risk": false,
+                          "source_record_id": "b",
+                          "source_system": "source-b",
+                          "value": "bridge@example.test",
+                          "verified": false
+                        }
+                      ],
+                      "value": "bridge@example.test",
+                      "verified": false
+                    }
+                  ],
+                  "verified": false
+                },
+                "name": {
+                  "alternatives": [],
+                  "external_id": "a",
+                  "observed_at": null,
+                  "provenance": "SURVIVORSHIP",
+                  "quality": "VALID",
+                  "shared_risk": false,
+                  "source_record_id": "a",
+                  "source_system": "source-a",
+                  "sources": [
+                    {
+                      "external_id": "a",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "a",
+                      "source_system": "source-a",
+                      "value": "Nguyen Van An",
+                      "verified": false
+                    },
+                    {
+                      "external_id": "b",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "b",
+                      "source_system": "source-b",
+                      "value": "Nguyen Van An",
+                      "verified": false
+                    }
+                  ],
+                  "value": "Nguyen Van An",
+                  "verified": false
+                },
+                "phone": {
+                  "alternatives": [],
+                  "external_id": "a",
+                  "observed_at": null,
+                  "provenance": "SURVIVORSHIP",
+                  "quality": "VALID",
+                  "shared_risk": false,
+                  "source_record_id": "a",
+                  "source_system": "source-a",
+                  "sources": [
+                    {
+                      "external_id": "a",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "a",
+                      "source_system": "source-a",
+                      "value": "0912345678",
+                      "verified": false
+                    },
+                    {
+                      "external_id": "b",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "b",
+                      "source_system": "source-b",
+                      "value": "0912345678",
+                      "verified": false
+                    }
+                  ],
+                  "value": "0912345678",
+                  "values": [
+                    {
+                      "external_id": "a",
+                      "observed_at": null,
+                      "provenance": "SOURCE_OBSERVATION",
+                      "quality": "VALID",
+                      "shared_risk": false,
+                      "source_record_id": "a",
+                      "source_system": "source-a",
+                      "sources": [
+                        {
+                          "external_id": "a",
+                          "observed_at": null,
+                          "provenance": "SOURCE_OBSERVATION",
+                          "quality": "VALID",
+                          "shared_risk": false,
+                          "source_record_id": "a",
+                          "source_system": "source-a",
+                          "value": "0912345678",
+                          "verified": false
+                        },
+                        {
+                          "external_id": "b",
+                          "observed_at": null,
+                          "provenance": "SOURCE_OBSERVATION",
+                          "quality": "VALID",
+                          "shared_risk": false,
+                          "source_record_id": "b",
+                          "source_system": "source-b",
+                          "value": "0912345678",
+                          "verified": false
+                        }
+                      ],
+                      "value": "0912345678",
+                      "verified": false
+                    }
+                  ],
+                  "verified": false
+                }
+              },
+              "member_record_ids": [
+                "a",
+                "b"
+              ],
+              "survivorship_version": "p119_golden_v2"
+            },
+            "id": "4e2341bd40980ed9b43cd026a8d64ef4a7fbd6b665c0412a0d8e16c3f012208f",
+            "member_record_ids": [
+              "a",
+              "b"
+            ],
+            "revision": 1,
+            "status": "AUTO_READY"
+          }
+        ],
+        "review_cases": [
+          {
+            "id": "47cda59cffcf5a85b0b2776b961542bedfaef00bf27ef35591be84a0f847ec65",
+            "member_record_ids": [
+              "b",
+              "c"
+            ],
+            "pair_ids": [
+              "bc"
+            ],
+            "revision": 1,
+            "triage_reason": "CLUSTER_REVIEW_VETO"
+          }
+        ],
+        "risky_pairs": [
+          {
+            "blocking_reasons": [],
+            "comparisons": {
+              "address": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "MI"
+              },
+              "dob": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "MI"
+              },
+              "email": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "EX"
+              },
+              "government_id": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "MI"
+              },
+              "name": {
+                "normalization_tags": [
+                  "GIVEN_NAME_COMPATIBLE"
+                ],
+                "provenance": "RULE",
+                "state": "EX"
+              },
+              "phone": {
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "state": "DF"
+              }
+            },
+            "conflict_rule_version": "v3.1.0",
+            "decision": "MERGEABLE",
+            "decision_subgroup": "A2_NAME_EMAIL",
+            "field_evidence": [
+              {
+                "field": "name",
+                "is_hard_conflict": false,
+                "left": "nguyen van an",
+                "normalization_tags": [
+                  "GIVEN_NAME_COMPATIBLE"
+                ],
+                "provenance": "RULE",
+                "right": "nguyen van an",
+                "similarity": 1.0,
+                "state": "EX",
+                "verified_both": false
+              },
+              {
+                "conflict_meaning": "CHANGE_OR_MULTI_CONTACT",
+                "field": "phone",
+                "is_hard_conflict": false,
+                "left": "0912345678",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "0987654321",
+                "similarity": 0.0,
+                "state": "DF",
+                "verified_both": false
+              },
+              {
+                "field": "email",
+                "is_hard_conflict": false,
+                "left": "bridge@example.test",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "bridge@example.test",
+                "similarity": 1.0,
+                "state": "EX",
+                "verified_both": false
+              },
+              {
+                "field": "dob",
+                "is_hard_conflict": false,
+                "left": "",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "",
+                "similarity": 0.0,
+                "state": "MI",
+                "verified_both": false
+              },
+              {
+                "field": "address",
+                "is_hard_conflict": false,
+                "left": "",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "",
+                "similarity": 0.0,
+                "state": "MI",
+                "verified_both": false
+              },
+              {
+                "field": "government_id",
+                "is_hard_conflict": false,
+                "left": "",
+                "normalization_tags": [],
+                "provenance": "RULE",
+                "right": "",
+                "similarity": 0.0,
+                "state": "MI",
+                "verified_both": false
+              }
+            ],
+            "guard_violations": [
+              {
+                "guard": "COMPONENT_CONSISTENCY",
+                "reason": "CLUSTER_REVIEW_VETO",
+                "severity": "BLOCK"
+              }
+            ],
+            "id": "bc",
+            "left_id": "b",
+            "match_weight": 14,
+            "matched_subgroups": [],
+            "normalization_tags": [
+              "GIVEN_NAME_COMPATIBLE"
+            ],
+            "policy_file_version": "person-v3",
+            "policy_id": null,
+            "policy_version": "person-linh-v2-selective",
+            "primary_group": "A",
+            "reason": "NO_ELIGIBLE_SUBGROUP",
+            "right_id": "c",
+            "score": 6.0,
+            "signature": "N:EX|P:DF|E:EX|DOB:MI|A:MI|G:MI",
+            "subgroup": "A2_NAME_EMAIL",
+            "triage_reason": "CLUSTER_REVIEW_VETO",
+            "triage_status": "REVIEW"
+          }
+        ]
+      },
+      "pairs": [
+        {
+          "blocking_reasons": [],
+          "comparisons": {
+            "address": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "dob": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "email": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "government_id": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "name": {
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "phone": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "EX"
+            }
+          },
+          "conflict_rule_version": "v3.1.0",
+          "decision": "MERGEABLE",
+          "decision_subgroup": "A1_NAME_PHONE",
+          "field_evidence": [
+            {
+              "field": "name",
+              "is_hard_conflict": false,
+              "left": "nguyen van an",
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "right": "nguyen van an",
+              "similarity": 1.0,
+              "state": "EX",
+              "verified_both": false
+            },
+            {
+              "field": "phone",
+              "is_hard_conflict": false,
+              "left": "0912345678",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "0912345678",
+              "similarity": 1.0,
+              "state": "EX",
+              "verified_both": false
+            },
+            {
+              "field": "email",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "bridge@example.test",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            },
+            {
+              "field": "dob",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            },
+            {
+              "field": "address",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            },
+            {
+              "field": "government_id",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            }
+          ],
+          "id": "ab",
+          "left_id": "a",
+          "match_weight": 15,
+          "matched_subgroups": [],
+          "normalization_tags": [
+            "GIVEN_NAME_COMPATIBLE"
+          ],
+          "policy_file_version": "person-v3",
+          "policy_id": null,
+          "policy_version": "person-linh-v2-selective",
+          "primary_group": "A",
+          "reason": "NO_ELIGIBLE_SUBGROUP",
+          "right_id": "b",
+          "score": 6.0,
+          "signature": "N:EX|P:EX|E:MI|DOB:MI|A:MI|G:MI",
+          "subgroup": "A1_NAME_PHONE",
+          "triage_reason": "SAFE_COMPONENT_EDGE",
+          "triage_status": "HIGH_CONFIDENCE_PROPOSAL"
+        },
+        {
+          "blocking_reasons": [],
+          "comparisons": {
+            "address": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "dob": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "email": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "government_id": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "MI"
+            },
+            "name": {
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "state": "EX"
+            },
+            "phone": {
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "state": "DF"
+            }
+          },
+          "conflict_rule_version": "v3.1.0",
+          "decision": "MERGEABLE",
+          "decision_subgroup": "A2_NAME_EMAIL",
+          "field_evidence": [
+            {
+              "field": "name",
+              "is_hard_conflict": false,
+              "left": "nguyen van an",
+              "normalization_tags": [
+                "GIVEN_NAME_COMPATIBLE"
+              ],
+              "provenance": "RULE",
+              "right": "nguyen van an",
+              "similarity": 1.0,
+              "state": "EX",
+              "verified_both": false
+            },
+            {
+              "conflict_meaning": "CHANGE_OR_MULTI_CONTACT",
+              "field": "phone",
+              "is_hard_conflict": false,
+              "left": "0912345678",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "0987654321",
+              "similarity": 0.0,
+              "state": "DF",
+              "verified_both": false
+            },
+            {
+              "field": "email",
+              "is_hard_conflict": false,
+              "left": "bridge@example.test",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "bridge@example.test",
+              "similarity": 1.0,
+              "state": "EX",
+              "verified_both": false
+            },
+            {
+              "field": "dob",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            },
+            {
+              "field": "address",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            },
+            {
+              "field": "government_id",
+              "is_hard_conflict": false,
+              "left": "",
+              "normalization_tags": [],
+              "provenance": "RULE",
+              "right": "",
+              "similarity": 0.0,
+              "state": "MI",
+              "verified_both": false
+            }
+          ],
+          "guard_violations": [
+            {
+              "guard": "COMPONENT_CONSISTENCY",
+              "reason": "CLUSTER_REVIEW_VETO",
+              "severity": "BLOCK"
+            }
+          ],
+          "id": "bc",
+          "left_id": "b",
+          "match_weight": 14,
+          "matched_subgroups": [],
+          "normalization_tags": [
+            "GIVEN_NAME_COMPATIBLE"
+          ],
+          "policy_file_version": "person-v3",
+          "policy_id": null,
+          "policy_version": "person-linh-v2-selective",
+          "primary_group": "A",
+          "reason": "NO_ELIGIBLE_SUBGROUP",
+          "right_id": "c",
+          "score": 6.0,
+          "signature": "N:EX|P:DF|E:EX|DOB:MI|A:MI|G:MI",
+          "subgroup": "A2_NAME_EMAIL",
+          "triage_reason": "CLUSTER_REVIEW_VETO",
+          "triage_status": "REVIEW"
+        }
+      ]
+    }
+  }
+}

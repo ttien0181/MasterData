@@ -12,6 +12,7 @@ from masterone.api.mdm_resolution import router as mdm_resolution_router
 from masterone.api.mdm_resolution import ws_router as mdm_resolution_ws_router
 from masterone.api.mdm_runs import router as mdm_runs_router
 from masterone.api.mdm_uploads import router as mdm_uploads_router
+from masterone.api.mdm_workflow import router as workflow_router
 from masterone.api.routes import router
 from masterone.auth import models as auth_models  # noqa: F401 - registers auth tables
 from masterone.config import LOCAL_DEV_ORIGIN_REGEX, get_settings
@@ -76,6 +77,7 @@ app.add_middleware(
 
 app.include_router(router, prefix="/api/v1")
 app.include_router(mdm_runs_router, prefix="/api/v1")
+app.include_router(workflow_router, prefix="/api/v1")
 app.include_router(mdm_uploads_router, prefix="/api/v1")
 app.include_router(mdm_resolution_router, prefix="/api/v1")
 app.include_router(mdm_resolution_ws_router, prefix="/api/v1")

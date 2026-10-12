@@ -46,7 +46,8 @@ for (const theme of ["light", "dark"]) {
     });
 
     await page.setViewportSize({ width: 1440, height: 1000 });
-    await page.goto("/app?run=layout-run&view=review");
+    await page.route("**/api/v1/mdm/runs/*/workflow", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ workflow_version: 1 }) }));
+  await page.goto("/app/legacy?run=layout-run&view=review");
     await expect(page.locator(".pair-list-table tbody tr")).toHaveCount(25);
     await page.getByRole("combobox", { name: "Nhóm xem xét", exact: true }).selectOption("A");
     await page.getByRole("combobox", { name: "Phân nhóm chi tiết", exact: true }).selectOption("A1_NAME_PHONE");

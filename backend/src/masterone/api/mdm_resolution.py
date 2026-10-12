@@ -10,10 +10,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from masterone.auth.security import (
@@ -27,8 +26,8 @@ from masterone.auth.security import (
 from masterone.config import get_settings
 from masterone.db.session import get_session
 from masterone.llm.explanation import explain_cohort
-from masterone.mdm.benchmark import run_benchmark
 from masterone.llm.policy import digest
+from masterone.mdm.benchmark import run_benchmark
 from masterone.mdm.engine_adapter import EngineResultAdapter, FrontendJSONRoute, api_engine_context
 from masterone.mdm.models import (
     ResolutionAuditEvent,
@@ -56,18 +55,30 @@ from masterone.mdm.resolution_items import (
     list_items,
     list_separate_records,
     resolve_staged_conflict,
-    separate_record_count,
     source_csv,
     transition_review,
 )
-from masterone.mdm.resolution_pairs import decide_review_pair, pair_categories, pending_pairs
-from masterone.mdm.run_summary import summary_for
+from masterone.mdm.resolution_pairs import decide_review_pair, pair_categories
 from masterone.mdm.resolution_preview import execute_preview, prepare_preview
 from masterone.mdm.resolution_split import execute_split, list_merge_events, prepare_split
+from masterone.mdm.run_summary import summary_for
 from masterone.mdm.schemas import ResolutionOverviewRead, task_read
 from masterone.storage.r2 import get_store
 
-router = APIRouter(prefix="/mdm/runs", tags=["MDM resolution"], dependencies=[Depends(api_engine_context)], route_class=FrontendJSONRoute)
+
+def legacy_mutation_guard(request: Request, db: Session = Depends(get_session)):
+    run_id = request.path_params.get('run_id')
+    run = db.get(ResolutionRun, run_id) if run_id else None
+    if run is not None and run.workflow_version == 2 and request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        from masterone.mdm.workflow_service import conflict
+        # Snapshot export boundaries validate finalized state themselves.
+        suffix = request.url.path.split('/runs/' + run_id, 1)[-1]
+        if not (suffix in ('/exports', '/previews', '/export-readiness') or
+                (suffix.startswith('/previews/') and suffix.endswith('/execute'))):
+            conflict('USE_WORKFLOW_API')
+
+
+router = APIRouter(prefix="/mdm/runs", tags=["MDM resolution"], dependencies=[Depends(api_engine_context), Depends(legacy_mutation_guard)], route_class=FrontendJSONRoute)
 
 
 @router.get("/{run_id}/analytics")
@@ -437,7 +448,7 @@ def _explanation_model_identity(settings):
 
 def _explanation_payload(row):
     return {"status": row.status, "explanation": row.explanation,
-            "model_version": row.model_version, "usage": row.usage}
+            "model_version": row.model_version, "usage": row.usage, "error_code": row.error_code}
 
 
 def _guarded_explanation(db, run_id, signature, primary_group, subgroup, aggregate):
@@ -719,7 +730,7 @@ def policy_simulate(
     Returns a diff: how many pairs would change decision.
     POLICY_ADMIN role recommended; does NOT modify any data.
     """
-    run = owned_run(db, request.run_id, auth.user.id)
+    owned_run(db, request.run_id, auth.user.id)
 
     db_pairs = db.query(ResolutionPair).filter_by(run_id=request.run_id).all()
     if not db_pairs:

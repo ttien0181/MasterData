@@ -32,7 +32,12 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
              scoring_output_dir: Path | None = None,
              execution_blocked_pairs: frozenset = frozenset(),
              _stream_store=None, _stream_event=None, _normalize=False, _attempt_id=None,
-             _checkpoint_factory=None, _checkpoint_fault=None, _policy_factory=None) -> dict:
+             _checkpoint_factory=None, _checkpoint_fault=None, _policy_factory=None,
+             _stop_after_decide=False) -> dict:
+    if not _stop_after_decide and (_checkpoint_factory is not None or _policy_factory is not None):
+        from masterone.mdm.workflow_service import require_legacy
+        with (_checkpoint_factory or _policy_factory)() as db:
+            require_legacy(db, run_id)
     from masterone.config import get_settings
     from masterone.mdm.pipeline import streaming
     from masterone.storage.r2 import get_store
@@ -40,7 +45,7 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
     store = (_stream_store if _stream_store is not None else get_store(get_settings())) if streaming.requested() else None
     from masterone.mdm.engine_adapter import feature
     resume = None
-    if (feature("pipeline_resume_enabled") and _checkpoint_factory is not None
+    if (not _stop_after_decide and feature("pipeline_resume_enabled") and _checkpoint_factory is not None
             and not get_settings().semantic_address_enabled and (scoring_config is None or scoring_config.mode == "rule")):
         from masterone.mdm.pipeline.checkpoints import CheckpointManager
         resume = CheckpointManager(_checkpoint_factory, run_id,
@@ -78,6 +83,7 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
     disk_decisions = cluster_enabled()
     pairs = DecisionStore(score_dir) if disk_decisions else []
     insufficient_count = 0
+    insufficient_pairs = []
     decisions = prepared if prepared is not None else (
         {"left_id": scored.left_id, "right_id": scored.right_id, "result": scoring_engine.decide(scored, by_id)}
         for batch in iter_score_batches(score_path, scoring_engine.config.batch_size) for scored in batch)
@@ -85,6 +91,9 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
         result = item["result"]
         if result["decision"] == "INSUFFICIENT_EVIDENCE":
             insufficient_count += 1
+            if _stop_after_decide:
+                pair_id = sha256(f"{run_id}:{item['left_id']}:{item['right_id']}:{policy_version}".encode()).hexdigest()
+                insufficient_pairs.append({'id': pair_id, **result})
             continue
         pair_id = sha256(f"{run_id}:{item['left_id']}:{item['right_id']}:{policy_version}".encode()).hexdigest()
         payload = {"id": pair_id, **result}
@@ -94,6 +103,12 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
             pairs.append(payload)
     if disk_decisions:
         pairs.seal()
+    if _stop_after_decide:
+        return {'pairs': pairs, 'insufficient_pairs': insufficient_pairs,
+                'proposals': [], 'review_cases': [], 'candidate_count': len(candidate_blocks),
+                'insufficient_count': insufficient_count, 'candidate_metrics': candidate_result.metrics,
+                'scoring_metrics': scoring_metrics, 'scoring_artifact': str(score_path),
+                'streaming': {'mode': 'serial' if fallback else 'streaming', 'reason': fallback}}
     clusters = build_proposals(records, pairs, run_id, policy_version, negative_pairs=negative_pairs,
                                execution_blocked_pairs=execution_blocked_pairs)
     review_cases = []
@@ -124,6 +139,9 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
 
 
 def run_pipeline(run_id: str, factory: sessionmaker, progress, *, scoring_config: ScoringConfig | None = None) -> None:
+    with factory() as db:
+        from masterone.mdm.workflow_service import require_legacy
+        require_legacy(db, run_id)
     from masterone.mdm.engine_adapter import engine_context, select_engine
     configuration = select_engine(factory, run_id)
     if configuration is None:
@@ -311,6 +329,8 @@ def mark_failed(run_id: str, factory: sessionmaker) -> None:
 
 def create_task(run_id: str, factory: sessionmaker) -> ResolutionTask:
     with factory.begin() as db:
+        from masterone.mdm.workflow_service import require_legacy
+        require_legacy(db, run_id)
         from masterone.mdm.generation_staging import lock_run
         run = lock_run(db, run_id)
         existing = db.query(ResolutionTask).filter_by(run_id=run_id).one_or_none()

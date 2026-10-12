@@ -218,6 +218,9 @@ def readiness(db, run_id, choices, state, budget):
 
 
 def export_readiness(db, run_id, submitted_choices=None):
+    if db.get(ResolutionRun, run_id).workflow_version == 2:
+        from masterone.mdm.workflow_exports import readiness as workflow_readiness
+        return workflow_readiness(db, run_id, submitted_choices)
     settings = get_settings()
     with index(settings) as (state, budget, _):
         return readiness(db, run_id, submitted_choices, state, budget)
@@ -248,6 +251,10 @@ def file_chunks(path, budget):
 
 def create_export(db, run_id, actor_user_id, acknowledge_unreviewed,
                   submitted_choices=None, *, commit=True, export_id=None):
+    if db.get(ResolutionRun, run_id).workflow_version == 2:
+        from masterone.mdm.workflow_exports import create_export as workflow_export
+        return workflow_export(db, run_id, actor_user_id, acknowledge_unreviewed,
+                               submitted_choices, commit=commit, export_id=export_id)
     settings = get_settings()
     started = time.monotonic()
     # Same run lock is held through verification/publication, including preview execution.

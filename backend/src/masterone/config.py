@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from typing import Literal
 
@@ -37,6 +38,7 @@ class Settings(BaseSettings):
     # thinking model the reasoning tokens otherwise consume maxOutputTokens and the JSON is cut off.
     gemini_thinking_budget: int | None = Field(default=0, ge=0, le=32768)
     semantic_address_enabled: bool = False
+    session_workflow_enabled: bool = False
     decision_semantics_v2_enabled: bool = False
     cluster_safety_v2_enabled: bool = False
     generation_staging_enabled: bool = False
@@ -61,6 +63,10 @@ class Settings(BaseSettings):
 
     # LLM gateway policy. Defaults fail closed: no provider, model or price is approved.
     llm_enabled: bool = False
+    pair_assessment_auto_enabled: bool = False
+    pair_review_model_path: str = ''
+    llm_pair_assessment_enabled: bool = False
+    llm_max_pair_assessment_calls_per_run: int = Field(default=100, ge=0)
     llm_explanation_enabled: bool = False
     llm_approved_providers: str = ""  # CSV, subset of: gemini, openrouter
     llm_approved_models: str = ""  # CSV of exact model ids that may be sent
@@ -168,4 +174,4 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return Settings(_env_file=os.environ.get("MASTERONE_ENV_FILE", ".env"))

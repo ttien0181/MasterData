@@ -2,7 +2,7 @@ import base64
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -133,11 +133,15 @@ def bulk_run_action(body: BulkRunRequest, db: Session = Depends(get_session),
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_run(
     files: list[UploadFile] = File(...),
+    workflow_version: int = Form(1, ge=1, le=2),
     db: Session = Depends(get_session),
     auth: CurrentSession = Depends(require_mutation_capability("create_run")),
 ):
+    from masterone.mdm.workflow_service import validate_version
+    validate_version(workflow_version)
     run, profile = create_resolution_run_from_streams(
-        db, [(file.filename or "records.csv", file.file) for file in files], auth.user.id)
+        db, [(file.filename or "records.csv", file.file) for file in files], auth.user.id,
+        workflow_version=workflow_version)
     return {"run_id": run.id, "status": run.status, "profile": profile}
 
 
@@ -188,6 +192,8 @@ def start_run(
     auth: CurrentSession = Depends(require_mutation_capability("start_run")),
 ):
     run = owned_run(db, run_id, auth.user.id)
+    from masterone.mdm.workflow_service import require_legacy
+    require_legacy(db, run_id)
     if run.archived_at is not None:
         raise HTTPException(409, "Khôi phục phiên đã lưu trữ trước khi chạy")
     previous_task = db.query(ResolutionTask).filter_by(run_id=run_id).one_or_none()

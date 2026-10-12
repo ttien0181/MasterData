@@ -28,14 +28,22 @@ logger = logging.getLogger(__name__)
 
 def execute_attempt(database_url, claim):
     # Spawn, never inherit pooled connections or API memory across a fork.
-    from masterone.mdm.resolution_service import run_pipeline
     from masterone.logging_config import configure_logging
+    from masterone.mdm.resolution_service import run_pipeline
     configure_logging()
     engine, factory = create_database(database_url)
     try:
         with ownership(claim):
-            run_pipeline(claim.run_id, factory,
-                lambda phase, done, total: progress(factory, claim, phase, done, total))
+            from masterone.mdm.models import ResolutionTask
+            with factory() as db:
+                operation_id = db.get(ResolutionTask, claim.task_id).operation_id
+            def report(phase, done, total):
+                return progress(factory, claim, phase, done, total)
+            if operation_id:
+                from masterone.mdm.workflow_jobs import execute_workflow
+                execute_workflow(operation_id, factory, report)
+            else:
+                run_pipeline(claim.run_id, factory, report)
     except OwnershipLostError:
         pass
     except Exception as error:

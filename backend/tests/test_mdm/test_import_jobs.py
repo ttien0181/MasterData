@@ -98,7 +98,7 @@ def test_child_process_runs_the_validation_and_records_the_outcome(file_db):
     deadline = time.monotonic() + 240
     while time.monotonic() < deadline:
         with factory() as db:
-            if db.get(ResolutionUploadSession, session_id).status != "VALIDATING":
+            if db.get(ResolutionUploadSession, session_id).status != "VALIDATING" and session_id not in import_jobs._running:
                 break
         time.sleep(0.5)
     with factory() as db:
@@ -112,7 +112,11 @@ def test_validate_and_commit_answer_202_and_refuse_a_second_start(client, monkey
     """With jobs enabled, the endpoints only mark the draft and hand the work to import_jobs."""
     monkeypatch.setattr(get_settings(), "import_jobs_inline", False)
     started = []
-    monkeypatch.setattr(import_jobs, "start", lambda kind, session_id, owner, url: started.append((kind, session_id)))
+    def fake_start(kind, session_id, owner, url, *, before_start=None):
+        if before_start:
+            before_start()
+        started.append((kind, session_id))
+    monkeypatch.setattr(import_jobs, "start", fake_start)
     created = client.post("/api/v1/mdm/upload-sessions",
                           json={"name": "async", "files": [{"filename": "a.csv", "size": 10}]})
     assert created.status_code == 201
@@ -131,3 +135,16 @@ def test_validate_and_commit_answer_202_and_refuse_a_second_start(client, monkey
     assert committing.json() == {"run_id": None, "status": "COMMITTING", "profile": None}
     assert client.post(f"{prefix}/commit").status_code == 409
     assert started == [("validate", session_id), ("commit", session_id)]
+
+
+@pytest.mark.parametrize('action', ['validate','commit'])
+def test_start_conflict_does_not_leave_draft_marked_running(client, monkeypatch, action):
+    monkeypatch.setattr(get_settings(), 'import_jobs_inline', False)
+    draft = client.post('/api/v1/mdm/upload-sessions',json={'files':[{'filename':'a.csv','size':1}]}).json()
+    sid = draft['session_id']
+    with client.session_factory.begin() as db:
+        db.get(ResolutionUploadSession,sid).status = 'READY'
+    monkeypatch.setattr(import_jobs, '_running', {sid})
+    assert client.post(f'/api/v1/mdm/upload-sessions/{sid}/{action}').status_code == 409
+    with client.session_factory() as db:
+        assert db.get(ResolutionUploadSession,sid).status == 'READY'

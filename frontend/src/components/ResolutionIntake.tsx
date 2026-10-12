@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
+  addUploadSessionFiles,
   commitUploadPart,
   commitUploadSession,
   createUploadSession,
@@ -83,14 +84,25 @@ async function sendPart(
     return;
   }
   for (let attempt = 1; ; attempt += 1) {
+    let storageNetworkFailure = false;
     try {
       const { parts } = await presignUploadParts(sessionId, fileId, [
         { part_number: partNumber, byte_size: blob.size, sha256: digest },
       ]);
-      await putPartToStorage(parts[0], blob, onProgress);
+      try { await putPartToStorage(parts[0], blob, onProgress); }
+      catch (error) {
+        storageNetworkFailure = !(error instanceof ApiError) && !(error instanceof DOMException && error.name === 'AbortError');
+        throw error;
+      }
       await commitUploadPart(sessionId, fileId, partNumber, blob.size, digest);
       return;
     } catch (error) {
+      if (storageNetworkFailure && attempt >= PART_ATTEMPTS) {
+        // Same owned session/part/checksum; the BE already supports R2 staging through this transport.
+        onProgress(0);
+        await uploadResolutionUploadPart(sessionId, fileId, partNumber, blob, digest, onProgress);
+        return;
+      }
       if (attempt >= PART_ATTEMPTS || !isRetryable(error)) throw error;
       onProgress(0);
       await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
@@ -103,11 +115,17 @@ export default function ResolutionIntake({
   userId,
   onPendingChange,
   onDismiss,
+  workflowVersion = 1,
+  initialSessionId,
+  onSessionReady,
 }: {
   onRunCreated: (created: CreatedRun) => Promise<void>;
   userId?: string;
   onPendingChange?: (label: string) => void;
   onDismiss?: () => void;
+  workflowVersion?: 1 | 2;
+  initialSessionId?: string;
+  onSessionReady?: (sessionId: string) => void;
 }) {
   const [drafts, setDrafts] = useState<UploadSession[]>([]);
   const [session, setSession] = useState<UploadSession | null>(null);
@@ -182,7 +200,7 @@ export default function ResolutionIntake({
         const result = await getUploadSessions();
         if (cancelled) return;
         setDrafts(result.items);
-        const id = saved || result.items[0]?.session_id;
+        const id = initialSessionId === 'new' ? null : initialSessionId || saved || result.items[0]?.session_id;
         if (id) {
           const restored = await getUploadSession(id);
           if (cancelled) return;
@@ -218,7 +236,7 @@ export default function ResolutionIntake({
     return () => {
       cancelled = true;
     };
-  }, [storageKey, restoreAttempt, refreshDrafts, rememberUpload, forgetUpload]);
+  }, [storageKey, initialSessionId, restoreAttempt, refreshDrafts, rememberUpload, forgetUpload]);
 
   useEffect(() => {
     onPendingChange?.(
@@ -396,7 +414,7 @@ export default function ResolutionIntake({
   }, [jobSessionId, jobStatus]);
 
   async function uploadFiles(incoming: File[]) {
-    if (!incoming.length || busy || uploadInFlight.current || session) return;
+    if (!incoming.length || busy || uploadInFlight.current || session && ['VALIDATING','COMMITTING','COMMITTED','CANCELLED'].includes(session.status)) return;
     if (incoming.some((file) => !file.name.toLowerCase().endsWith(".csv"))) {
       setMessage("Chỉ hỗ trợ file CSV. Hãy chọn lại các file cần phân giải.");
       return;
@@ -410,7 +428,7 @@ export default function ResolutionIntake({
             candidate.lastModified === file.lastModified,
         ) === index,
     );
-    if (files.length > 10) {
+    if (files.length + (session?.files.length || 0) > 10) {
       setMessage("Mỗi phiên hiện hỗ trợ tối đa 10 file CSV.");
       return;
     }
@@ -420,7 +438,8 @@ export default function ResolutionIntake({
     setActivity("uploading");
     setMessage("");
     try {
-      let created = await createUploadSession(name, files);
+      const previousIds = new Set(session?.files.map(file => file.file_id) || []);
+      let created = session ? await addUploadSessionFiles(session.session_id, files) : await createUploadSession(name, files);
       draftId = created.session_id;
       rememberUpload(draftId);
       setSession(created);
@@ -430,8 +449,9 @@ export default function ResolutionIntake({
       ]);
       // One failed file must not stop the others: upload everything, then say exactly what is left.
       const unfinished: string[] = [];
-      for (let index = 0; index < created.files.length; index += 1) {
-        const target = created.files[index];
+      const targets = created.files.filter(file => !previousIds.has(file.file_id));
+      for (let index = 0; index < targets.length; index += 1) {
+        const target = targets[index];
         try {
           created = await transferFile(created, target, files[index]);
         } catch (error) {
@@ -588,7 +608,7 @@ export default function ResolutionIntake({
         name.trim() !== (session.name || "")
       )
         await renameUploadSession(session.session_id, name.trim());
-      const accepted = await commitUploadSession(session.session_id);
+      const accepted = workflowVersion === 2 ? await commitUploadSession(session.session_id, 2) : await commitUploadSession(session.session_id);
       const created: CreatedRun =
         accepted.run_id && accepted.profile
           ? { run_id: accepted.run_id, status: accepted.status, profile: accepted.profile }
@@ -620,6 +640,10 @@ export default function ResolutionIntake({
     }
   }
 
+  useEffect(() => {
+    if (session?.session_id && !busy && !restoring) onSessionReady?.(session.session_id);
+  }, [session?.session_id, busy, restoring, onSessionReady]);
+
   const complete =
     !!session &&
     session.files.every((file) => {
@@ -639,7 +663,7 @@ export default function ResolutionIntake({
             ? "Chọn file để bắt đầu"
             : session.status === "COMMITTED"
               ? "Tiếp tục phiên phân giải"
-              : "Bắt đầu phân giải";
+              : workflowVersion === 2 ? "Tạo phiên từ dữ liệu đã kiểm tra" : "Bắt đầu phân giải";
 
   return (
     <section
@@ -780,6 +804,10 @@ export default function ResolutionIntake({
         )}
         {session && (
           <>
+            {!['COMMITTED','CANCELLED'].includes(session.status) && <label className="upload-add-control">Thêm file vào dữ liệu đang chuẩn bị
+              <input type="file" accept=".csv,text/csv" multiple aria-label="Thêm các file CSV" disabled={busy || ['VALIDATING','COMMITTING'].includes(session.status) || session.files.length >= 10}
+                onChange={event => { const files = Array.from(event.target.files || []); event.target.value = ''; void uploadFiles(files); }} />
+            </label>}
             <div className="upload-session-files">
               {session.files.map((file) => {
                 const candidate = file.replacement ?? file;

@@ -55,3 +55,12 @@ def senior_client(client):
     with client.session_factory.begin() as db:
         db.query(User).filter_by(email_normalized="steward@example.com").one().role = "SENIOR_STEWARD"
     return client
+
+
+@pytest.fixture
+def workflow_run(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), 'session_workflow_enabled', True)
+    csv = b'source_record_id,source_system,name,phone,email,address\n1,CRM,Nguyen Van An,0901234567,a@example.test,123 Hanoi\n2,BILL,Nguyen Van An,0901234567,a@example.test,123 Hanoi\n3,CRM,Tran Thi Binh,0987654321,b@example.test,456 HCM\n'
+    response = client.post('/api/v1/mdm/runs', data={'workflow_version': '2'}, files={'files': ('workflow.csv', csv, 'text/csv')})
+    assert response.status_code == 201, response.text
+    return response.json()['run_id']

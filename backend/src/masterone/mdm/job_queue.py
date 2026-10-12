@@ -121,6 +121,14 @@ def claim_next(factory, worker_id, *, lease_seconds=30, timeout_seconds=3600):
             started_at=now, heartbeat_at=now, lease_expires_at=now + timedelta(seconds=lease_seconds),
             deadline_at=now + timedelta(seconds=timeout_seconds)))
         run = db.get(ResolutionRun, task.run_id)
+        if task.operation_id:
+            from masterone.mdm.workflow_models import WorkflowOperation
+            op = db.get(WorkflowOperation, task.operation_id)
+            if op is None or op.run_id != run.id or op.status not in ('QUEUED', 'RETRYABLE_FAILED') or op.operation_type not in ('PREPARE', 'DECIDE', 'BULK_DECISIONS', 'CLUSTER', 'GOLDEN_RESOLVE', 'ASSESS_PAIRS', 'PAIR_ADVICE'):
+                raise OwnershipLostError('WORKFLOW_OPERATION_IDENTITY')
+            op.status, op.stage = 'RUNNING', op.operation_type.lower()
+            if op.operation_type == 'CLUSTER':
+                run.workflow_state = 'CLUSTER_RUNNING'
         run.status, run.phase = "RUNNING", "loading"
         return Claim(task.run_id, task.id, attempt_id, worker_id)
 
@@ -157,6 +165,11 @@ def progress(factory, claim, phase, processed, total):
     with factory.begin() as db:
         task, _ = validate(db, claim)
         task.phase, task.processed_count, task.total_count = phase, processed, total
+        if task.operation_id:
+            from masterone.mdm.workflow_models import WorkflowOperation
+            op = db.get(WorkflowOperation, task.operation_id)
+            op.stage, op.progress = phase, {**(op.progress if op.operation_type == 'BULK_DECISIONS' else {}),
+                                           'processed': processed, 'total': total}
         task.updated_at = now_utc()
         db.get(ResolutionRun, claim.run_id).phase = phase
 
@@ -170,6 +183,10 @@ def _retire(db, task, attempt, code):
     task.phase, task.error_code, task.updated_at = task.status.lower(), code, now
     run = db.get(ResolutionRun, task.run_id)
     run.status, run.phase = task.status, task.phase
+    if task.operation_id:
+        from masterone.mdm.workflow_models import WorkflowOperation
+        op = db.get(WorkflowOperation, task.operation_id)
+        op.status, op.error_code = ('QUEUED' if task.status == 'QUEUED' else task.status), code
     # Generation ownership also ends, retaining all receipts for deterministic replay.
     from masterone.mdm.models import ResolutionGenerationAttempt
     generation_attempt = db.get(ResolutionGenerationAttempt, attempt.id)
@@ -233,5 +250,11 @@ def request_cancel(factory, run_id):
                 task.status = run.status = "CANCELLED"
                 task.phase = run.phase = "cancelled"
                 task.error_code = "JOB_CANCELLED"
+                if task.operation_id:
+                    from masterone.mdm.workflow_models import WorkflowOperation
+                    operation = db.get(WorkflowOperation, task.operation_id)
+                    if operation is not None and operation.run_id == run_id:
+                        operation.status, operation.stage = 'CANCELLED', 'cancelled'
+                        operation.error_code = 'JOB_CANCELLED'
             task.updated_at = now_utc()
         return task

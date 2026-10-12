@@ -1,18 +1,122 @@
 {
   "version": "p119_input_v1",
-  "required_fields": ["source_record_id", "source_system", "name"],
-  "allowed_sources": ["CRM", "ERP", "BILL", "CSV"],
+  "required_fields": [
+    "source_record_id",
+    "source_system",
+    "name"
+  ],
+  "allowed_sources": [
+    "CRM",
+    "ERP",
+    "BILL",
+    "CSV"
+  ],
   "fields": {
-    "source_record_id": ["source_record_id", "record_id", "id", "contact_id", "debtor_code", "account_number", "MA_KH"],
-    "source_system": ["source_system", "source"],
-    "name": ["full_name", "name", "full_name_raw", "name_raw", "contact_name", "legal_name", "account_holder", "HO_TEN"],
-    "phone": ["phone_number", "phone", "phone_raw", "mobile", "contact_number", "notification_phone", "DIEN_THOAI"],
-    "email": ["email_address", "email", "email_raw", "contact_email", "notification_email"],
-    "dob": ["dob", "date_of_birth", "dob_raw", "birth_date", "holder_dob", "NGAY_SINH"],
-    "address": ["raw_address", "address", "address_raw", "mailing_address", "invoice_address", "service_address", "DIA_CHI"],
-    "government_id": ["government_id", "national_id", "cccd", "cmnd", "document_number_raw"],
-    "government_id_type": ["government_id_type"],
-    "entity_type": ["entity_type"],
-    "ground_truth": ["entity_id", "ground_truth"]
+    "source_record_id": [
+      "source_record_id",
+      "record_id",
+      "id",
+      "contact_id",
+      "debtor_code",
+      "account_number",
+      "MA_KH"
+    ],
+    "source_system": [
+      "source_system",
+      "source"
+    ],
+    "name": [
+      "full_name",
+      "name",
+      "full_name_raw",
+      "name_raw",
+      "contact_name",
+      "legal_name",
+      "account_holder",
+      "HO_TEN"
+    ],
+    "phone": [
+      "phone_number",
+      "phone",
+      "phone_raw",
+      "mobile",
+      "contact_number",
+      "notification_phone",
+      "DIEN_THOAI"
+    ],
+    "email": [
+      "email_address",
+      "email",
+      "email_raw",
+      "contact_email",
+      "notification_email"
+    ],
+    "dob": [
+      "dob",
+      "date_of_birth",
+      "dob_raw",
+      "birth_date",
+      "holder_dob",
+      "NGAY_SINH"
+    ],
+    "address": [
+      "raw_address",
+      "address",
+      "address_raw",
+      "mailing_address",
+      "invoice_address",
+      "service_address",
+      "DIA_CHI"
+    ],
+    "government_id": [
+      "government_id",
+      "national_id",
+      "cccd",
+      "cmnd",
+      "document_number_raw"
+    ],
+    "government_id_type": [
+      "government_id_type"
+    ],
+    "entity_type": [
+      "entity_type"
+    ],
+    "ground_truth": [
+      "entity_id",
+      "ground_truth"
+    ],
+    "government_id_namespace": [
+      "government_id_namespace"
+    ],
+    "government_id_identity_unique": [
+      "government_id_identity_unique"
+    ],
+    "government_id_single_valued": [
+      "government_id_single_valued"
+    ],
+    "government_id_verified": [
+      "government_id_verified"
+    ],
+    "government_id_verification_status": [
+      "government_id_verification_status"
+    ],
+    "dob_verified": [
+      "dob_verified"
+    ],
+    "dob_verification_status": [
+      "dob_verification_status"
+    ],
+    "phone_verified": [
+      "phone_verified"
+    ],
+    "phone_verification_status": [
+      "phone_verification_status"
+    ],
+    "email_verified": [
+      "email_verified"
+    ],
+    "email_verification_status": [
+      "email_verification_status"
+    ]
   }
 }
