@@ -29,6 +29,7 @@ services:
       - ./data:/app/data
     environment:
       APP_ENV: ${APP_ENV:-development}
+      MDM_EMBEDDED_WORKER_ENABLED: "false"
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       MDM_DATABASE_PROFILE: local
       MDM_DATABASE_URL_LOCAL: postgresql+psycopg://${POSTGRES_USER:-masterone}:${POSTGRES_PASSWORD:-masterone}@database:5432/${POSTGRES_DB:-masterone}

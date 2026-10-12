@@ -1,3 +1,5 @@
+import { apiBase } from "./apiBase";
+
 export type UploadProgress = { loaded: number; total: number; percent: number };
 
 export function putToSignedUrl(
@@ -42,8 +44,7 @@ export type R2MergeResult = {
 };
 
 export async function mergeR2Files(objectKeys: string[], csrfToken: string): Promise<R2MergeResult> {
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-  const response = await fetch(`${apiBase}/api/v1/large-imports/merge`, {
+  const response = await fetch(`${apiBase()}/api/v1/large-imports/merge`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -65,12 +66,11 @@ export async function uploadFilesToR2(
   csrfToken: string,
   onProgress: (file: File, progress: UploadProgress) => void,
 ): Promise<R2Upload[]> {
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
   const uploads: R2Upload[] = [];
 
   for (const file of files) {
     const contentType = file.type || "text/csv";
-    const signedResponse = await fetch(`${apiBase}/api/v1/large-imports/upload-url`, {
+    const signedResponse = await fetch(`${apiBase()}/api/v1/large-imports/upload-url`, {
       method: "POST",
       credentials: "include",
       headers: {
@@ -88,7 +88,7 @@ export async function uploadFilesToR2(
     const { object_name, upload_url } = await signedResponse.json();
     await putToSignedUrl(upload_url, file, (progress) => onProgress(file, progress), contentType);
 
-    const completeResponse = await fetch(`${apiBase}/api/v1/large-imports/complete`, {
+    const completeResponse = await fetch(`${apiBase()}/api/v1/large-imports/complete`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
