@@ -196,3 +196,7 @@ sandbox/
 *.temp
 
 backend/data/export-artifacts/
+
+
+.agents/skills/
+masterone_test
