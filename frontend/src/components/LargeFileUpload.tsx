@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { putToSignedUrl, type UploadProgress } from "@/lib/largeUpload";
 import { backendHeaders } from "@/lib/backendHeaders";
-
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+import { apiBase } from "@/lib/apiBase";
 
 export default function LargeFileUpload({ csrfToken }: { csrfToken: string }) {
   const [file, setFile] = useState<File | null>(null);

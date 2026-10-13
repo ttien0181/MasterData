@@ -22,7 +22,7 @@ from masterone.mdm.pipeline.clustering import build_proposals
 from masterone.mdm.pipeline.decision_semantics import load_cannot_links
 from masterone.mdm.pipeline.golden_v2 import record_payload
 from masterone.mdm.pipeline.review_grouping import classify_pair
-from masterone.mdm.pipeline.scoring_engine import MemorySnapshot, ScoringConfig, ScoringEngine, iter_score_batches
+from masterone.mdm.pipeline.scoring_engine import MemorySnapshot, ScoringConfig, ScoringEngine, timed_score_batches
 from masterone.mdm.pipeline.semantic_address import run_annotations, with_annotations
 
 from masterone.mdm.resolution_persistence import persist_snapshot
@@ -89,7 +89,7 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
     insufficient_count = 0
     decide_timings = {}
     def decisions_from_scores():
-        for batch in iter_score_batches(score_path, scoring_engine.config.batch_size):
+        for batch in timed_score_batches(score_path, scoring_engine.config.batch_size, decide_timings):
             started = perf_counter()
             decided = [{"left_id": scored.left_id, "right_id": scored.right_id,
                         "result": scoring_engine.decide(scored, by_id)} for scored in batch]

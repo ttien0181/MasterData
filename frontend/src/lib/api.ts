@@ -1,5 +1,6 @@
 import { exportChoices } from "./resolutionChoices";
 import { backendHeaders } from "./backendHeaders";
+import { apiBase } from "./apiBase";
 import type { ResolutionOverview, ResolutionRunHistory, ResolutionRun, ReviewCategory, SeparateRecord,
   ResolutionItem, ResolutionItemDetail, ResolutionExportReadiness, ResolutionExportSummary,
   ResolutionPreview, ResolutionMergeHistory, ResolutionSplitPreview, AuthUser, ResolutionTask,
