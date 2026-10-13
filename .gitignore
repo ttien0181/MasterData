@@ -196,3 +196,21 @@ sandbox/
 *.temp
 
 backend/data/export-artifacts/
+
+# Local notes and generated documentation (existing tracked files stay tracked)
+*.md
+*.markdown
+!README.md
+!AGENTS.md
+!CLAUDE.md
+!CONTRIBUTING.md
+!CODE_OF_CONDUCT.md
+!SECURITY.md
+
+# Local patch exports and SQLite scratch databases
+*.patch
+*.diff
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm

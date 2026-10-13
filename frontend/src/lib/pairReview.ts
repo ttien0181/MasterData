@@ -16,10 +16,25 @@ export const subgroups: Record<string,string> = {
 };
 export const subgroupLabel = (key?: string) => key ? subgroups[key] || key : 'Chưa có Subgroup';
 export const groupLabel = (key?: string) => groups[key || 'UNCLASSIFIED']?.title || key || 'Chưa phân nhóm';
-export const baselineLabels: Record<string,string> = {MERGEABLE:'Đủ điều kiện tự động',REVIEW:'Cần duyệt thủ công',INSUFFICIENT_EVIDENCE:'Thiếu bằng chứng',NOT_MERGEABLE:'Bị ràng buộc chặn',BLOCKED:'Bị ràng buộc chặn',NON_MATCH:'Không phù hợp',DEFERRED:'Chờ bổ sung'};
-export const decisionLabels: Record<string,string> = {UNDECIDED:'Chưa duyệt',ACCEPTED:'Đã Accept',NON_MATCH:'Đã Deny',REJECTED:'Giữ riêng liên kết',DEFERRED:'Đang hoãn'};
-export const reasons: Record<string,string> = {SAME_TYPE_GOV_ID_CONFLICT:'Giấy tờ cùng loại không khớp',VERIFIED_GOV_ID_CONFLICT:'Giấy tờ đã xác minh mâu thuẫn',VERIFIED_DOB_CONFLICT:'Ngày sinh đã xác minh mâu thuẫn',NO_VALID_IDENTITY_ANCHOR:'Thiếu điểm neo nhận dạng',STEWARD_NEGATIVE_DECISION:'Có quyết định Deny ngăn cùng nhóm',REVIEW_VETO:'Liên kết này đã bị từ chối',PERSON_ORG_MISMATCH:'Khác loại thực thể',PERSON_POLICY_OUT_OF_SCOPE:'Ngoài phạm vi dữ liệu cá nhân',PAIR_MERGE_BLOCKED:'Chưa đủ điều kiện Accept',NON_HARD_CONFLICT:'Có thông tin cần đối chiếu'};
-export const reasonLabel = (value?: string) => value ? reasons[value] || 'Cần kiểm tra thêm bằng chứng và ràng buộc' : 'Cần kiểm tra thêm bằng chứng';
+export const baselineLabels: Record<string,string> = {MERGEABLE:'Đủ bằng chứng gộp',REVIEW:'Cần duyệt thủ công',INSUFFICIENT_EVIDENCE:'Thiếu bằng chứng',NOT_MERGEABLE:'Bị ràng buộc chặn',BLOCKED:'Bị ràng buộc chặn',NON_MATCH:'Không phù hợp',DEFERRED:'Chờ bổ sung'};
+export const decisionLabels: Record<string,string> = {UNDECIDED:'Chưa duyệt',ACCEPTED:'Đã Accept',NON_MATCH:'Đã xác nhận khác thực thể (Deny)',DENIED:'Đã xác nhận khác thực thể (Deny)',REJECTED:'Giữ riêng liên kết',DEFERRED:'Đang hoãn'};
+export const reasons: Record<string,string> = {CLUSTER_REVIEW_VETO:'Liên kết đã bị từ chối nhưng còn đường ghép gián tiếp; đối chiếu các cặp liên quan',CLUSTER_PAIR_PERMISSION_CONFLICT:'Liên kết không đủ quyền ghép hoặc bằng chứng đã thay đổi',CLUSTER_CANNOT_LINK_CONFLICT:'Có hai bản ghi không được cùng nhóm, kể cả qua liên kết gián tiếp',CLUSTER_NEGATIVE_LINK_CONFLICT:'Ràng buộc khác thực thể xung đột với đường ghép hiện có',CLUSTER_SIZE_LIMIT:'Nhóm vượt giới hạn thành viên; kiểm tra các liên kết trong nhóm',CLUSTER_VERIFIED_ID_CONFLICT:'Thành viên có giấy tờ đã xác minh mâu thuẫn',SAME_TYPE_GOV_ID_CONFLICT:'Giấy tờ cùng loại không khớp',VERIFIED_GOV_ID_CONFLICT:'Giấy tờ đã xác minh mâu thuẫn',VERIFIED_DOB_CONFLICT:'Ngày sinh đã xác minh mâu thuẫn',NO_VALID_IDENTITY_ANCHOR:'Thiếu điểm neo nhận dạng',STEWARD_NEGATIVE_DECISION:'Có quyết định Deny ngăn cùng nhóm',REVIEW_VETO:'Liên kết này đã bị từ chối',PERSON_ORG_MISMATCH:'Khác loại thực thể',PERSON_POLICY_OUT_OF_SCOPE:'Ngoài phạm vi dữ liệu cá nhân',PAIR_MERGE_BLOCKED:'Chưa đủ điều kiện Accept',NON_HARD_CONFLICT:'Có thông tin cần đối chiếu'};
+Object.assign(reasons, {
+  ASSESSMENT_ACCEPTED_CONFLICT:'Đánh giá mới phát hiện ràng buộc mâu thuẫn với quyết định cùng thực thể; đối chiếu lại các bản ghi',
+  CLUSTER_CONFIRMED_CANNOT_LINK:'Có quyết định khác thực thể ngăn các thành viên cùng nhóm, kể cả qua liên kết gián tiếp',
+  CLUSTER_NEGATIVE_EDGE:'Có ràng buộc ngăn hai thành viên cùng nhóm; kiểm tra các quyết định và nguồn ràng buộc',
+  CLUSTER_BRIDGE_MISSING_EVIDENCE:'Liên kết gián tiếp chưa đủ bằng chứng giữa các thành viên; đối chiếu các cặp liên quan',
+  CLUSTER_GOV_ID_CONFLICT:'Các thành viên có giấy tờ định danh mâu thuẫn; đối chiếu nguồn và phạm vi giấy tờ',
+  CLUSTER_SHARED_VALUE_DOMINANT:'Thông tin liên hệ dùng chung trong nhóm chưa đủ để xác nhận cùng thực thể',
+  CLUSTER_SIZE_EXCEEDED:'Nhóm vượt giới hạn thành viên; kiểm tra các liên kết nối nhóm',
+});
+export const reasonLabel = (value?: string) => {
+  if (!value) return 'Cần kiểm tra thêm bằng chứng';
+  if (reasons[value]) return reasons[value];
+  if (value.startsWith('CLUSTER_SOURCE_UNIQUE_CONFLICT_')) return `Nhóm vi phạm quy tắc duy nhất của nguồn ${value.slice('CLUSTER_SOURCE_UNIQUE_CONFLICT_'.length)}`;
+  if (value.startsWith('CLUSTER_SOURCE_DOMINANCE_')) return `Nguồn ${value.slice('CLUSTER_SOURCE_DOMINANCE_'.length)} chiếm ưu thế trong nhóm; kiểm tra các bản ghi cùng nguồn`;
+  return 'Cần kiểm tra thêm bằng chứng và ràng buộc';
+};
 export const stateLabels: Record<string,string> = {EX:'Khớp chính xác',NX:'Khớp sau chuẩn hóa',NA:'Biến thể tương đương',HS:'Tương đồng cao',MS:'Tương đồng vừa',WS:'Tương đồng thấp',CF:'Mâu thuẫn',DF:'Khác nhau',MI:'Thiếu thông tin',NC:'Chưa đối chiếu',CL:'Gần nhau'};
 export const valueText = (value: unknown): string => value == null || value === '' ? '—' : Array.isArray(value) ? value.map(valueText).join(' · ') : typeof value === 'object' ? Object.entries(value).map(([k,v])=>`${fieldLabels[k] || k}: ${valueText(v)}`).join('; ') : String(value);
 export const recommendationLabel = (value?:string) => ({LIKELY_SAME_PERSON:'Có khả năng cùng người',LIKELY_DIFFERENT_PERSON:'Có khả năng khác người',INSUFFICIENT_BASIS:'Thiếu căn cứ'}[value || ''] || 'Chưa có đề xuất');

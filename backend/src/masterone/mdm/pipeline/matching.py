@@ -24,7 +24,7 @@ from masterone.mdm.pipeline.standardization import parse_dob
 FIELDS = ("name", "phone", "email", "address")
 OPTIONAL_FIELDS = ("dob", "government_id")
 POLICY_VERSION = "person-linh-v2-selective"
-CONFLICT_RULE_VERSION = "v3.1.0"
+CONFLICT_RULE_VERSION = "v3.2.0"
 
 # §8.1: frequency threshold for SHARED detection on phone/email
 SHARED_CONTACT_MIN_FREQ: int = 5
@@ -32,6 +32,12 @@ SHARED_CONTACT_MIN_FREQ: int = 5
 # Signature field abbreviations (architecture §15.2)
 _SIG_ABBREV = {"name": "N", "phone": "P", "email": "E",
                "dob": "DOB", "address": "A", "government_id": "G"}
+
+
+def _policy_version():
+    from masterone.mdm.pipeline.decision_semantics import enabled
+    from masterone.mdm.pipeline.pair_grouping import VERSION
+    return VERSION if enabled() else POLICY_VERSION
 
 
 def _name_similarity(left: str, right: str) -> float:
@@ -66,17 +72,20 @@ def _dob_state(nf_left: dict, nf_right: dict) -> tuple[str, float, str]:
     pa = parse_dob(a)
     pb = parse_dob(b)
 
-    # Exact match
-    if pa["canonical"] == pb["canonical"]:
-        return "EX", 1.0, "RULE"
+    if pa["quality"] == "INVALID" or pb["quality"] == "INVALID":
+        return "IV", 0.0, "RULE"
 
-    # Year-only vs full date — same year → not CF (architecture §8.1 note)
-    if pa["is_year_only"] or pb["is_year_only"]:
-        if pa["year"] and pb["year"] and pa["year"] == pb["year"]:
-            return "CL", 0.9, "RULE"
-        if pa["year"] and pb["year"] and pa["year"] != pb["year"]:
+    # Only complete dates are exact evidence. Partial dates can agree on the
+    # components they actually contain, without inventing a day or month.
+    if pa["canonical"] == pb["canonical"] and pa["day"] and pb["day"]:
+        return "EX", 1.0, "RULE"
+    if not pa["day"] or not pb["day"]:
+        shared = [part for part in ("year", "month", "day") if pa[part] and pb[part]]
+        if not shared:
+            return "MI", 0.0, "RULE"
+        if any(pa[part] != pb[part] for part in shared):
             return "CF", 0.0, "RULE"
-        return "MI", 0.0, "RULE"
+        return "CL", 0.9, "RULE"
 
     # Both full dates: check dd/mm swap (CL)
     if (pa["year"] == pb["year"] and pa["month"] == pb["day"] and pa["day"] == pb["month"]
@@ -194,19 +203,22 @@ def _name_state(left: dict, right: dict) -> tuple[str, float, list[str]]:
     return state, sim, tags
 
 
-def _contact_state(field: str, left: dict, right: dict, frequencies: dict) -> tuple[str, float, list[str]]:
-    """Phone or email comparison state."""
+def _contact_items(record: dict, field: str) -> list[dict]:
     collection_key = "phones" if field == "phone" else "emails"
-    list_a = left["normalized_fields"].get(collection_key, [])
-    list_b = right["normalized_fields"].get(collection_key, [])
+    nf = record["normalized_fields"]
+    items = nf.get(collection_key, [])
+    if not items and nf.get(field):
+        items = [{"value": nf[field], "quality": nf.get("_field_quality", {}).get(field, "VALID")}]
+    return items
 
-    if not list_a and left["normalized_fields"].get(field):
-        list_a = [{"value": left["normalized_fields"][field], "quality": left["normalized_fields"].get("_field_quality", {}).get(field, "VALID")}]
-    if not list_b and right["normalized_fields"].get(field):
-        list_b = [{"value": right["normalized_fields"][field], "quality": right["normalized_fields"].get("_field_quality", {}).get(field, "VALID")}]
+
+def _contact_comparison(field: str, left: dict, right: dict, frequencies: dict) -> tuple[str, float, list[str], dict]:
+    """Compare all contacts; select one anchor per field, independently of order."""
+    list_a, list_b = _contact_items(left, field), _contact_items(right, field)
+    metadata = {"matched_values": [], "matched_frequency": None}
 
     if not list_a or not list_b:
-        return "MI", 0.0, []
+        return "MI", 0.0, [], metadata
 
     quality_a = left["normalized_fields"].get("_field_quality", {}).get(field)
     quality_b = right["normalized_fields"].get("_field_quality", {}).get(field)
@@ -217,22 +229,18 @@ def _contact_state(field: str, left: dict, right: dict, frequencies: dict) -> tu
         or nf.get(f"{field}_shared") is True or nf.get(f"{field}_shared_risk") is True
         for nf in (left["normalized_fields"], right["normalized_fields"])
     ):
-        return "SH", 0.0, ["CONTACT_SHARED_RISK"]
+        return "SH", 0.0, ["CONTACT_SHARED_RISK"], metadata
 
     if "INVALID" in {quality_a, quality_b}:
-        return "IV", 0.0, []
+        return "IV", 0.0, [], metadata
     if {quality_a, quality_b} & {"SHARED", "PLACEHOLDER"}:
-        return "SH", 0.0, []
+        return "SH", 0.0, [], metadata
 
     flags = set(left.get("quality_flags", [])) | set(right.get("quality_flags", []))
     if field == "email" and "INVALID_EMAIL_FORMAT" in flags:
-        return "IV", 0.0, []
+        return "IV", 0.0, [], metadata
     if field == "phone" and "UNUSUAL_PHONE_LENGTH" in flags:
-        return "IV", 0.0, []
-
-    best_state = "DF"
-    best_sim = 0.0
-    best_tags = []
+        return "IV", 0.0, [], metadata
 
     if enabled() and any(
         a["value"] == b["value"] and (
@@ -242,50 +250,34 @@ def _contact_state(field: str, left: dict, right: dict, frequencies: dict) -> tu
             or bool(a.get("origin_id") and a.get("origin_id") == b.get("origin_id")))
         for a in list_a for b in list_b
     ):
-        return "SH", 0.0, ["CONTACT_SHARED_RISK"]
+        return "SH", 0.0, ["CONTACT_SHARED_RISK"], metadata
 
-    for item_a in list_a:
-        for item_b in list_b:
-            a, qa = item_a["value"], item_a.get("quality", "VALID")
-            b, qb = item_b["value"], item_b.get("quality", "VALID")
+    valid_a = {item["value"] for item in list_a if item.get("value") and item.get("quality", "VALID") == "VALID"}
+    valid_b = {item["value"] for item in list_b if item.get("value") and item.get("quality", "VALID") == "VALID"}
+    common = valid_a & valid_b
+    usable = sorted(value for value in common if frequencies[field].get(value, 0) <= SHARED_CONTACT_MIN_FREQ)
+    if usable:
+        # Multiple matches support one field; do not count them as independent
+        # anchors. The strongest usable value wins, with a symmetric frequency.
+        metadata = {"matched_values": usable,
+                    "matched_frequency": min(max(1, frequencies[field].get(value, 1)) for value in usable)}
+        raw_a = (left.get("raw_fields", {}).get(field) or "").strip()
+        raw_b = (right.get("raw_fields", {}).get(field) or "").strip()
+        if normalize("NFC", raw_a) == normalize("NFC", raw_b):
+            return "EX", 1.0, [], metadata
+        tag = {"phone": "PHONE_FORMAT_EQUIVALENT", "email": "EMAIL_CASE_EQUIVALENT"}[field]
+        return "NX", 1.0, [tag], metadata
+    if common:
+        return "SH", 1.0, ["CONTACT_HIGH_FREQUENCY"], {"matched_values": sorted(common), "matched_frequency": None}
+    if any(item.get("quality") in {"SHARED", "PLACEHOLDER"} for item in (*list_a, *list_b)):
+        return "SH", 0.0, [], metadata
+    # Different contacts can change or coexist; they do not prove exclusion.
+    return "DF", 0.0, [], metadata
 
-            if "INVALID" in {qa, qb}:
-                state, sim, tags = "IV", 0.0, []
-            elif {qa, qb} & {"SHARED", "PLACEHOLDER"}:
-                state, sim, tags = "SH", 0.0, []
-            elif a == b:
-                if frequencies[field].get(a, 0) > SHARED_CONTACT_MIN_FREQ:
-                    state, sim, tags = "SH", 1.0, []
-                else:
-                    raw_a = (left.get("raw_fields", {}).get(field) or "").strip()
-                    raw_b = (right.get("raw_fields", {}).get(field) or "").strip()
-                    if normalize("NFC", raw_a) == normalize("NFC", raw_b):
-                        state, sim, tags = "EX", 1.0, []
-                    else:
-                        tag = {"phone": "PHONE_FORMAT_EQUIVALENT", "email": "EMAIL_CASE_EQUIVALENT"}[field]
-                        state, sim, tags = "NX", 1.0, [tag]
-            else:
-                # §8.1: CF requires cf_eligible metadata (valid_to, current,
-                # single_valued_reliable source) which is not yet in the data
-                # model. Default to DF until schema supports cf_eligible.
-                state, sim, tags = "DF", 0.0, []
 
-            if state in ("EX", "NX"):
-                return state, sim, tags
-            if state == "CF" and best_state in ("DF", "IV"):
-                best_state = "CF"
-                best_sim = sim
-                best_tags = tags
-            elif state == "SH" and best_state in ("DF", "IV"):
-                best_state = "SH"
-                best_sim = sim
-            elif state == "DF" and best_state in ("DF", "IV") and sim > best_sim:
-                best_state = "DF"
-                best_sim = sim
-            elif state == "IV" and best_state == "IV":
-                pass
-
-    return best_state, best_sim, best_tags
+def _contact_state(field: str, left: dict, right: dict, frequencies: dict) -> tuple[str, float, list[str]]:
+    """Compatibility view for callers that only need the comparison state."""
+    return _contact_comparison(field, left, right, frequencies)[:3]
 
 
 def _address_state(left: dict, right: dict) -> tuple[str, float, list[str]]:
@@ -417,10 +409,18 @@ def _assign_ac_subgroup(
     return "C", subgroup
 
 
+def update_value_frequencies(frequencies: dict[str, Counter], record: dict) -> None:
+    """Count each valid contact once in a record, including secondary contacts."""
+    for field in frequencies:
+        frequencies[field].update({item["value"] for item in _contact_items(record, field)
+            if item.get("value") and item.get("quality", "VALID") == "VALID"})
+
+
 def value_frequencies(records: list[dict]) -> dict[str, Counter]:
-    return {field: Counter(record["normalized_fields"].get(field, "") for record in records
-                           if record["normalized_fields"].get(field, ""))
-            for field in ("phone", "email")}
+    frequencies = {field: Counter() for field in ("phone", "email")}
+    for record in records:
+        update_value_frequencies(frequencies, record)
+    return frequencies
 
 
 def score_pair(left: dict, right: dict, blocking_reasons: set[str],
@@ -433,12 +433,17 @@ def score_pair(left: dict, right: dict, blocking_reasons: set[str],
 
 def compare_and_score_rule(left: dict, right: dict, blocking_reasons: set[str],
                            frequencies: dict | None = None,
-                           negative_pairs: frozenset | None = None) -> dict:
+                           negative_pairs: frozenset | None = None, *,
+                           defer_hard_constraints: bool = False) -> dict:
     """Compute evidence and baseline weight only; never assign a decision."""
     frequencies = frequencies or value_frequencies([left, right])
 
     # ── Hard constraints (§11) — always before scoring ────────────────────────
-    violation = _hard_check(left, right, negative_pairs)
+    if defer_hard_constraints:
+        from masterone.mdm.pipeline.decision_semantics import enabled
+        if not enabled():
+            raise ValueError("Deferred constraints require the person-v2 evaluator")
+    violation = None if defer_hard_constraints else _hard_check(left, right, negative_pairs)
     if violation:
         return {"score": 0.0, "match_weight": 0.0, "field_evidence": [], "comparisons": {},
                 "hard_violation": {"reason": violation.reason, "constraint": violation.constraint}}
@@ -448,8 +453,10 @@ def compare_and_score_rule(left: dict, right: dict, blocking_reasons: set[str],
         left["normalized_fields"], right["normalized_fields"])
     # _HARD_CONFLICT sentinel means hard_constraints already caught this; skip silently
     if gov_state == "_HARD_CONFLICT":
+        from masterone.mdm.pipeline.decision_semantics import enabled
+        constraint = "VERIFIED_GOV_ID_CONFLICT" if enabled() else "SAME_TYPE_GOV_ID_CONFLICT"
         return {"score": 0.0, "match_weight": 0.0, "field_evidence": [], "comparisons": {},
-                "hard_violation": {"reason": "HARD_CONFLICT", "constraint": "SAME_TYPE_GOV_ID_CONFLICT"}}
+                "hard_violation": {"reason": "HARD_CONFLICT", "constraint": constraint}}
 
     # ── Per-field comparison ──────────────────────────────────────────────────
     evidence: list[dict] = []
@@ -463,18 +470,18 @@ def compare_and_score_rule(left: dict, right: dict, blocking_reasons: set[str],
                      "right": right["normalized_fields"].get("name", "")})
 
     # phone
-    ps, p_sim, p_tags = _contact_state("phone", left, right, frequencies)
+    ps, p_sim, p_tags, p_match = _contact_comparison("phone", left, right, frequencies)
     evidence.append({"field": "phone", "state": ps, "provenance": "RULE",
                      "similarity": round(p_sim, 4), "normalization_tags": p_tags,
-                     "is_hard_conflict": False,
+                     "is_hard_conflict": False, **p_match,
                      "left": left["normalized_fields"].get("phone", ""),
                      "right": right["normalized_fields"].get("phone", "")})
 
     # email
-    es, e_sim, e_tags = _contact_state("email", left, right, frequencies)
+    es, e_sim, e_tags, e_match = _contact_comparison("email", left, right, frequencies)
     evidence.append({"field": "email", "state": es, "provenance": "RULE",
                      "similarity": round(e_sim, 4), "normalization_tags": e_tags,
-                     "is_hard_conflict": False,
+                     "is_hard_conflict": False, **e_match,
                      "left": left["normalized_fields"].get("email", ""),
                      "right": right["normalized_fields"].get("email", "")})
 
@@ -529,8 +536,8 @@ def compare_and_score_rule(left: dict, right: dict, blocking_reasons: set[str],
     # Frequency-adjusted weight
     weight = 0.0
     for field in contact_matches:
-        value = left["normalized_fields"].get(field, "")
-        weight += max(1.0, 5.0 - log2(max(1, frequencies[field].get(value, 1))))
+        match = p_match if field == "phone" else e_match
+        weight += max(1.0, 5.0 - log2(match["matched_frequency"]))
     weight += {"EX": 2.0, "NX": 1.9, "NA": 1.8, "HS": 1.4,
                "MS": 0.6, "WS": 0.2, "CF": -2.0}.get(states["name"], 0.0)
     weight += {"EX": 0.8, "NX": 0.7, "HS": 0.5, "MS": 0.2}.get(states["address"], 0.0)
@@ -587,7 +594,7 @@ def _decide_legacy_rule_result(result: dict, left: dict, right: dict, blocking_r
             "normalization_tags": norm_tags,
             "signature": signature,
             "policy_id": None,
-            "policy_version": POLICY_VERSION,
+            "policy_version": _policy_version(),
             "conflict_rule_version": CONFLICT_RULE_VERSION,
             "blocking_reasons": sorted(blocking_reasons),
             "triage_status": "INSUFFICIENT_EVIDENCE",
@@ -601,7 +608,14 @@ def _decide_legacy_rule_result(result: dict, left: dict, right: dict, blocking_r
     cf_fields = [f for f, s in states.items() if s == "CF"]
     has_conflict = bool(cf_fields)
 
-    if has_conflict:
+    from masterone.mdm.pipeline.decision_semantics import enabled
+    group_metadata = {}
+    if enabled():
+        from masterone.mdm.pipeline.pair_grouping import classify_states, unverified_identifier_relation
+        relation = unverified_identifier_relation(left, right)
+        group, subgroup = classify_states(states, relation)
+        group_metadata['unverified_identifier_relation'] = relation
+    elif has_conflict:
         group, subgroup = _assign_d_subgroup(cf_fields, states, contact_matches)
     else:
         group, subgroup = _assign_ac_subgroup(states, contact_matches, gov_id_anchor,
@@ -616,7 +630,7 @@ def _decide_legacy_rule_result(result: dict, left: dict, right: dict, blocking_r
             "primary_group": None, "subgroup": None, "matched_subgroups": [],
             "decision_subgroup": None,
             "normalization_tags": norm_tags, "signature": signature,
-            "policy_id": None, "policy_version": POLICY_VERSION,
+            "policy_id": None, "policy_version": _policy_version(),
             "policy_file_version": POLICY_FILE_VERSION,
             "conflict_rule_version": CONFLICT_RULE_VERSION,
             "blocking_reasons": sorted(blocking_reasons),
@@ -653,12 +667,13 @@ def _decide_legacy_rule_result(result: dict, left: dict, right: dict, blocking_r
         "reason": reason,
         "primary_group": group,
         "subgroup": subgroup,
+        **group_metadata,
         "matched_subgroups": matched_subgroups,
         "decision_subgroup": decision_subgroup,
         "normalization_tags": norm_tags,
         "signature": signature,
         "policy_id": policy_id,
-        "policy_version": POLICY_VERSION,
+        "policy_version": _policy_version(),
         "policy_file_version": POLICY_FILE_VERSION,
         "conflict_rule_version": CONFLICT_RULE_VERSION,
         "blocking_reasons": sorted(blocking_reasons),
@@ -683,7 +698,7 @@ def _non_match(decision_type: str, reason: str, blocking_reasons: set[str]) -> d
         "normalization_tags": [],
         "signature": "",
         "policy_id": None,
-        "policy_version": POLICY_VERSION,
+        "policy_version": _policy_version(),
         "policy_file_version": POLICY_FILE_VERSION,
         "conflict_rule_version": CONFLICT_RULE_VERSION,
         "blocking_reasons": sorted(blocking_reasons),

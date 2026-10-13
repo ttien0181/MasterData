@@ -28,6 +28,7 @@ def test_workflow_auto_and_manual_equivalence(v2, monkeypatch, tmp_path):
     rows = [record('a'), record('b')]
     rows[0]['source_system'], rows[1]['source_system'] = 'BILL', 'CRM'
     pair = edge(*rows)
+    pair['triage_status'] = 'HIGH_CONFIDENCE_PROPOSAL'
     with engine_context(dict(decision_semantics_v2_enabled=v2, cluster_safety_v2_enabled=v2, generation_staging_enabled=False)):
         baseline = build_proposals(rows, [deepcopy(pair)], 'r', 'v')['proposals']
         for ordered in permutations(rows):

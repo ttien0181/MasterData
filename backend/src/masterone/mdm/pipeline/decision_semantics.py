@@ -127,17 +127,18 @@ def evaluate_prepared(result, left, right, blocking_reasons=(), policies=None,
 def adapt_evaluation(payload, hard=HardConstraints(), review=ReviewDecision()):
     """BLOCKED/NOT_MERGEABLE describe permission, never a negative identity proof."""
     decision = payload["decision"]
+    manual_review = payload.get("triage_status") == "REVIEW"
     blocked = hard.forbids_merge or decision in {"NOT_MERGEABLE", "BLOCKED", "NON_MATCH"}
     conclusion = "NON_MATCH" if decision == "NON_MATCH" or review.value == "NON_MATCH" else (
         "MATCH" if decision == "MERGEABLE" and not blocked else "UNDETERMINED")
-    routing = "BLOCKED" if blocked else ("AUTO" if decision == "MERGEABLE" else
+    routing = "BLOCKED" if blocked else ("AUTO" if decision == "MERGEABLE" and not manual_review else
                "DEFERRED" if decision in {"DEFERRED", "INSUFFICIENT_EVIDENCE"} else "HUMAN_REVIEW")
     evidence = PairEvidence(tuple(payload.get("field_evidence", ())), payload.get("score", 0),
                             payload.get("comparisons", {}))
     evaluation = PairEvaluation(conclusion, routing, evidence, hard)
     allowed = not blocked and not review.vetoes_merge
     eligibility = MergeEligibility(allowed, allowed and decision == "MERGEABLE"
-                                   and review.value == "UNDECIDED", hard.violations)
+                                   and not manual_review and review.value == "UNDECIDED", hard.violations)
     return payload, evaluation, eligibility
 
 

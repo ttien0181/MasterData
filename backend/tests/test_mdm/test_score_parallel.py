@@ -31,9 +31,13 @@ def test_parallel_score_matches_serial(monkeypatch, workers):
     records = [_record(i) for i in range(400)]
 
     monkeypatch.setenv("MDM_SCORE_PARALLEL_MIN", "10000000")
-    serial = StageRunner(run_id="par_test", attempt_id="a").run_all(records)
+    serial_runner = StageRunner(run_id="par_test", attempt_id="a")
+    serial = serial_runner.run_all(records)
+    # The next run rebuilds the same index; release its Windows file handle.
+    serial_runner.close_snapshot()
     monkeypatch.setenv("MDM_SCORE_PARALLEL_MIN", "0")
-    parallel = StageRunner(run_id="par_test", attempt_id="a").run_all(records)
+    parallel_runner = StageRunner(run_id="par_test", attempt_id="a")
+    parallel = parallel_runner.run_all(records)
 
     def normalized(output):
         return sorted(
@@ -43,3 +47,7 @@ def test_parallel_score_matches_serial(monkeypatch, workers):
 
     assert normalized(parallel) == normalized(serial)
     assert len(serial["pairs"]) > 0
+    parallel_runner.close_snapshot()
+    for runner in (serial_runner, parallel_runner):
+        runner.close_decisions()
+        runner.con.close()

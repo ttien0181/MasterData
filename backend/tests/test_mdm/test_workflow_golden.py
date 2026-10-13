@@ -64,7 +64,10 @@ def test_workflow_golden_choices_confirm_export_reopen(client, workflow_run):
     reopened = client.post(url + '/reopen-decisions', json=request(state['workflow_revision'], reason='Review again'))
     assert reopened.status_code == 200, reopened.text
     assert read(client, workflow_run)['workflow_state'] == 'DECIDE_REVIEW'
-    assert client.get(url + '/clusters').status_code == 409
+    previous = client.get(url + '/clusters')
+    assert previous.status_code == 200
+    assert previous.json()['generation']['stale'] is True
+    assert previous.json()['generation']['read_only'] is True
     assert client.post(base + '/previews', json={'choices': {}, 'acknowledge_unreviewed': False}).status_code == 409
     assert client.get(base + f'/exports/{export_id}/download').content == history
     assert finalize(client, workflow_run).status_code == 202

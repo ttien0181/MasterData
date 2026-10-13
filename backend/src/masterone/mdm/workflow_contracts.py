@@ -29,6 +29,10 @@ class DecisionRequest(Mutation):
     decision: Literal['merge', 'no_merge', 'deny', 'defer']
 
 
+class AmendDecisionRequest(DecisionRequest):
+    reason: str = Field(min_length=1, max_length=500)
+
+
 class AssessmentRequest(Mutation):
     model_scope: Literal['synthetic-benchmark'] | None = None
 
@@ -57,10 +61,12 @@ class BulkRequest(Mutation):
     decision: Literal['merge', 'no_merge', 'deny', 'defer']
     scope: BulkScope
     auto_only: bool = False
+    preview_token: str | None = Field(default=None, min_length=64, max_length=64)
 
 
 class FinalizeRequest(Mutation):
     expected_decision_revision: int = Field(ge=0)
+    allow_partial: bool = False
 
 
 class Selection(BaseModel):
@@ -131,3 +137,5 @@ class WorkflowRead(BaseModel):
     blockers: list[dict]
     active_operation: OperationRead | None
     retryable_operation: OperationRead | None = None
+    cluster_result: dict | None = None
+    latest_cluster_operation: OperationRead | None = None

@@ -2,7 +2,7 @@
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import aliased
 
 from masterone.config import get_settings
@@ -11,6 +11,7 @@ from masterone.mdm.models import ResolutionAuditEvent, ResolutionRun, Resolution
 from masterone.mdm.ownership import owned_run
 from masterone.mdm.workflow_contracts import transition
 from masterone.mdm.workflow_models import WorkflowConflict, WorkflowOperation, WorkflowPair
+from masterone.mdm.workflow_review_rules import pending_predicate
 
 ACTIVE = ('QUEUED', 'RUNNING')
 _UNSET = object()
@@ -20,10 +21,16 @@ def conflict(code, **details):
     raise HTTPException(409, {'code': code, **details})
 
 
-def operation_read(op):
+def operation_read(op, *, summary=False):
+    result = op.result
+    if summary and op.operation_type == 'CLUSTER':
+        fields = ('publication_status', 'clusters', 'multi_record_groups', 'singletons',
+                  'covered_records', 'unresolved_records', 'total_records')
+        result = {field: result[field] for field in fields if field in result}
+        result['blocker_count'] = op.result.get('blocker_count', len(op.result.get('blockers', [])))
     return dict(operation_id=op.id, run_id=op.run_id, operation_type=op.operation_type,
                 status=op.status, stage=op.stage, progress=op.progress,
-                error_code=op.error_code, result=op.result)
+                error_code=op.error_code, result=result)
 
 
 def enabled_run(db, run_id, actor):
@@ -69,6 +76,7 @@ def replay(db, run_id, kind, request_id, payload):
 def check_revision(run, payload):
     if payload.get('expected_assessment_id') is not None:
         from sqlalchemy.orm import object_session
+
         from masterone.mdm.workflow_assessment_reads import active_assessment
         current = active_assessment(object_session(run), run.id)
         if current is None or current.id != payload['expected_assessment_id']:
@@ -116,6 +124,9 @@ def begin_operation(db, run_id, operation_type, request_id, payload, expected_wo
     check_revision(run, {**payload, 'expected_workflow_revision': expected_workflow_revision})
     if active_operation(db, run_id):
         conflict('ACTIVE_OPERATION')
+    if operation_type == 'BULK_DECISIONS':
+        from masterone.mdm.workflow_pair_reads import validate_bulk_preview
+        validate_bulk_preview(db, run, payload)
     try:
         state = transition(run.workflow_state, operation_type)
     except ValueError:
@@ -136,16 +147,13 @@ def initialize_workflow(db, run):
         enqueue(db, run, op)
 
 
-def pending_predicate():
-    from masterone.mdm.workflow_assessment_reads import effective_column
-    baseline = effective_column()['decision'].as_string()
-    return or_(WorkflowPair.decision == 'DEFERRED', and_(WorkflowPair.decision == 'UNDECIDED',
-        or_(baseline.is_(None), baseline.notin_(('MERGEABLE', 'NON_MATCH', 'NOT_MERGEABLE', 'BLOCKED')))))
-
-
 def completion_blockers(db, run_id, *, run=None, operation=_UNSET, pending=None, conflicts=None):
     run = run if run is not None else db.get(ResolutionRun, run_id)
     blockers = []
+    if run.archived_at is not None:
+        blockers.append({'code': 'RUN_ARCHIVED'})
+    if not get_settings().session_workflow_enabled:
+        blockers.append({'code': 'SESSION_WORKFLOW_DISABLED'})
     if run.workflow_state != 'DECIDE_REVIEW':
         blockers.append({'code': 'DECIDE_NOT_READY'})
     if (active_operation(db, run_id) if operation is _UNSET else operation):
@@ -172,8 +180,14 @@ def get_workflow(db, run_id, actor):
     latest_id = select(latest_row.id).where(latest_row.run_id == run_id,
         latest_row.operation_type.in_(('PREPARE', 'DECIDE', 'BULK_DECISIONS', 'CLUSTER', 'GOLDEN_RESOLVE', 'ASSESS_PAIRS', 'PAIR_ADVICE'))
         ).order_by(latest_row.created_at.desc(), latest_row.id.desc()).limit(1).scalar_subquery()
+    cluster_id = select(latest_row.id).where(latest_row.run_id == run_id, latest_row.operation_type == 'CLUSTER'
+        ).order_by(latest_row.created_at.desc(), latest_row.id.desc()).limit(1).scalar_subquery()
+    advice_id = select(latest_row.id).where(latest_row.run_id == run_id, latest_row.operation_type == 'PAIR_ADVICE',
+        latest_row.status == 'COMPLETED').order_by(latest_row.created_at.desc(), latest_row.id.desc()).limit(1).scalar_subquery()
     operations = db.query(WorkflowOperation).filter(WorkflowOperation.run_id == run_id,
-        or_(WorkflowOperation.status.in_(ACTIVE), WorkflowOperation.id == latest_id)).all()
+        or_(WorkflowOperation.status.in_(ACTIVE), WorkflowOperation.id == latest_id,
+            WorkflowOperation.id == cluster_id, WorkflowOperation.id == advice_id)
+        ).order_by(WorkflowOperation.created_at.desc(), WorkflowOperation.id.desc()).all()
     op = next((o for o in operations if o.status in ACTIVE), None)
     latest = next((o for o in operations if o is not op), None)
     retryable = retryable_operation(db, run, latest) if not op else None
@@ -191,15 +205,23 @@ def get_workflow(db, run_id, actor):
         else:
             blockers = completion_blockers(db, run_id, run=run, operation=op, pending=pending, conflicts=conflicts)
     actions = []
+    from masterone.mdm.workflow_cluster_reads import generation_metadata
+    cluster_result = generation_metadata(db, run) if run.cluster_revision else None
+    if cluster_result and cluster_result['stale'] and run.workflow_state == 'GOLDEN_REVIEW':
+        blockers.append({'code': 'CLUSTERS_NOT_READY'})
     if run.workflow_version == 2 and get_settings().session_workflow_enabled and not op and not run.archived_at:
         if run.workflow_state == 'DATA_READY':
             actions = ['start-decide'] if run.record_count else []
         elif run.workflow_state == 'DECIDE_REVIEW':
-            actions = ['decide-pair', 'bulk-decisions', 'reassess-pairs', 'assess-with-ai'] + ([] if blockers else ['finalize-decisions'])
-            if run.cluster_revision:
+            actions = ['decide-pair', 'amend-pair', 'bulk-decisions', 'reassess-pairs', 'assess-with-ai'] + ([] if blockers else ['finalize-decisions'])
+            if not any(b['code'] not in ('PENDING_DECISIONS', 'CLUSTER_CONFLICT') for b in blockers):
+                actions += ['finalize-partial']
+            if cluster_result and not cluster_result['read_only']:
                 actions += ['save-golden', 'auto-select', 'confirm-golden', 'resolve-golden']
         elif run.workflow_state == 'GOLDEN_REVIEW':
-            actions = ['save-golden', 'auto-select', 'confirm-golden', 'resolve-golden', 'reopen-decisions'] + ([] if blockers else ['finalize-golden'])
+            actions = ['reopen-decisions']
+            if cluster_result and not cluster_result['stale']:
+                actions += ['save-golden', 'auto-select', 'confirm-golden', 'resolve-golden'] + ([] if blockers else ['finalize-golden'])
         elif run.workflow_state == 'FINALIZED':
             actions = ['export', 'reopen-decisions']
         if retryable:
@@ -210,16 +232,18 @@ def get_workflow(db, run_id, actor):
         actions = ['queue-decisions']
     from masterone.mdm.workflow_assessment_reads import active_assessment
     assessment = active_assessment(db, run_id)
-    latest_advice = db.query(WorkflowOperation.id).filter_by(run_id=run_id, operation_type='PAIR_ADVICE', status='COMPLETED').order_by(WorkflowOperation.created_at.desc()).first()
+    latest_advice = next((o for o in operations if o.operation_type == 'PAIR_ADVICE' and o.status == 'COMPLETED'), None)
+    latest_cluster = next((o for o in operations if o.operation_type == 'CLUSTER'), None)
     return dict(run_id=run_id, workflow_version=run.workflow_version, assessment_id=assessment.id if assessment else None,
-        advice_revision=latest_advice[0] if latest_advice else None,
+        advice_revision=latest_advice.id if latest_advice else None,
         workflow_state=run.workflow_state if run.workflow_version == 2 else 'LEGACY_READ_ONLY',
         **{k: getattr(run, k) for k in ('workflow_revision', 'decision_revision', 'cluster_revision', 'golden_revision')},
         counts={'records': {'value': run.record_count, 'unit': 'records'},
                 'candidates': {'value': run.candidate_count, 'unit': 'pairs'},
                 'pairs': {'value': pair_count, 'unit': 'pairs'},
                 'insufficient': {'value': run.insufficient_count, 'unit': 'pairs'}},
-        allowed_actions=actions, blockers=blockers, active_operation=operation_read(op) if op else None,
+        cluster_result=cluster_result, latest_cluster_operation=operation_read(latest_cluster, summary=True) if latest_cluster else None,
+        allowed_actions=actions, blockers=blockers, active_operation=operation_read(op, summary=True) if op else None,
         retryable_operation=operation_read(retryable) if retryable else None)
 
 

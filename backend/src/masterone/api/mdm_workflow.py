@@ -6,9 +6,9 @@ from masterone.db.session import get_session
 from masterone.mdm.engine_adapter import FrontendJSONRoute, api_engine_context
 from masterone.mdm.ownership import owned_run
 from masterone.mdm.workflow_contracts import (
-    AutoRequest,
+    AmendDecisionRequest,
     AssessmentRequest,
-    PairAdviceRequest,
+    AutoRequest,
     BulkRequest,
     ClusterScopeRequest,
     DecisionRequest,
@@ -18,6 +18,7 @@ from masterone.mdm.workflow_contracts import (
     GoldenRevisionRequest,
     Mutation,
     OperationRead,
+    PairAdviceRequest,
     ReopenRequest,
     RepairRequest,
     ResolveRequest,
@@ -41,6 +42,7 @@ def read_workflow(run_id: str, db: Session = Depends(get_session), auth: Current
                     'reopen-decisions': 'approve_pair', 'export': 'export_data', 'retry-operation': 'start_run',
                     'resolve-golden': 'edit_golden', 'reassess-pairs': 'approve_pair', 'assess-with-ai': 'approve_pair',
                     'queue-decisions': 'approve_pair'}
+    capabilities.update({'amend-pair': 'approve_pair', 'finalize-partial': 'approve_pair'})
     actions = []
     for action in result['allowed_actions']:
         try:
@@ -49,7 +51,20 @@ def read_workflow(run_id: str, db: Session = Depends(get_session), auth: Current
         except HTTPException:
             pass
     result['allowed_actions'] = actions
+    if result['workflow_state'] == 'DECIDE_REVIEW':
+        try:
+            check_capability(auth, 'approve_pair')
+        except HTTPException:
+            result['blockers'].append({'code': 'APPROVE_PERMISSION_REQUIRED'})
     return result
+
+
+@router.get('/requests/{request_id}', response_model=OperationRead | None)
+def read_request_receipt(run_id: str, request_id: str, db: Session = Depends(get_session),
+                         auth: CurrentSession = Depends(require_capability('read'))):
+    owned_run(db, run_id, auth.user.id)
+    op = db.query(WorkflowOperation).filter_by(run_id=run_id, request_id=request_id).one_or_none()
+    return operation_read(op) if op else None
 
 
 @router.get('/operations/{operation_id}', response_model=OperationRead)
@@ -132,6 +147,31 @@ def preview_bulk_decisions(run_id: str, body: BulkRequest, db: Session = Depends
     return bulk_preview(db, run, body)
 
 
+@router.get('/pairs/{pair_id}')
+def read_pair(run_id: str, pair_id: str, db: Session = Depends(get_session),
+              auth: CurrentSession = Depends(require_capability('read'))):
+    run = owned_run(db, run_id, auth.user.id)
+    from masterone.mdm.workflow_pair_reads import pair_detail
+    return pair_detail(db, run, pair_id)
+
+
+@router.get('/conflicts')
+def read_conflicts(run_id: str, limit: int = Query(10, ge=1, le=100), cursor: str | None = None,
+                   db: Session = Depends(get_session), auth: CurrentSession = Depends(require_capability('read'))):
+    run = owned_run(db, run_id, auth.user.id)
+    from masterone.mdm.workflow_conflict_reads import conflict_page
+    return conflict_page(db, run, limit, cursor)
+
+
+@router.post('/pairs/{pair_id}/amend')
+def amend_pair(run_id: str, pair_id: str, body: AmendDecisionRequest, db: Session = Depends(get_session),
+               auth: CurrentSession = Depends(require_mutation_capability('approve_pair'))):
+    from masterone.auth.security import check_capability
+    check_capability(auth, 'reject_pair')
+    from masterone.mdm.workflow_amendments import amend_decision
+    return amend_decision(db, run_id, pair_id, body, auth.user.id)
+
+
 @router.post('/pairs/{pair_id}/decision')
 def review_pair(run_id: str, pair_id: str, body: DecisionRequest, db: Session = Depends(get_session),
                 auth: CurrentSession = Depends(require_mutation_capability('approve_pair'))):
@@ -149,7 +189,8 @@ def bulk_decisions(run_id: str, body: BulkRequest, db: Session = Depends(get_ses
     owned_run(db, run_id, auth.user.id)
     from masterone.mdm.workflow_bulk import selected_pairs
     selected_pairs(db, run_id, body.scope.model_dump())
-    return begin_operation(db, run_id, 'BULK_DECISIONS', body.request_id, body.model_dump(), body.expected_workflow_revision, auth.user.id)
+    payload = body.model_dump(exclude={'preview_token'} if body.preview_token is None else set())
+    return begin_operation(db, run_id, 'BULK_DECISIONS', body.request_id, payload, body.expected_workflow_revision, auth.user.id)
 
 
 @router.post('/finalize-decisions', response_model=OperationRead, status_code=202)
@@ -167,6 +208,14 @@ def read_clusters(run_id: str, limit: int = Query(25, ge=1, le=100), cursor: str
     return list_clusters(db, run, limit, cursor)
 
 
+@router.get('/unresolved-records')
+def read_unresolved_records(run_id: str, limit: int = Query(25, ge=1, le=100), cursor: str | None = None,
+                             db: Session = Depends(get_session), auth: CurrentSession = Depends(require_capability('read'))):
+    run = owned_run(db, run_id, auth.user.id)
+    from masterone.mdm.workflow_cluster_reads import unresolved_records
+    return unresolved_records(db, run, limit, cursor)
+
+
 @router.get('/clusters/{cluster_id}')
 def read_cluster(run_id: str, cluster_id: str, limit: int = Query(25, ge=1, le=100), cursor: str | None = None,
                  evidence_limit: int = Query(25, ge=1, le=100), evidence_cursor: int = Query(0, ge=0),
@@ -182,7 +231,7 @@ def read_cluster_golden(run_id: str, cluster_id: str, db: Session = Depends(get_
     run = owned_run(db, run_id, auth.user.id)
     from masterone.mdm.golden_service import golden_read
     from masterone.mdm.workflow_cluster_reads import cluster_row
-    return golden_read(db, run, cluster_row(db, run, cluster_id))
+    return golden_read(db, run, cluster_row(db, run, cluster_id, allow_stale=True))
 
 
 @router.get('/golden')
@@ -193,9 +242,11 @@ def read_golden(run_id: str, limit: int = Query(25, ge=1, le=100), cursor: str |
     from masterone.mdm.workflow_cluster_reads import current_generation
     from masterone.mdm.workflow_models import WorkflowCluster
     from masterone.mdm.workflow_review import paginate
-    generation = current_generation(db, run)
-    return paginate(db.query(WorkflowCluster).filter_by(generation_id=generation.id), WorkflowCluster.id,
-                    limit, cursor, lambda c: golden_read(db, run, c))
+    generation = current_generation(db, run, allow_stale=True)
+    from masterone.mdm.workflow_cluster_reads import generation_metadata
+    metadata = generation_metadata(db, run, generation)
+    return {**paginate(db.query(WorkflowCluster).filter_by(generation_id=generation.id), WorkflowCluster.id,
+                    limit, cursor, lambda c: golden_read(db, run, c, metadata=metadata)), 'generation': metadata}
 
 
 @router.put('/clusters/{cluster_id}/golden')

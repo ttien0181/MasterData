@@ -10,6 +10,16 @@ from hashlib import sha256
 
 
 def _derive_group(pair: dict) -> tuple[str, str]:
+    from masterone.mdm.pipeline.pair_grouping import classify_result
+    # Explicit old versions retain their fallback interpretation. Stored groups
+    # are always preferred by classify_pair, regardless of policy version.
+    if (pair.get('assessment_version') == 'person-review-assessment-v1' or
+            pair.get('policy_version') == 'person-linh-v2-selective' and not pair.get('assessment_version')):
+        return _derive_legacy_group(pair)
+    return classify_result(pair)
+
+
+def _derive_legacy_group(pair: dict) -> tuple[str, str]:
     """Re-derive primary_group + subgroup from field_evidence / comparisons (§15.1)."""
     comparisons = pair.get("comparisons", {})
     if not comparisons:

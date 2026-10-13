@@ -49,7 +49,7 @@ def selected_golden(db, cluster):
     return golden
 
 
-def golden_read(db, run, cluster):
+def golden_read(db, run, cluster, *, metadata=None):
     golden = selected_golden(db, cluster)
     rows = db.query(ResolutionRecord).filter(ResolutionRecord.id.in_(cluster.payload['member_record_ids'])).all()
     alternatives = {}
@@ -58,7 +58,10 @@ def golden_read(db, run, cluster):
         alternatives[field] = [{'source_record_id': r.id, 'source_system': r.source_system,
             'value': source_value(r, field), 'auto_rule_available': field in RULE_FIELDS}
             for r in rows if source_value(r, field) is not None]
+    from masterone.mdm.workflow_cluster_reads import generation_metadata
+    metadata = metadata if metadata is not None else generation_metadata(db, run)
     return {'cluster_id': cluster.id, 'cluster_revision': run.cluster_revision,
+            'read_only': metadata['read_only'], 'generation': metadata,
             'golden_revision': run.golden_revision, 'revision': cluster.revision,
             'status': 'FINALIZED' if run.workflow_state == 'FINALIZED' else 'CONFIRMED' if cluster.confirmed else 'DRAFT',
             'fields': golden.get('fields', {}), 'alternatives': alternatives,
@@ -122,7 +125,9 @@ def golden_command(db, run_id, request, actor, kind, cluster_id=None):
     run.golden_revision += 1
     op = new_operation(db, run, kind, request.request_id, payload, actor)
     op.status, op.stage = 'COMPLETED', 'completed'
-    op.result = {'items': [golden_read(db, run, c) for c in clusters],
+    from masterone.mdm.workflow_cluster_reads import generation_metadata
+    metadata = generation_metadata(db, run)
+    op.result = {'items': [golden_read(db, run, c, metadata=metadata) for c in clusters],
                  'workflow_revision': run.workflow_revision, 'golden_revision': run.golden_revision}
     audit(db, run, actor, 'WORKFLOW_' + kind, {'cluster_ids': ids, 'golden_revision': run.golden_revision})
     db.commit()

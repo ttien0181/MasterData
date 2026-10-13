@@ -502,7 +502,7 @@ class ScoringEngine:
         self.policies = deepcopy(policy_engine.get_policies())
         source_dir = Path(matching.__file__).parent
         sources = {name: file_hash(source_dir / name) for name in (
-            "matching.py", "standardization.py", "hard_constraints.py", "evidence_floor.py", "policy_engine.py", "decision_semantics.py")}
+            "matching.py", "standardization.py", "hard_constraints.py", "evidence_floor.py", "policy_engine.py", "decision_semantics.py", "pair_grouping.py")}
         self.rule_hash = sha256(canonical_json(sources).encode()).hexdigest()
         self.rule_sources = {source_dir / name: digest for name, digest in sources.items()}
         self.identity = {"contract_version": CONTRACT_VERSION, "mode": self.config.mode,
@@ -522,7 +522,7 @@ class ScoringEngine:
         self._snapshot_file_sha = self._snapshot_file_digest()
         self.identity.update(snapshot_hash=snapshot_hash, snapshot_records=count,
                              frequency_hash=sha256(canonical_json(self.frequencies).encode()).hexdigest(),
-                             frequency_scope="full_normalized_snapshot_scalar_phone_email_record_counts")
+                             frequency_scope="full_normalized_snapshot_valid_phone_email_values_once_per_record")
         self.predictor = None
 
     def _snapshot_file_digest(self):
@@ -538,9 +538,7 @@ class ScoringEngine:
             payload = {k: r.get(k, "UNKNOWN" if k == "entity_type" else {} if k.endswith("fields") else "")
                        for k in ("id", "source_system", "entity_type", "raw_fields", "normalized_fields")}
             digest.update((canonical_json(payload) + "\n").encode())
-            for f in frequencies:
-                if value := r["normalized_fields"].get(f, ""):
-                    frequencies[f][value] += 1
+            matching.update_value_frequencies(frequencies, r)
         return frequencies, count, digest.hexdigest()
 
     def _check_candidates(self, candidates):

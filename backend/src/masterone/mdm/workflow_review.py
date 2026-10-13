@@ -3,8 +3,8 @@ from sqlalchemy import tuple_
 
 from masterone.mdm.models import ResolutionNegativeEdge
 from masterone.mdm.pipeline.decision_semantics import ReviewDecision, adapt_evaluation
-from masterone.mdm.workflow_models import WorkflowConflict, WorkflowPair
 from masterone.mdm.workflow_assessment_reads import effective_column, effective_result
+from masterone.mdm.workflow_models import WorkflowConflict, WorkflowPair
 from masterone.mdm.workflow_service import (
     active_operation,
     audit,
@@ -37,7 +37,7 @@ def eligibility(pair):
                    'REVIEW_VETO' if pair.decision == 'REJECTED' else
                    result.get('reason') or 'PAIR_MERGE_BLOCKED']
     return {'manual_allowed': permission.manual_allowed,
-            'auto_allowed': permission.auto_allowed,
+            'auto_allowed': permission.auto_allowed and result.get('triage_status') != 'REVIEW',
             'blocked_reasons': reasons}
 
 
@@ -56,7 +56,9 @@ def scoped_pairs(db, run_id, filters=None):
     if filters.get('subgroup'):
         query = query.filter(effective_column()['subgroup'].as_string() == filters['subgroup'])
     if filters.get('resolution'):
-        query = query.filter(WorkflowPair.decision.in_(('UNDECIDED', 'DEFERRED')) if filters['resolution'] == 'PENDING'
+        from masterone.mdm.workflow_review_rules import pending_predicate
+        query = query.filter(pending_predicate() if filters['resolution'] == 'REQUIRED' else
+                             WorkflowPair.decision.in_(('UNDECIDED', 'DEFERRED')) if filters['resolution'] == 'PENDING'
                              else WorkflowPair.decision == filters['resolution'])
     return query
 
@@ -78,8 +80,11 @@ def apply_decision(db, run, pair, decision, actor, *, links=None, resolve_confli
         links = negative_links(db, run.id, [pair])
     if decision == 'merge' and (not eligibility(pair)['manual_allowed'] or key in links):
         conflict('PAIR_MERGE_BLOCKED')
+    edge_id = None
     if decision == 'deny' and key not in links:
-        db.add(ResolutionNegativeEdge(run_id=run.id, left_record_id=key[0], right_record_id=key[1],
+        from uuid import uuid4
+        edge_id = str(uuid4())
+        db.add(ResolutionNegativeEdge(id=edge_id, run_id=run.id, left_record_id=key[0], right_record_id=key[1],
             created_by=actor, reason='STEWARD_REJECT', active=True))
         links.add(key)
     pair.decision = DECISIONS[decision]
@@ -88,7 +93,8 @@ def apply_decision(db, run, pair, decision, actor, *, links=None, resolve_confli
     if resolve_conflicts and decision in ('no_merge', 'deny'):
         for blocker in db.query(WorkflowConflict).filter_by(run_id=run.id, pair_id=pair.id, resolved=False):
             blocker.resolved = True
-    audit(db, run, actor, 'WORKFLOW_PAIR_' + pair.decision, {'pair_id': pair.id, 'pair_revision': pair.revision})
+    audit(db, run, actor, 'WORKFLOW_PAIR_' + pair.decision,
+          {'pair_id': pair.id, 'pair_revision': pair.revision, 'negative_edge_id': edge_id})
 
 
 def decide_pair(db, run_id, pair_id, request, actor):
@@ -106,6 +112,8 @@ def decide_pair(db, run_id, pair_id, request, actor):
         raise HTTPException(404, 'Pair not found')
     if pair.revision != request.expected_pair_revision:
         conflict('STALE_PAIR_REVISION')
+    if pair.decision == 'NON_MATCH':
+        conflict('AMENDMENT_REQUIRED')
     apply_decision(db, run, pair, request.decision, actor)
     run.workflow_revision += 1
     run.decision_revision += 1

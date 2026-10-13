@@ -2,11 +2,12 @@
 from copy import deepcopy
 
 from masterone.mdm.engine_adapter import engine_context
-from masterone.mdm.pipeline.decision_semantics import evaluate_prepared, person_constraints
+from masterone.mdm.pipeline.decision_semantics import evaluate_prepared
 from masterone.mdm.pipeline.matching import compare_and_score_rule
+from masterone.mdm.pipeline.pair_grouping import classify_result, unverified_identifier_relation
 from masterone.mdm.pipeline.standardization import preserve_verification
 
-VERSION = 'person-review-assessment-v1'
+VERSION = 'person-review-assessment-v2'
 
 
 def assessment_profile(profile=None):
@@ -20,66 +21,29 @@ def assessment_record(record):
     return item
 
 
-def unverified_identifier_relation(left, right):
-    a, b = left['normalized_fields'], right['normalized_fields']
-    if (not a.get('government_id') or not b.get('government_id') or
-            a.get('_field_quality', {}).get('government_id') != 'VALID' or
-            b.get('_field_quality', {}).get('government_id') != 'VALID' or
-            a.get('government_id_type', 'UNKNOWN') == 'UNKNOWN' or
-            a.get('government_id_type') != b.get('government_id_type')):
-        return 'NOT_COMPARABLE'
-    if a.get('_government_id_verified') and b.get('_government_id_verified'):
-        return 'VERIFIED_METADATA'
-    return 'SAME_VALUE' if a['government_id'] == b['government_id'] else 'DIFFERENT_VALUE'
-
-
 def classify(result, identifier_relation):
-    if result['decision'] in {'NOT_MERGEABLE', 'BLOCKED', 'NON_MATCH'}:
-        return 'BLOCKED', result['reason']
-    states = {entry['field']: entry['state'] for entry in result.get('field_evidence', [])}
-    conflicts = [field for field, state in states.items() if state == 'CF']
-    if identifier_relation == 'DIFFERENT_VALUE':
-        conflicts.append('unverified_government_id')
-    if conflicts:
-        kinds = {'name': 'D2_NAME_CONFLICT', 'phone': 'D1_NAME_PHONE_CONFLICT',
-                 'email': 'D3_IDENTITY_CONFLICT', 'government_id': 'D3_IDENTITY_CONFLICT',
-                 'dob': 'D4_DOB_CONFLICT', 'unverified_government_id': 'D_UNVERIFIED_ID_CONFLICT'}
-        return 'D', kinds.get(conflicts[0], 'D_MULTI') if len(conflicts) == 1 else 'D_MULTI'
-    good = states.get('name') in {'EX', 'NX', 'NA', 'HS'}
-    phone, email = (states.get(field) in {'EX', 'NX'} for field in ('phone', 'email'))
-    dob = states.get('dob') in {'EX', 'CL'}
-    gov = states.get('government_id') == 'EX'
-    if phone and dob and states.get('name') in {'EX', 'NX', 'NA', 'HS', 'MS'}:
-        return 'A', 'A3_NAME_PHONE_DOB'
-    if good and gov:
-        return 'A', 'A3_NAME_GOV_ID'
-    if good and phone:
-        return 'A', 'A1_NAME_PHONE'
-    if good and email:
-        return 'A', 'A2_NAME_EMAIL'
-    if email and dob:
-        return 'C', 'C1_EMAIL_DOB'
-    if gov:
-        return 'C', 'C3_GOV_ID_ONLY'
-    if phone or email:
-        return 'C', 'C_MULTI' if phone and email else 'C_NAME_ANCHOR_MISSING'
-    if all(state in {'MI', 'IV', 'NC'} for state in states.values()):
-        return 'C', 'C_INSUFFICIENT_DATA'
-    return 'C', 'C_NO_VALID_IDENTITY_ANCHOR'
+    return classify_result(result, identifier_relation)
 
 
 def assess_pair(left, right, frequencies=None, negative_pairs=frozenset()):
     left, right = assessment_record(left), assessment_record(right)
     with engine_context(assessment_profile()):
-        prepared = compare_and_score_rule(left, right, set(), frequencies, negative_pairs)
-        result, _, _ = evaluate_prepared(prepared, left, right, negative_pairs=negative_pairs)
-        constraints = person_constraints(left, right, negative_pairs)
+        return assess_prepared_pair(left, right, frequencies, negative_pairs)
+
+
+def assess_prepared_pair(left, right, frequencies=None, negative_pairs=frozenset()):
+    """Assess read-only records already prepared under assessment_profile()."""
+    prepared = compare_and_score_rule(left, right, set(), frequencies, negative_pairs,
+                                      defer_hard_constraints=True)
+    result, evaluation, _ = evaluate_prepared(prepared, left, right, negative_pairs=negative_pairs)
+    constraints = evaluation.constraints
     relation = unverified_identifier_relation(left, right)
     group, subgroup = classify(result, relation)
     rule_conclusion = result['decision']
-    # New assessment is human review assistance, including clear patterns.
+    # Preserve the conclusion, while every clear pattern still requires review.
     if result['decision'] == 'MERGEABLE':
-        result = {**result, 'decision': 'REVIEW', 'triage_status': 'REVIEW', 'reason': 'CLEAR_PATTERN_REVIEW'}
+        result = {**result, 'triage_status': 'REVIEW', 'triage_reason': 'CLEAR_PATTERN_REVIEW',
+                  'reason': 'CLEAR_PATTERN_REVIEW'}
     # A soft contradiction can never inherit automatic eligibility from a broad A rule.
     if group == 'D' and result['decision'] not in {'NOT_MERGEABLE', 'BLOCKED', 'NON_MATCH'}:
         result = {**result, 'decision': 'REVIEW', 'triage_status': 'REVIEW',

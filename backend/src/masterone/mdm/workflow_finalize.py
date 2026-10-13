@@ -32,13 +32,16 @@ from masterone.mdm.workflow_service import (
 
 
 def finalize_decisions(db, run_id, request, actor):
-    payload = request.model_dump()
+    # Keep the canonical payload for pre-upgrade full-publication receipts.
+    payload = request.model_dump(exclude={'allow_partial'} if not request.allow_partial else set())
     run = enabled_run(db, run_id, actor)
     prior = replay(db, run_id, 'CLUSTER', request.request_id, payload)
     if prior:
         return operation_read(prior)
     check_revision(run, payload)
     blockers = completion_blockers(db, run_id)
+    if payload.get('allow_partial'):
+        blockers = [b for b in blockers if b['code'] not in ('PENDING_DECISIONS', 'CLUSTER_CONFLICT')]
     if blockers:
         conflict('DECISIONS_INCOMPLETE', blockers=blockers)
     revision = run.workflow_revision
@@ -56,12 +59,18 @@ def finalize_decisions(db, run_id, request, actor):
             if not assessed or baseline.get('execution_identity') != digest(config_identity(baseline['policy_version'])):
                 conflict('WORKFLOW_CONFIG_CHANGED')
     from masterone.mdm.pipeline.decision_semantics import load_cannot_links
-    snapshot = {'records': assessed['records'] if assessed else records, 'pairs': baseline['pairs'], 'profile': effective_profile,
-        'overlays': {p.id: p.decision for p in db.query(WorkflowPair).filter_by(run_id=run_id)},
+    from masterone.mdm.workflow_assessment_reads import effective_result
+    pair_rows = db.query(WorkflowPair).filter_by(run_id=run_id).order_by(WorkflowPair.id).all()
+    snapshot = {'records': assessed['records'] if assessed else records, 'pairs': [effective_result(p) for p in pair_rows], 'profile': effective_profile,
+        'overlays': {p.id: p.decision for p in pair_rows},
         'negative_pairs': sorted(load_cannot_links(db, run_id)), 'policy_version': baseline['policy_version'] if assessed else run.policy_version,
         'workflow_revision': revision, 'decision_revision': run.decision_revision,
         'input_hash': baseline['input_hash'], 'profile_identity': baseline['profile_identity']}
     snapshot['execution_identity'] = baseline['execution_identity']
+    if payload.get('allow_partial'):
+        snapshot['allow_partial'] = True
+        snapshot['known_conflicts'] = [{**c.payload, 'id': c.id, 'pair_id': c.pair_id} for c in
+            db.query(WorkflowConflict).filter_by(run_id=run_id, resolved=False).order_by(WorkflowConflict.id)]
     if assessed:
         snapshot.update(assessment_id=assessed['assessment_id'], source_profile_identity=assessed['source_profile_identity'],
                         source_input_hash=assessed['source_input_hash'])
@@ -76,6 +85,8 @@ def finalize_decisions(db, run_id, request, actor):
         return operation_read(prior)
     check_revision(run, payload)
     blockers = completion_blockers(db, run_id)
+    if payload.get('allow_partial'):
+        blockers = [b for b in blockers if b['code'] not in ('PENDING_DECISIONS', 'CLUSTER_CONFLICT')]
     if blockers:
         conflict('DECISIONS_INCOMPLETE', blockers=blockers)
     op = new_operation(db, run, 'CLUSTER', request.request_id, payload, actor)
@@ -106,7 +117,13 @@ def cluster_snapshot(snapshot, run_id):
     pairs = deepcopy([p for p in snapshot['pairs'] if p['decision'] != 'INSUFFICIENT_EVIDENCE' or overlays.get(p['id']) == 'ACCEPTED'])
     vetoes = frozenset(tuple(sorted((p['left_id'], p['right_id']))) for p in snapshot['pairs'] if overlays.get(p['id']) in ('REJECTED', 'NON_MATCH'))
     links = frozenset(tuple(p) for p in snapshot['negative_pairs'])
-    result = build_proposals(records, pairs, run_id, snapshot['policy_version'], negative_pairs=links, execution_blocked_pairs=vetoes)
+    # A mergeable conclusion can still require explicit acceptance. Keep the
+    # original evidence for conflict reporting; exclude pending manual edges
+    # from automatic union before any component is formed.
+    automatic_pairs = [{**p, 'decision': 'REVIEW'} if p['decision'] == 'MERGEABLE'
+                       and p.get('triage_status') == 'REVIEW' and overlays.get(p['id']) != 'ACCEPTED'
+                       else p for p in pairs]
+    result = build_proposals(records, automatic_pairs, run_id, snapshot['policy_version'], negative_pairs=links, execution_blocked_pairs=vetoes)
     proposals = result['proposals']
     conflicts = []
     policy, budget = load_policy(legacy=not feature('cluster_safety_v2_enabled')), GuardBudget()
@@ -173,6 +190,11 @@ def cluster_snapshot(snapshot, run_id):
             'cluster_metrics': result.get('cluster_metrics', {})}
 
 
+def partial_cluster_snapshot(snapshot, run_id):
+    from masterone.mdm.workflow_partial import partial_snapshot
+    return partial_snapshot(snapshot, run_id, cluster_snapshot)
+
+
 def run_cluster(operation_id, factory, progress):
     from masterone.mdm.cluster_publication import with_singletons
     from masterone.mdm.workflow_jobs import finish, job_identity
@@ -187,9 +209,13 @@ def run_cluster(operation_id, factory, progress):
         if snapshot.get('execution_identity') != digest(config_identity(snapshot['policy_version'])):
             raise ValueError('WORKFLOW_CONFIG_CHANGED')
         progress('cluster', 0, len(snapshot['records']))
-        result = cluster_snapshot(snapshot, run_id)
+        result = partial_cluster_snapshot(snapshot, run_id) if snapshot.get('allow_partial') else cluster_snapshot(snapshot, run_id)
         safe_records = [r for r in snapshot['records'] if r['id'] not in set(result['conflict_record_ids'])]
         result['clusters'] = with_singletons(safe_records, result['safe_clusters'], run_id, next_cluster)
+        from masterone.mdm.workflow_partial import publication_summary
+        result['publication'] = publication_summary(snapshot, result)
+        result['cluster_metrics'].update({key: result['publication'][key] for key in
+                                         ('covered_records', 'unresolved_records', 'total_records')})
         # Annotation binds to post-cluster evidence and uses the existing gateway/policy.
         from masterone.mdm.pipeline.semantic_address import run_annotations
         semantic = run_annotations(result['pairs'], lambda ids: {r['id']: r for r in snapshot['records'] if r['id'] in ids},
@@ -200,6 +226,7 @@ def run_cluster(operation_id, factory, progress):
         result['workflow_context'] = {key: snapshot[key] for key in
             ('input_hash', 'profile_identity', 'execution_identity', 'policy_version', 'workflow_revision', 'decision_revision')}
         result['workflow_context']['snapshot_hash'] = digest(snapshot)
+        result['workflow_context']['assessment_id'] = snapshot.get('assessment_id')
         artifact_id = seal(factory, run_id, 'CLUSTER', result)
     with factory.begin() as db:
         run, op, task = job_identity(db, operation_id)
@@ -231,10 +258,28 @@ def run_cluster(operation_id, factory, progress):
                 db.add(WorkflowMember(generation_id=generation.id, cluster_id=row.id, record_id=rid))
         run.cluster_revision = next_cluster
         run.golden_revision += 1
-        if result['conflicts']:
+        for conflict_id in result.get('reevaluated_conflict_ids', []):
+            prior_conflict = db.get(WorkflowConflict, conflict_id)
+            if prior_conflict is not None and prior_conflict.run_id == run_id:
+                prior_conflict.resolved = True
+        retained = set(result.get('retained_conflict_ids', []))
+        retained_payloads = [{k: v for k, v in c.items() if k != 'id'} for c in snapshot.get('known_conflicts', []) if c['id'] in retained]
+        publication = {key: value for key, value in result['publication'].items()
+                       if key not in ('unresolved_record_ids', 'unresolved_pair_ids')}
+        blockers = [{**{key: blocker[key] for key in ('pair_id', 'reason') if key in blocker},
+                     'record_ids': blocker.get('record_ids', [])[:100],
+                     'record_count': len(blocker.get('record_ids', []))}
+                    for blocker in result['conflicts'][:25]]
+        # Pollable operations keep bounded summaries. Complete coverage IDs and
+        # conflict evidence remain in the immutable artifact and conflict rows.
+        receipt = {key: value for key, value in op.result.items()
+                   if key not in ('unresolved_record_ids', 'unresolved_pair_ids')}
+        op.result = {**receipt, **publication, 'publication': publication,
+                     'blockers': blockers, 'blocker_count': len(result['conflicts'])}
+        if result['conflicts'] or result['publication']['unresolved_records']:
             for blocker in result['conflicts']:
-                db.add(WorkflowConflict(run_id=run_id, operation_id=op.id, pair_id=blocker['pair_id'], payload=blocker))
-            op.result = {'blockers': result['conflicts']}
+                if blocker not in retained_payloads:
+                    db.add(WorkflowConflict(run_id=run_id, operation_id=op.id, pair_id=blocker['pair_id'], payload=blocker))
             finish(db, run, op, task, 'DECIDE_REVIEW')
         else:
             finish(db, run, op, task, 'GOLDEN_REVIEW')

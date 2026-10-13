@@ -72,6 +72,7 @@ def test_conflict_retains_disconnected_valid_group():
     a, b, c = chain()
     x, y = record('x'), record('y')
     pairs = [edge(a, b, 15), edge(b, c, 14), edge(x, y, 20)]
+    pairs[2]['triage_status'] = 'HIGH_CONFIDENCE_PROPOSAL'
     for p in pairs[:2]:
         p['decision'] = 'REVIEW'
     snapshot = {'records': [a,b,c,x,y], 'pairs': pairs,

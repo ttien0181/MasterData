@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { GoldenRead, WorkflowRead } from '@/lib/workflowContracts';
+import type { ClusterGeneration, GoldenRead, WorkflowRead } from '@/lib/workflowContracts';
 import SessionWorkspace, { WorkflowContext } from './SessionWorkspace';
 import { ApiError } from '@/lib/api';
 import DecisionWorkspace from './DecisionWorkspace';
@@ -18,7 +18,7 @@ afterEach(() => { cleanup(); vi.useRealTimers(); });
 const w: WorkflowRead = { run_id: 'r', workflow_version: 2, workflow_state: 'DECIDE_REVIEW', workflow_revision: 3, decision_revision: 2, cluster_revision: 0, golden_revision: 0, counts: { records: { value: 3, unit: 'records' } }, allowed_actions: ['decide-pair', 'bulk-decisions', 'finalize-decisions'], blockers: [], active_operation: null, retryable_operation: null };
 const golden: GoldenRead = { cluster_id: 'c', cluster_revision: 1, golden_revision: 2, revision: 0, status: 'DRAFT', fields: { name: { value: 'Server', provenance: 'SURVIVORSHIP' }, phone: { value: '090', values: [{ value: '090' }, { value: '091' }] } }, alternatives: { name: [{ source_record_id: 'member', source_system: 'CRM', value: 'Source', auto_rule_available: true }] }, selections: {} };
 function workspace(ui: React.ReactNode, workflow = w) { return render(<SessionCacheProvider userId="test"><WorkflowContext.Provider value={{ workflow, refresh: vi.fn().mockResolvedValue(undefined) }}>{ui}</WorkflowContext.Provider></SessionCacheProvider>); }
-beforeEach(() => { vi.clearAllMocks(); vi.mocked(api.getPairs).mockResolvedValue({ items: [{ pair_id: 'p', baseline: { id: 'p', left_id: 'a', right_id: 'b', score: 10, decision: 'INSUFFICIENT_EVIDENCE', primary_group: 'D', field_evidence: [] }, decision: 'UNDECIDED', revision: 1, score_unit: 'p119_rule_v1', eligibility: { manual_allowed: false, auto_allowed: false, blocked_reasons: ['NO_EVIDENCE'] } }], total: 1, next_cursor: null }); });
+beforeEach(() => { vi.clearAllMocks(); sessionStorage.clear(); vi.mocked(api.getPairs).mockResolvedValue({ items: [{ pair_id: 'p', baseline: { id: 'p', left_id: 'a', right_id: 'b', score: 10, decision: 'INSUFFICIENT_EVIDENCE', primary_group: 'D', field_evidence: [] }, decision: 'UNDECIDED', revision: 1, score_unit: 'p119_rule_v1', eligibility: { manual_allowed: false, auto_allowed: false, blocked_reasons: ['NO_EVIDENCE'] } }], total: 1, next_cursor: null }); });
 it('hub starts at overview and performs no workflow computation', async () => { render(<SessionHub />); expect(await screen.findByRole('heading', { name: 'Tổng quan' })).toBeInTheDocument(); expect(api.finalizeDecisions).not.toHaveBeenCalled(); });
 it('shows insufficient evidence and server permissions, only explicit finalize creates groups', async () => {
   workspace(<DecisionWorkspace />);
@@ -48,6 +48,22 @@ it('unconfirmed drafts cannot finalize or export', async () => {
   expect(await screen.findByText('DRAFT')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Chốt phiên' })).toBeDisabled();
   expect(screen.queryByRole('button', { name: 'Xuất CSV' })).not.toBeInTheDocument();
+});
+const generation:ClusterGeneration={revision:1,source_decision_revision:1,stale:true,read_only:true,publication_status:'PARTIAL',clusters:1,multi_record_groups:1,singletons:0,covered_records:2,unresolved_records:1,total_records:3};
+it('keeps stale golden snapshots visible during regeneration and blocks finalization',async()=>{
+ vi.mocked(api.getGoldenRecords).mockResolvedValue({items:[{...golden,read_only:true,generation}],total:1,next_cursor:null,generation});
+ workspace(<GoldenRecords/>,{...w,workflow_state:'CLUSTER_RUNNING',cluster_revision:1,cluster_result:generation,allowed_actions:['finalize-golden','resolve-golden']});
+ await screen.findByText('DRAFT');expect(screen.getByRole('status')).toHaveTextContent('chỉ đọc');expect(screen.getByRole('button',{name:'Chốt phiên'})).toBeDisabled();expect(screen.getByRole('button',{name:'Tự xử lý & tạo Golden'})).toBeDisabled();
+});
+it('prevents export of partial publication even if stale permissions are displayed',async()=>{
+ vi.mocked(api.getGoldenRecords).mockResolvedValue({items:[golden],total:1,next_cursor:null,generation:{...generation,stale:false}});
+ workspace(<GoldenRecords/>,{...w,workflow_state:'FINALIZED',cluster_revision:1,cluster_result:{...generation,stale:false},allowed_actions:['export']});
+ await screen.findByText('DRAFT');expect(screen.getByRole('button',{name:'Chuẩn bị xuất CSV'})).toBeDisabled();
+});
+it('honors stale page metadata even when the workflow cache still reports a current generation',async()=>{
+ vi.mocked(api.getGoldenRecords).mockResolvedValue({items:[{...golden,read_only:true,generation}],total:1,next_cursor:null,generation});
+ workspace(<GoldenRecords/>,{...w,workflow_state:'FINALIZED',cluster_revision:1,cluster_result:{...generation,stale:false,publication_status:'COMPLETE',covered_records:3,unresolved_records:0},allowed_actions:['export']});
+ await screen.findByText('DRAFT');expect(screen.getByRole('button',{name:'Chuẩn bị xuất CSV'})).toBeDisabled();
 });
 it('preserves unsaved Golden intent across server revision and blocks silent rebase', () => {
   const save = vi.fn();
@@ -79,7 +95,7 @@ it('manual eligibility comes from server even for Group D, stale request preserv
   vi.mocked(api.decidePair).mockRejectedValue(new ApiError('stale', 409, { code: 'STALE_PAIR_REVISION' }));
   workspace(<DecisionWorkspace />);
   const merge = await screen.findByRole('button', { name: 'Accept cặp p' }); expect(merge).toBeEnabled(); fireEvent.click(merge);
-  expect(await screen.findByText(/Cặp hoặc phiên đã thay đổi/)).toBeInTheDocument();
+  expect(await screen.findByText(/Không xác nhận được kết quả/)).toBeInTheDocument();
   expect(screen.getByText('Accept · p')).toBeInTheDocument();
   expect(api.decidePair).toHaveBeenCalledTimes(1);
 });

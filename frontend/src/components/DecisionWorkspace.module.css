@@ -227,3 +227,10 @@
   :global(.workflow-main):has(.workspace) :global(.workflow-session-header > div) { flex-direction: column; align-items: flex-start; }
   :global(.workflow-main):has(.workspace) :global(.workflow-tabs a) { flex-direction: column; align-items: flex-start; gap: 3px; }
 }
+
+.completion { position:sticky; top:12px; z-index:8; display:flex; justify-content:space-between; gap:16px; padding:14px 18px; margin:12px 0; border:1px solid var(--line,#dce4ef); border-radius:12px; background:var(--surface,#fff); box-shadow:0 4px 14px #10213a12; }
+.completion h3 { margin:0; font-size:15px; }
+.completion p { margin:5px 0; font-size:12px; }
+.completion > div:last-child { max-width:380px; }
+.completion button { margin:4px 4px 4px 0; }
+@media(max-width:700px){.completion{position:relative;top:auto;flex-direction:column;}}

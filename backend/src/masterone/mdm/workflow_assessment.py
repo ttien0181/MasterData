@@ -11,16 +11,16 @@ from masterone.mdm.models import ResolutionEngineSelection, ResolutionRecord
 from masterone.mdm.pipeline.decision_semantics import load_cannot_links
 from masterone.mdm.pipeline.golden_v2 import record_payload
 from masterone.mdm.pipeline.matching import value_frequencies
-from masterone.mdm.pipeline.pair_assessment import VERSION, assess_pair, assessment_profile, assessment_record
+from masterone.mdm.pipeline.pair_assessment import VERSION, assess_prepared_pair, assessment_profile, assessment_record
 from masterone.mdm.workflow_artifacts import load, seal
 from masterone.mdm.workflow_assessment_reads import active_assessment
 from masterone.mdm.workflow_models import WorkflowAssessment, WorkflowConflict, WorkflowPair
 
 
 def assessment_code_identity():
-    from masterone.mdm.pipeline import pair_assessment, soft_model
+    from masterone.mdm.pipeline import pair_assessment, pair_grouping, matching, decision_semantics, standardization, soft_model
     return digest({module.__name__: sha256(Path(module.__file__).read_bytes()).hexdigest()
-                   for module in (pair_assessment, soft_model)})
+                   for module in (pair_assessment, pair_grouping, matching, decision_semantics, standardization, soft_model)})
 
 
 def compute_assessment(records, pairs, profile, links, progress=lambda *_: None, model_scope=None):
@@ -28,14 +28,16 @@ def compute_assessment(records, pairs, profile, links, progress=lambda *_: None,
     by_id = {record['id']: record for record in prepared}
     frequencies = value_frequencies(prepared)
     results, groups = [], Counter()
-    for index, pair in enumerate(pairs):
-        result = assess_pair(by_id[pair['left_id']], by_id[pair['right_id']], frequencies, links)
-        result['id'] = pair['id']
-        result['soft_evaluation'] = {'status': 'NOT_CONFIGURED'}
-        results.append(result)
-        groups[result['primary_group']] += 1
-        if (index + 1) % 2000 == 0 or index + 1 == len(pairs):
-            progress('assess_pairs', index + 1, len(pairs))
+    upgraded = assessment_profile(profile)
+    with engine_context(upgraded):
+        for index, pair in enumerate(pairs):
+            result = assess_prepared_pair(by_id[pair['left_id']], by_id[pair['right_id']], frequencies, links)
+            result['id'] = pair['id']
+            result['soft_evaluation'] = {'status': 'NOT_CONFIGURED'}
+            results.append(result)
+            groups[result['primary_group']] += 1
+            if (index + 1) % 2000 == 0 or index + 1 == len(pairs):
+                progress('assess_pairs', index + 1, len(pairs))
     from masterone.config import get_settings
     from masterone.mdm.pipeline.soft_model import ReviewModelError, load_review_model
     model_state = {'status': 'OUT_OF_SCOPE' if model_scope is None else 'NOT_CONFIGURED'}
@@ -53,7 +55,6 @@ def compute_assessment(records, pairs, profile, links, progress=lambda *_: None,
     for result in results:
         if result['soft_evaluation']['status'] == 'NOT_CONFIGURED':
             result['soft_evaluation'] = model_state
-    upgraded = assessment_profile(profile)
     with engine_context(upgraded):
         identity = digest(config_identity(VERSION))
     return {'pairs': results, 'records': prepared, 'input_hash': digest(prepared),

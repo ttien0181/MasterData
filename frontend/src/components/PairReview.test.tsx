@@ -9,17 +9,18 @@ import * as api from '@/lib/workflowApi';
 import type { WorkflowRead } from '@/lib/workflowContracts';
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('@/lib/workflowApi', async original => ({ ...await original<typeof api>(),
-  getWorkflow:vi.fn(), getOperation:vi.fn(), getPairs: vi.fn(), getPairSummary: vi.fn(), previewBulkDecisions: vi.fn(), bulkDecisions: vi.fn(), decidePair: vi.fn(),
+  getWorkflow:vi.fn(), getOperation:vi.fn(), getPair:vi.fn(), finalizeDecisions:vi.fn(), getPairs: vi.fn(), getPairSummary: vi.fn(), previewBulkDecisions: vi.fn(), bulkDecisions: vi.fn(), decidePair: vi.fn(),
 }));
 const workflow: WorkflowRead = { run_id:'r', workflow_version:2, workflow_state:'DECIDE_REVIEW', workflow_revision:4, decision_revision:1, cluster_revision:0, golden_revision:0, counts:{}, allowed_actions:['decide-pair','bulk-decisions'], blockers:[], active_operation:null,retryable_operation:null };
 const pair = (index: number) => ({ pair_id:`p${index}`, revision:0, decision:'UNDECIDED', score_unit:'p119_rule_v1', baseline:{ id:`p${index}`,left_id:`a${index}`,right_id:`b${index}`,primary_group:'A',subgroup:'A1_NAME_PHONE',decision:'REVIEW',score:5,field_evidence:[] }, eligibility:{manual_allowed:true,auto_allowed:false,blocked_reasons:[]}, left_record:{record_id:`a${index}`,source_system:'CRM',raw_fields:{name:`Person ${index}`,phone:'0901234567'},normalized_fields:{name:`person ${index}`},extra_fields:{}}, right_record:{record_id:`b${index}`,source_system:'BILL',raw_fields:{name:`Other ${index}`},normalized_fields:{},extra_fields:{}} });
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.clearAllMocks();sessionStorage.clear();
   vi.mocked(api.getWorkflow).mockResolvedValue(workflow);
   vi.mocked(api.getOperation).mockResolvedValue({operation_id:'op',run_id:'r',operation_type:'BULK_DECISIONS',status:'COMPLETED',stage:'completed',progress:{},error_code:null,result:{}});
   vi.mocked(api.getPairs).mockImplementation(async (_run, query) => { const offset=Number(query?.get('offset') || 0), limit=Number(query?.get('limit') || 25); return {items:Array.from({length:Math.min(limit,12-offset)},(_,i)=>pair(i+offset)),total:12,offset,next_cursor:offset+limit<12?'p9':null}; });
   vi.mocked(api.getPairSummary).mockResolvedValue({total:12,needs_review:12,accepted:0,denied:0,kept_separate:0,deferred:0,blocked:0,manual_available:12,auto_available:0,decision_revision:1,groups:[{key:'A',total:12,subgroups:[{key:'A1_NAME_PHONE',total:12}]}]});
-  vi.mocked(api.previewBulkDecisions).mockResolvedValue({total:12,applicable:10,blocked:2,skipped:0,workflow_revision:4,decision_revision:1});
+  vi.mocked(api.previewBulkDecisions).mockResolvedValue({total:12,applicable:10,blocked:2,skipped:0,workflow_revision:4,decision_revision:1,preview_token:'reviewed-token'});
+  vi.mocked(api.getPair).mockResolvedValue(pair(0));
   vi.mocked(api.bulkDecisions).mockResolvedValue({operation_id:'op',run_id:'r',operation_type:'BULK_DECISIONS',status:'QUEUED',stage:'queued',progress:{},error_code:null,result:{}});
   vi.mocked(api.decidePair).mockResolvedValue({...pair(0),decision:'NON_MATCH'});
 });
@@ -142,4 +143,17 @@ it('keeps statistics visible while revised counts are being fetched',async()=>{
   view.rerender(<SessionCacheProvider userId="u"><WorkflowContext.Provider value={{workflow:{...workflow,workflow_revision:5,decision_revision:2},refresh:vi.fn()}}><DecisionWorkspace/></WorkflowContext.Provider></SessionCacheProvider>);
   await waitFor(()=>expect(api.getPairSummary).toHaveBeenCalledTimes(2));
   expect(screen.getByText('Tổng cặp')).toBeVisible();
+});
+it('hydrates comparison through the individual pair read',async()=>{
+ show();await screen.findByText('Person 0');fireEvent.click(screen.getByRole('button',{name:'Đối chiếu cặp p0'}));
+ await screen.findByRole('dialog',{name:'Đối chiếu cặp bản ghi'});expect(api.getPair).toHaveBeenCalledWith('r','p0',expect.any(AbortSignal));
+});
+it('offers partial generation beside the required filter before the pair list',async()=>{
+ const partial={...workflow,allowed_actions:['finalize-partial'],blockers:[{code:'PENDING_DECISIONS',count:12,unit:'pairs'}]};
+ vi.mocked(api.finalizeDecisions).mockResolvedValue({operation_id:'cl',run_id:'r',operation_type:'CLUSTER',status:'QUEUED',stage:'queued',progress:{},error_code:null,result:{}});
+ render(<SessionCacheProvider userId="u"><WorkflowContext.Provider value={{workflow:partial,refresh:vi.fn()}}><DecisionWorkspace/></WorkflowContext.Provider></SessionCacheProvider>);
+ await screen.findByText('Person 0');const completion=screen.getByRole('region',{name:'Hoàn tất duyệt'}),list=screen.getByRole('table',{name:'Danh sách cặp bản ghi'});
+ expect(completion.compareDocumentPosition(list)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+ fireEvent.click(screen.getByRole('button',{name:'Xem cặp cần xử lý'}));expect(screen.getByRole('combobox',{name:'Quyết định'})).toHaveValue('REQUIRED');
+ fireEvent.click(screen.getByRole('button',{name:'Tạo nhóm phần đã xử lý'}));await waitFor(()=>expect(api.finalizeDecisions).toHaveBeenCalledWith('r',expect.objectContaining({allow_partial:true})));
 });

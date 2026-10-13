@@ -55,7 +55,6 @@ def submit_resolution(db, run_id, request, actor):
 
 def run_resolution(operation_id, factory, progress):
     from masterone.mdm.golden_service import selected_clusters, validate_selections
-    from masterone.mdm.workflow_finalize import cluster_snapshot
     from masterone.mdm.workflow_jobs import finish, job_identity
     with factory.begin() as db:
         run, op, task = job_identity(db, operation_id)
@@ -80,16 +79,16 @@ def run_resolution(operation_id, factory, progress):
         with engine_context(snapshot['profile']):
             if snapshot['execution_identity'] != digest(config_identity(snapshot['policy_version'])):
                 raise ValueError('WORKFLOW_CONFIG_CHANGED')
-            result = cluster_snapshot(repaired, run_id)
-        affected = set(output['conflict_record_ids'])
-        from masterone.mdm.cluster_publication import with_singletons
-        groups = with_singletons(snapshot['records'], result['clusters'], run_id, generation.revision + 1) if not result['conflicts'] else []
+            result, groups = repair_preview_groups(repaired, run_id, generation.revision + 1)
+        from masterone.mdm.workflow_partial import candidate_region
+        affected = candidate_region(snapshot, {rid for conflict_row in conflicts for rid in conflict_row['record_ids']})
         proposal = {'status': 'READY' if not result['conflicts'] else 'NEEDS_REVIEW',
                     'reason_codes': sorted({c['reason'] for c in conflicts}), 'changes': changes,
                     'before_record_ids': sorted(affected),
                     'after_groups': [g['member_record_ids'] for g in groups if affected.intersection(g['member_record_ids'])],
                     'explanation_vi': 'Đề xuất giữ riêng các liên kết bị guard từ chối. Nhóm sau thay đổi đã được kiểm tra bằng engine hiện tại. Cần duyệt trước khi áp dụng.',
                     'remaining_conflicts': result['conflicts']}
+        proposal['unresolved_record_count'] = len(result.get('unresolved_record_ids', []))
     plan = {'snapshot': snapshot, 'proposal': proposal, 'decision_revision': snapshot['decision_revision']}
     artifact_id = seal(factory, run_id, 'GOLDEN_REPAIR', plan)
     with factory.begin() as db:
@@ -194,3 +193,13 @@ def resolution_snapshot(db, run_id, cluster_output):
     artifact = db.query(WorkflowArtifact.id).filter_by(run_id=run_id, phase='DECISION_SNAPSHOT',
                                                       content_hash=snapshot_hash).first()
     return load(db, artifact[0] if artifact else None, run_id, 'DECISION_SNAPSHOT')
+
+
+def repair_preview_groups(snapshot, run_id, revision):
+    """Forecast exactly the guarded eligible records used by publication."""
+    from masterone.mdm.cluster_publication import with_singletons
+    from masterone.mdm.workflow_finalize import cluster_snapshot, partial_cluster_snapshot
+    result = partial_cluster_snapshot(snapshot, run_id) if snapshot.get('allow_partial') else cluster_snapshot(snapshot, run_id)
+    records = [record for record in snapshot['records'] if record['id'] not in set(result['conflict_record_ids'])]
+    groups = with_singletons(records, result['safe_clusters'], run_id, revision) if not result['conflicts'] else []
+    return result, groups

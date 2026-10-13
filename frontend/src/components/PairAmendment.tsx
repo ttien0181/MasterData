@@ -1,0 +1,13 @@
+'use client';
+import {useState} from 'react';
+import type {Decision,PairRead} from '@/lib/workflowContracts';
+import {amendPair,mutation} from '@/lib/workflowApi';
+import {ApiError} from '@/lib/api';
+import {decisionLabels} from '@/lib/pairReview';
+import {useWorkflow} from './SessionWorkspace';
+import PairReviewDialog from './PairReviewDialog';
+export default function PairAmendment({pair,close,saved}:{pair:PairRead;close:()=>void;saved:(pair:PairRead)=>void}) {
+ const {workflow:w,refresh}=useWorkflow();const [reason,setReason]=useState(''),[decision,setDecision]=useState<Decision|''>(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ async function save(){if(busy||!decision||!reason.trim())return;setBusy(true);setError('');try{const result=await amendPair(w.run_id,pair.pair_id,{...mutation(w),expected_pair_revision:pair.revision,decision,reason:reason.trim()});saved(result);await refresh();close();}catch(cause){const detail=cause instanceof ApiError?JSON.stringify(cause.detail):cause instanceof Error?cause.message:'';setError(detail.includes('DENY_SOURCE_UNKNOWN')?'Không thể gỡ ràng buộc vì không xác định được nguồn quyết định đã tạo Deny. Ràng buộc cũ được giữ; cần đối chiếu nguồn trước khi sửa.':detail.includes('STALE')?'Cặp hoặc phiên đã thay đổi. Đóng và đọc lại cặp trước khi sửa.':detail||'Chưa lưu được sửa đổi.');if(cause instanceof ApiError&&cause.status===409)await refresh().catch(()=>undefined);}finally{setBusy(false);}}
+ return <PairReviewDialog title="Sửa quyết định đã duyệt" close={()=>{if(!busy)close();}}><p>Cặp {pair.pair_id} · quyết định hiện tại {decisionLabels[pair.decision] || pair.decision}. Mọi thay đổi được lưu trong lịch sử.</p><p>Deny là ràng buộc không cùng nhóm, kể cả gián tiếp. Sửa Deny chỉ gỡ liên kết do chính quyết định này tạo; các ràng buộc khác vẫn giữ. Giữ riêng liên kết được giữ đến khi sửa lại quyết định. Xác nhận cùng thực thể vẫn phải qua kiểm tra an toàn.</p><label>Quyết định mới <select value={decision} onChange={e=>setDecision(e.target.value as Decision|'')}><option value="" disabled>Chọn quyết định mới</option><option value="no_merge">Giữ riêng liên kết</option><option value="merge">Xác nhận cùng thực thể (Accept)</option><option value="deny">Xác nhận khác thực thể (Deny)</option><option value="defer">Chờ bổ sung bằng chứng (Hoãn)</option></select></label><label>Lý do sửa <textarea value={reason} onChange={e=>setReason(e.target.value)}/></label>{error&&<p role="alert">{error}</p>}<footer><button disabled={busy} onClick={close}>Hủy</button><button disabled={busy||!decision||!reason.trim()||!w.allowed_actions.includes('amend-pair')} onClick={()=>void save()}>Lưu sửa quyết định</button></footer></PairReviewDialog>;
+}

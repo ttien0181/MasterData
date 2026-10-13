@@ -51,7 +51,9 @@ def test_new_decide_can_publish_assessment_without_automatic_accept(client, work
         rows = db.query(WorkflowPair).filter_by(run_id=workflow_run).all()
         assert rows and all(p.assessment_id == state['assessment_id'] for p in rows)
         assert all(p.decision == 'UNDECIDED' for p in rows)
-        assert all(p.assessment['decision'] != 'MERGEABLE' for p in rows)
+        assert all(not eligibility(p)['auto_allowed'] for p in rows)
+        assert all(p.assessment['triage_status'] == 'REVIEW' for p in rows
+                   if p.assessment['decision'] == 'MERGEABLE')
 
 
 def test_reassessment_is_idempotent_keeps_decisions_and_original_artifact(client, workflow_run):

@@ -1,5 +1,5 @@
 import { request } from './api';
-import type { BulkPreview, BulkRequest, ClusterDetail, ClusterRead, DataRead, DecisionRequest, GoldenRead, GoldenRequest, GoldenResult, GoldenRevision, Mutation, OperationRead, PageRead, PairRead, PairSummary, WorkflowRead } from './workflowContracts';
+import type { BulkPreview, BulkRequest, ConflictRead, GenerationPage, ClusterDetail, ClusterRead, DataRead, DecisionRequest, GoldenRead, GoldenRequest, GoldenResult, GoldenRevision, Mutation, OperationRead, PageRead, PairRead, PairSummary, RecordRead, WorkflowRead } from './workflowContracts';
 const path = (run: string, suffix = '') => `/runs/${encodeURIComponent(run)}/workflow${suffix}`;
 const get = <T>(run: string, suffix = '', signal?: AbortSignal) => request<T>(path(run, suffix), { signal });
 const write = <T>(run: string, suffix: string, body: unknown, method = 'POST') => request<T>(path(run, suffix), { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -10,15 +10,15 @@ export const getData = (run: string, query = new URLSearchParams(), signal?: Abo
 export const getPairs = (run: string, query = new URLSearchParams(), signal?: AbortSignal) => get<PageRead<PairRead> & { offset?: number }>(run, `/pairs?${query}`, signal);
 export const getPairSummary = (run: string, signal?: AbortSignal) => get<PairSummary>(run, '/pairs/summary', signal);
 export const previewBulkDecisions = (run: string, body: BulkRequest, signal?: AbortSignal) => request<BulkPreview>(path(run, '/bulk-decisions/preview'), { method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal });
-export const getClusters = (run: string, query = new URLSearchParams(), signal?: AbortSignal) => get<PageRead<ClusterRead>>(run, `/clusters?${query}`, signal);
+export const getClusters = (run: string, query = new URLSearchParams(), signal?: AbortSignal) => get<GenerationPage<ClusterRead>>(run, `/clusters?${query}`, signal);
 export const getCluster = (run: string, id: string, query = new URLSearchParams(), signal?: AbortSignal) => get<ClusterDetail>(run, `/clusters/${encodeURIComponent(id)}?${query}`, signal);
 export const getClusterGolden = (run: string, id: string, signal?: AbortSignal) => get<GoldenRead>(run, `/clusters/${encodeURIComponent(id)}/golden`, signal);
-export const getGoldenRecords = (run: string, query = new URLSearchParams(), signal?: AbortSignal) => get<PageRead<GoldenRead>>(run, `/golden?${query}`, signal);
+export const getGoldenRecords = (run: string, query = new URLSearchParams(), signal?: AbortSignal) => get<GenerationPage<GoldenRead>>(run, `/golden?${query}`, signal);
 export const getOperation = (run: string, id: string, signal?: AbortSignal) => get<OperationRead>(run, `/operations/${encodeURIComponent(id)}`, signal);
 export const startDecide = (run: string, body: Mutation) => write<OperationRead>(run, '/start-decide', body);
 export const decidePair = (run: string, id: string, body: DecisionRequest) => write<PairRead>(run, `/pairs/${encodeURIComponent(id)}/decision`, body);
 export const bulkDecisions = (run: string, body: BulkRequest) => write<OperationRead>(run, '/bulk-decisions', body);
-export const finalizeDecisions = (run: string, body: Mutation & { expected_decision_revision: number }) => write<OperationRead>(run, '/finalize-decisions', body);
+export const finalizeDecisions = (run: string, body: Mutation & { expected_decision_revision: number; allow_partial?:boolean }) => write<OperationRead>(run, '/finalize-decisions', body);
 export const saveGolden = (run: string, id: string, body: GoldenRequest) => write<GoldenResult>(run, `/clusters/${encodeURIComponent(id)}/golden`, body, 'PUT');
 export const autoSelectGolden = (run: string, body: GoldenRevision & { cluster_ids: string[]; reset_manual?: boolean }) => write<GoldenResult>(run, '/golden/auto-select', body);
 export const confirmGolden = (run: string, id: string, body: GoldenRevision) => write<GoldenResult>(run, `/clusters/${encodeURIComponent(id)}/golden/confirm`, body);
@@ -40,3 +40,9 @@ export const prepareWorkflowExport = (run: string) => request<{ preview_id: stri
 
 export const reassessPairs = (run:string,body:Mutation & {model_scope?:'synthetic-benchmark'}) => write<OperationRead>(run,'/reassess',body);
 export const requestPairAdvice = (run:string,body:Mutation & {pair_ids?:string[];limit?:number}) => write<OperationRead>(run,'/pair-advice',body);
+
+export const getPair = (run:string,id:string,signal?:AbortSignal) => get<PairRead>(run,`/pairs/${encodeURIComponent(id)}`,signal);
+export const getOperationByRequestId = (run:string,id:string,signal?:AbortSignal) => get<OperationRead|null>(run,`/requests/${encodeURIComponent(id)}`,signal);
+export const getConflicts = (run:string,query=new URLSearchParams(),signal?:AbortSignal) => get<PageRead<ConflictRead>>(run,`/conflicts?${query}`,signal);
+export const getUnresolvedRecords = (run:string,query=new URLSearchParams(),signal?:AbortSignal) => get<GenerationPage<RecordRead>>(run,`/unresolved-records?${query}`,signal);
+export const amendPair = (run:string,id:string,body:DecisionRequest & {reason:string}) => write<PairRead>(run,`/pairs/${encodeURIComponent(id)}/amend`,body);

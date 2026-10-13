@@ -48,8 +48,8 @@ def test_workflow_engine_preservation(tmp_path, monkeypatch):
     monkeypatch.setattr(get_settings(), 'llm_enabled', False)
     actual = canonical_baseline(tmp_path)
     expected = json.loads(BASE.read_text(encoding='utf-8'))
-    # Verification metadata changes the normalization source fingerprint, while all
-    # historical decisions/evidence/golden/grouping outputs must remain identical.
+    # Keep the historical fixture immutable. These examples retain their decisions,
+    # scores, groups and golden outputs; new versions add contact-match metadata.
     from masterone.mdm.pipeline.scoring_engine import MemorySnapshot, ScoringEngine
     current_hash = ScoringEngine(MemorySnapshot([])).rule_hash
     for profile in ('False', 'True'):
@@ -57,5 +57,24 @@ def test_workflow_engine_preservation(tmp_path, monkeypatch):
             assert pair.pop('scoring_model_hash') == current_hash
         for pair in expected[profile]['pairs']:
             pair.pop('scoring_model_hash')
+    def project_historical_contract(value):
+        if isinstance(value, list):
+            for item in value:
+                project_historical_contract(item)
+        elif isinstance(value, dict):
+            if 'conflict_rule_version' in value:
+                assert value['conflict_rule_version'] == 'v3.2.0'
+                value['conflict_rule_version'] = 'v3.1.0'
+            if value.get('policy_version') == 'person-pair-classification-v2':
+                value['policy_version'] = 'person-linh-v2-selective'
+            if 'unverified_identifier_relation' in value:
+                assert value.pop('unverified_identifier_relation') == 'NOT_COMPARABLE'
+            if value.get('field') in ('phone', 'email') and 'matched_values' in value:
+                assert isinstance(value.pop('matched_values'), list)
+                frequency = value.pop('matched_frequency')
+                assert frequency is None or frequency == 2
+            for item in value.values():
+                project_historical_contract(item)
+    project_historical_contract(actual)
     assert actual == expected
     assert sha256(BASE.read_bytes()).hexdigest() == BASE.with_suffix('.sha256').read_text().strip()

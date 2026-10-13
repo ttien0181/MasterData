@@ -1,7 +1,8 @@
 'use client';
 import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { ApiError } from '@/lib/api';
+import { clearSessionReviewQueues } from '@/lib/pairReviewQueue';
 
 export const CACHE_LIFETIME = 30 * 60 * 1000;
 type Entry = { value: unknown; touched: number };
@@ -9,24 +10,38 @@ export class SessionUIStore {
   private entries = new Map<string, Entry>();
   private listeners = new Set<() => void>();
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+  private protected(key: string, entry: Entry) {
+    if (key.includes('golden-draft:') && !!(entry.value as {draft?: unknown})?.draft) return true;
+    const controller = entry.value as {snapshot?: () => {status: string}[]};
+    return key.includes('review-queue-controller') && typeof controller?.snapshot === 'function' &&
+      controller.snapshot().some(item => ['WAITING','SENDING','RUNNING','FAILED','NEEDS_REVIEW'].includes(item.status));
+  }
+  private dispose(value: unknown, discardPersisted = true) {
+    const resource = value as {dispose?: (discardPersisted?: boolean) => void};
+    if (typeof resource?.dispose === 'function') resource.dispose(discardPersisted);
+  }
   read<T>(key: string, initial: T): T {
     const entry = this.entries.get(key);
-    const draft = key.includes('golden-draft:') && !!(entry?.value as { draft?: unknown } | undefined)?.draft;
-    if (entry && (draft || Date.now() - entry.touched < CACHE_LIFETIME)) { entry.touched = Date.now(); return entry.value as T; }
+    if (entry && (this.protected(key, entry) || Date.now() - entry.touched < CACHE_LIFETIME)) { entry.touched = Date.now(); return entry.value as T; }
+    if (entry) this.dispose(entry.value);
     this.entries.set(key, { value: initial, touched: Date.now() });
     return initial;
   }
   write<T>(key: string, value: T) {
+    const previous = this.entries.get(key);
+    if (previous && previous.value !== value) this.dispose(previous.value);
     this.entries.set(key, { value, touched: Date.now() });
     // Expired inactive UI state is bounded; unsaved Golden drafts survive until discarded/logout.
     for (const [slot, entry] of this.entries) {
-      if (Date.now() - entry.touched >= CACHE_LIFETIME && !(slot.includes('golden-draft:') && (entry.value as { draft?: unknown })?.draft)) this.entries.delete(slot);
+      if (Date.now() - entry.touched >= CACHE_LIFETIME && !this.protected(slot, entry)) {
+        this.entries.delete(slot); this.dispose(entry.value);
+      }
     }
     this.listeners.forEach(listener => listener());
   }
-  remove(prefix: string) { for (const key of this.entries.keys()) if (key.startsWith(prefix)) this.entries.delete(key); this.listeners.forEach(listener => listener()); }
-  delete(key: string) { this.entries.delete(key); this.listeners.forEach(listener => listener()); }
-  clear() { this.entries.clear(); }
+  remove(prefix: string) { for (const [key, entry] of this.entries) if (key.startsWith(prefix)) { this.entries.delete(key); this.dispose(entry.value); } this.listeners.forEach(listener => listener()); }
+  delete(key: string) { const entry = this.entries.get(key); this.entries.delete(key); if (entry) this.dispose(entry.value); this.listeners.forEach(listener => listener()); }
+  clear(discardPersisted = true) { const entries = [...this.entries.values()]; this.entries.clear(); entries.forEach(entry => this.dispose(entry.value, discardPersisted)); }
 }
 const uiKey = (run: string, slot: string) => `${JSON.stringify(run)}:${slot}`;
 type CacheContext = { client: QueryClient; ui: SessionUIStore; userId: string; blocked: Record<string, string>; retryAccess: (run: string) => void; handleError: (error: unknown, run: string, read?: boolean) => void };
@@ -34,6 +49,8 @@ const Context = createContext<CacheContext | null>(null);
 export function useSessionCache() { const cache = useContext(Context); if (!cache) throw new Error('Session cache provider required'); return cache; }
 export const sessionKey = (user: string, run: string, ...resource: unknown[]) => ['session', user, run, ...resource] as const;
 export function SessionCacheProvider({ userId, children, onAuthLost }: { userId: string; children: ReactNode; onAuthLost?: () => void }) {
+  const previousUser = useRef(userId);
+  useEffect(() => { if (previousUser.current !== userId) { clearSessionReviewQueues(previousUser.current); previousUser.current = userId; } }, [userId]);
   return <CacheOwner key={userId} userId={userId} onAuthLost={onAuthLost}>{children}</CacheOwner>;
 }
 function CacheOwner({ userId, children, onAuthLost }: { userId: string; children: ReactNode; onAuthLost?: () => void }) {
@@ -42,7 +59,7 @@ function CacheOwner({ userId, children, onAuthLost }: { userId: string; children
   const [ui] = useState(() => new SessionUIStore());
   function handleError(error: unknown, run: string, read = false) {
     if (!(error instanceof ApiError)) return;
-    if (error.status === 401) { setExpired(true); ui.clear(); client.clear(); onAuthLost?.(); }
+    if (error.status === 401) { setExpired(true); ui.clear(); clearSessionReviewQueues(userId); client.clear(); onAuthLost?.(); }
     else if (read && error.status === 403) setBlocked(previous => ({ ...previous, [run]: 'Không còn quyền đọc phiên hoặc phiên không tồn tại.' }));
   }
   const [client] = useState(() => new QueryClient({
@@ -62,7 +79,7 @@ function CacheOwner({ userId, children, onAuthLost }: { userId: string; children
       ui.remove(uiKey(run, ''));
     }
   }, [blocked, client, ui, userId]);
-  useEffect(() => () => { client.clear(); ui.clear(); }, [client, ui]);
+  useEffect(() => () => { client.clear(); ui.clear(false); }, [client, ui]);
   const retryAccess = (run: string) => setBlocked(previous => { const next = { ...previous }; delete next[run]; return next; });
   if (expired) return <p role="alert">Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.</p>;
   return <Context.Provider value={{ client, ui, userId, blocked, retryAccess, handleError }}><QueryClientProvider client={client}>{children}</QueryClientProvider></Context.Provider>;
