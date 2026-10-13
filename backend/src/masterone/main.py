@@ -40,9 +40,11 @@ async def lifespan(app: FastAPI):
             require_current(engine)
         app.state.engine = engine
         app.state.session_factory = factory
-        started_worker = ResolutionWorker(factory)
-        started_worker.start()
-        worker = started_worker
+        if settings.app_env != "test" and settings.mdm_embedded_worker_enabled:
+            started_worker = ResolutionWorker(factory)
+            started_worker.start()
+            worker = started_worker
+            app.state.resolution_worker = worker
         print(f"Starting {settings.app_name} in {settings.app_env} mode")
         yield
     finally:

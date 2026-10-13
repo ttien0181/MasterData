@@ -40,9 +40,10 @@ Import the same repository as a **separate Vercel project** with Root Directory 
 
 | Variable | Value |
 | --- | --- |
-| `RENDER_BACKEND_URL` | Backend origin, e.g. `https://your-api.onrender.com` (no `/api` path or trailing slash) |
+| `BACKEND_ORIGIN` | Backend origin, e.g. `https://your-api.onrender.com` or an ngrok URL (no `/api` path or trailing slash) |
+| `NEXT_PUBLIC_NGROK_BYPASS_WARNING` | `true` only when using a free ngrok tunnel; otherwise `false` or unset |
 
-Do **not** set `NEXT_PUBLIC_API_BASE_URL` for this deployment. If it was previously set to the Render URL, delete it and redeploy. In production, the frontend now calls its own origin; `next.config.ts` forwards `/api/*` and `/health` to Render. The Vercel build fails with a clear error if `RENDER_BACKEND_URL` is missing.
+Leave `NEXT_PUBLIC_API_BASE_URL` unset or set it to `/`. If it was previously set to the backend URL, change it and redeploy. In production, the frontend calls its own origin; `next.config.ts` forwards `/api/v1/*` and `/health` to `BACKEND_ORIGIN`. If `BACKEND_ORIGIN` is missing, these rewrites are not created and API requests on the Vercel domain will fail.
 
 ## Check after deployment
 

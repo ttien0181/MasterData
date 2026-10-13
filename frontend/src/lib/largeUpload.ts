@@ -1,4 +1,5 @@
 import { backendHeaders } from "./backendHeaders";
+import { apiBase } from "./apiBase";
 
 export type UploadProgress = { loaded: number; total: number; percent: number };
 
