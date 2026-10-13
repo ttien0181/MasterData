@@ -63,6 +63,7 @@ def finalize_decisions(db, run_id, request, actor):
     pair_rows = db.query(WorkflowPair).filter_by(run_id=run_id).order_by(WorkflowPair.id).all()
     snapshot = {'records': assessed['records'] if assessed else records, 'pairs': [effective_result(p) for p in pair_rows], 'profile': effective_profile,
         'overlays': {p.id: p.decision for p in pair_rows},
+        'review_reasons': {p.id: p.review_reason for p in pair_rows if p.review_reason},
         'negative_pairs': sorted(load_cannot_links(db, run_id)), 'policy_version': baseline['policy_version'] if assessed else run.policy_version,
         'workflow_revision': revision, 'decision_revision': run.decision_revision,
         'input_hash': baseline['input_hash'], 'profile_identity': baseline['profile_identity']}
@@ -126,10 +127,26 @@ def cluster_snapshot(snapshot, run_id):
     result = build_proposals(records, automatic_pairs, run_id, snapshot['policy_version'], negative_pairs=links, execution_blocked_pairs=vetoes)
     proposals = result['proposals']
     conflicts = []
+    from masterone.mdm.workflow_group_approvals import approval_fingerprint, validate_group
+    for approval in snapshot.get('group_approvals', []):
+        ids = set(approval['record_ids'])
+        if not approval.get('reason', '').strip() or approval.get('fingerprint') != approval_fingerprint(snapshot, ids):
+            continue
+        if validate_group(snapshot, sorted(ids)):
+            continue
+        # An exact exception may not swallow members of an outside automatic group.
+        if any(ids.intersection(p['member_record_ids']) and not set(p['member_record_ids']) <= ids for p in proposals):
+            continue
+        proposals = [p for p in proposals if not ids.intersection(p['member_record_ids'])]
+        proposals.append({'id': sha256(f"{run_id}:approved:{','.join(sorted(ids))}".encode()).hexdigest(),
+            'member_record_ids': sorted(ids), 'status': 'REVIEW_APPROVED', 'origin': 'GROUP_REVIEW',
+            'group_approval_id': approval['operation_id'], 'group_approval_reason': approval['reason'],
+            'golden_fields': build_golden(sorted(ids), {rid: golden_payload(SimpleNamespace(**by_id[rid])) for rid in ids})})
     policy, budget = load_policy(legacy=not feature('cluster_safety_v2_enabled')), GuardBudget()
     with closing(DecisionStore()) as store:
         for pair in pairs:
-            store.add({**pair, 'user_decision': overlays.get(pair['id'], 'UNDECIDED')})
+            store.add({**pair, 'user_decision': overlays.get(pair['id'], 'UNDECIDED'),
+                       'review_reason': snapshot.get('review_reasons', {}).get(pair['id'])})
         store.seal()
         frequencies = value_frequencies(records)
         for pair in sorted(pairs, key=lambda p: (-p.get('match_weight', p.get('score', 0)), p['id'])):

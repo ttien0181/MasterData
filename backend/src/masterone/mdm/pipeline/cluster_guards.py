@@ -225,7 +225,7 @@ def has_blocking_violation(violations: list[GuardViolation]) -> bool:
 
 
 def check_component(member_ids, by_id, store, policy, budget, frequencies,
-                    cannot_links=frozenset(), review_vetoes=frozenset()):
+                    cannot_links=frozenset(), review_vetoes=frozenset(), *, allow_missing_evidence=False):
     """Person consistency on every member pair; bounded, cached, and no edge scan."""
     from itertools import combinations
 
@@ -264,8 +264,11 @@ def check_component(member_ids, by_id, store, policy, budget, frequencies,
             reason = hard.violations[0]
         elif pair and pair.get("user_decision") in {"REJECTED", "NON_MATCH"}:
             reason = "CLUSTER_REVIEW_VETO" if pair["user_decision"] == "REJECTED" else "CLUSTER_CONFIRMED_CANNOT_LINK"
-        elif pair and (pair["decision"] in {"NOT_MERGEABLE", "NON_MATCH", "BLOCKED"} or pair.get("primary_group") == "D"):
+        elif pair and pair["decision"] in {"NOT_MERGEABLE", "NON_MATCH", "BLOCKED"}:
             reason = "CLUSTER_PAIR_PERMISSION_CONFLICT"
+        elif pair and pair.get("primary_group") == "D" and not (
+                pair.get("user_decision") == "ACCEPTED" and (pair.get("review_reason") or '').strip()):
+            reason = "SOFT_ACCEPT_REASON_REQUIRED" if pair.get("user_decision") == "ACCEPTED" else "CLUSTER_PAIR_PERMISSION_CONFLICT"
         else:
             observed = pair or compare_and_score_rule(by_id[a], by_id[b], set(), frequencies)
             comparisons = observed.get("comparisons", {})
@@ -273,7 +276,7 @@ def check_component(member_ids, by_id, store, policy, budget, frequencies,
             id_anchor = states.get("government_id") == "EX"
             contact = any(states.get(f) in {"EX", "NX"} for f in ("phone", "email"))
             name = states.get("name") in {"EX", "NX", "NA", "HS"}
-            if not id_anchor and not (contact and name):
+            if not allow_missing_evidence and not id_anchor and not (contact and name):
                 reason = "CLUSTER_BRIDGE_MISSING_EVIDENCE"
         store.save_check(a, b, reason)
         if reason:

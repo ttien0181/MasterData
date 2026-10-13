@@ -51,6 +51,7 @@ class WorkflowPair(Base):
     assessment_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     advice: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     decision: Mapped[str] = mapped_column(String(24), default='UNDECIDED')
+    review_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     revision: Mapped[int] = mapped_column(Integer, default=0)
 
 

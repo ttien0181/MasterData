@@ -6,6 +6,13 @@ const state:WorkflowRead={run_id:'r',workflow_version:2,workflow_state:'DECIDE_R
 function setup(){const services={workflow:vi.fn().mockResolvedValue(state),pair:vi.fn().mockResolvedValue({pair_id:'a',revision:1}),bulk:vi.fn(),operation:vi.fn(),onPair:vi.fn(),refresh:vi.fn().mockResolvedValue(undefined),alive:vi.fn().mockReturnValue(true),onError:vi.fn(),delay:vi.fn().mockResolvedValue(undefined)};return{q:new PairReviewQueue(services),services};}
 const intent={key:'pair:a',label:'Accept a',assessmentId:'v1',decision:'merge' as const,pair:{id:'a',revision:0}};
 const settle=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
+it('preserves approval reasons in queued single and bulk writes',async()=>{
+ const {q,services}=setup();services.bulk.mockResolvedValue({operation_id:'job',status:'COMPLETED'});
+ q.add({...intent,reason:'Checked source documents'});await settle();
+ expect(services.pair).toHaveBeenCalledWith('a',expect.objectContaining({reason:'Checked source documents'}));
+ q.add({key:'reason-bulk',label:'Bulk',assessmentId:'v1',decision:'merge',scope:{pair_ids:['b']},reason:'Verified records'});await settle();
+ expect(services.bulk).toHaveBeenCalledWith(expect.objectContaining({reason:'Verified records'}));
+});
 it('does not rebase a queued decision across assessment changes',async()=>{const {q,services}=setup();services.workflow.mockResolvedValue({...state,assessment_id:'v2'});q.add(intent);await settle();expect(services.pair).not.toHaveBeenCalled();expect(q.snapshot()[0].status).toBe('FAILED');expect(q.snapshot()[0].error).toContain('đánh giá đã đổi');});
 it('uses current workflow revision but retains the observed pair revision',async()=>{const {q,services}=setup();services.workflow.mockResolvedValue({...state,workflow_revision:9,decision_revision:7});q.add(intent);await settle();expect(services.pair).toHaveBeenCalledWith('a',expect.objectContaining({expected_workflow_revision:9,expected_assessment_id:'v1',expected_pair_revision:0}));expect(q.snapshot()[0].status).toBe('DONE');});
 it('cancels unsent work and never dispatches it after an earlier bulk job',async()=>{const {q,services}=setup();let resume!:()=>void;services.workflow.mockResolvedValue({...state,active_operation:{operation_type:'BULK_DECISIONS'} as OperationRead});services.delay.mockImplementationOnce(()=>new Promise<void>(resolve=>{resume=resolve;}));q.add(intent);await settle();q.cancel(q.snapshot()[0].id);services.workflow.mockResolvedValue(state);resume();await settle();expect(services.pair).not.toHaveBeenCalled();expect(q.snapshot()[0].status).toBe('CANCELLED');});

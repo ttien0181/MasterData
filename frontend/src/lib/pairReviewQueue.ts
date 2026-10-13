@@ -2,7 +2,7 @@ import { mutation } from './workflowApi';
 import type { BulkRequest, BulkScope, Decision, DecisionRequest, OperationRead, PairRead, WorkflowRead } from './workflowContracts';
 
 export type ReviewIntent = {
-  id:string; key:string; label:string; assessmentId:string|null; decision:Decision;
+  id:string; key:string; label:string; assessmentId:string|null; decision:Decision; reason?:string;
   status:'WAITING'|'SENDING'|'RUNNING'|'DONE'|'FAILED'|'CANCELLED'|'NEEDS_REVIEW';
   error?:string; operationId?:string; pair?:{id:string;revision:number}; scope?:BulkScope;
   expectedDecisionRevision?:number; previewToken?:string; request?:DecisionRequest|BulkRequest; receiptAbsent?:boolean;
@@ -187,7 +187,7 @@ export class PairReviewQueue {
           this.checkAssessment(item,w);
           if(w.active_operation?.operation_type==='BULK_DECISIONS'){await this.delay();continue;}
           this.checkWorkflow(item,w);
-          const revision={...mutation(w),request_id:item.id};
+          const revision={...mutation(w),request_id:item.id,...(item.reason?{reason:item.reason}:{})};
           const body=item.request||(item.pair?
             {...revision,expected_pair_revision:item.pair.revision,decision:item.decision}:
             {...revision,expected_decision_revision:item.expectedDecisionRevision??w.decision_revision,decision:item.decision,scope:item.scope!,auto_only:false,

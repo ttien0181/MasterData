@@ -2,6 +2,17 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { setCsrfToken } from './api';
 import { getWorkflow, decidePair, bulkDecisions, saveGolden } from './workflowApi';
 import { sessionTabs, tabReadiness, sessionPath } from './workflowNavigation';
+import * as workflowApi from './workflowApi';
+it('sends preview, exact group approval and token-bound finalize contracts',async()=>{
+ const fetcher=vi.fn().mockResolvedValue(new Response('{}',{status:200}));vi.stubGlobal('fetch',fetcher);
+ const base={request_id:'req',expected_workflow_revision:4,expected_decision_revision:2,expected_assessment_id:'a'};
+ await workflowApi.previewClusters('r',{...base,allow_partial:true});
+ expect(fetcher.mock.calls[0][0]).toContain('/workflow/cluster-preview');
+ await workflowApi.approveGroup('r',{...base,record_ids:['a','b','c'],reason:'Evidence checked'});
+ expect(fetcher.mock.calls[1][0]).toContain('/workflow/group-approvals');expect(JSON.parse(fetcher.mock.calls[1][1].body).record_ids).toEqual(['a','b','c']);
+ await workflowApi.finalizeDecisions('r',{...base,allow_partial:true,preview_operation_id:'preview',preview_token:'token'});
+ expect(JSON.parse(fetcher.mock.calls[2][1].body)).toMatchObject({preview_operation_id:'preview',preview_token:'token',allow_partial:true});
+});
 
 afterEach(() => vi.unstubAllGlobals());
 it('reads without mutation, sends cookie/CSRF and exact revision contracts', async () => {

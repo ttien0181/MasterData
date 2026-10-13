@@ -18,6 +18,19 @@ it('prioritizes differences and includes extra source fields in comparison',()=>
  const rows=within(screen.getByRole('table')).getAllByRole('row');
  expect(rows.findIndex(r=>r.textContent?.includes('left@example.com'))).toBeLessThan(rows.findIndex(r=>r.textContent?.includes('Same')));
 });
+it('offers keep-separate independently from Deny and defer',()=>{
+ const decide=vi.fn();render(<table><tbody><PairReviewRow pair={pair} selected={false} toggle={vi.fn()} canWrite busy={false} decide={decide} compare={vi.fn()} explain={vi.fn()}/></tbody></table>);
+ fireEvent.click(screen.getByRole('button',{name:'Không gộp cặp p'}));expect(decide).toHaveBeenCalledWith('no_merge');
+});
+it('requires a reason before bulk Accept when preview contains soft conflict pairs',async()=>{
+ vi.mocked(api.previewBulkDecisions).mockResolvedValue({total:2,applicable:2,blocked:0,skipped:0,workflow_revision:4,decision_revision:1,reason_required:1});
+ const confirm=vi.fn(),body={request_id:'b',expected_workflow_revision:4,expected_decision_revision:1,decision:'merge' as const,scope:{filter:{}}};
+ render(<SessionCacheProvider userId="bulk-reason"><WorkflowContext.Provider value={{workflow:w,refresh:vi.fn()}}><PairBulkConfirmation body={body} label="All" busy={false} error="" close={vi.fn()} confirm={confirm}/></WorkflowContext.Provider></SessionCacheProvider>);
+ await screen.findByText('2 cặp có thể áp dụng');expect(screen.getByRole('button',{name:'Xác nhận Accept'})).toBeDisabled();
+ fireEvent.change(screen.getByRole('textbox',{name:'Lý do Accept'}),{target:{value:'   '}});expect(screen.getByRole('button',{name:'Xác nhận Accept'})).toBeDisabled();
+ fireEvent.change(screen.getByRole('textbox',{name:'Lý do Accept'}),{target:{value:'Source verified'}});fireEvent.click(screen.getByRole('button',{name:'Xác nhận Accept'}));
+ expect(confirm).toHaveBeenCalledWith(expect.anything(),'Source verified');
+});
 it('explains current cluster context and links both published memberships',()=>{
  render(<PairComparison pair={{...pair,cluster_context:{revision:2,stale:true,left_cluster:{cluster_id:'c1',member_count:3},right_cluster:{cluster_id:'c2',member_count:1}}}} close={vi.fn()}/>);
  expect(screen.getByText(/Ngữ cảnh nhóm đã cũ/)).toBeInTheDocument();expect(screen.getByRole('link',{name:/c1/})).toHaveAttribute('href',expect.stringContaining('cluster=c1'));expect(screen.getByRole('link',{name:/c2/})).toBeInTheDocument();

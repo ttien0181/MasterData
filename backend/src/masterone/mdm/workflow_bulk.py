@@ -49,9 +49,11 @@ def run_bulk_decisions(operation_id, factory, progress):
                             not eligibility(pair)['auto_allowed' if op.payload.get('auto_only', False) else 'manual_allowed'] or
                             tuple(sorted((pair.baseline['left_id'], pair.baseline['right_id']))) in links):
                             counts['blocked'] += 1
+                        elif op.payload['decision'] == 'merge' and eligibility(pair).get('reason_required') and not (op.payload.get('reason') or '').strip():
+                            counts['blocked'] += 1
                         else:
                             apply_decision(db, run, pair, op.payload['decision'], op.actor_user_id,
-                                           links=links, resolve_conflicts=False)
+                                           links=links, resolve_conflicts=False, reason=op.payload.get('reason'))
                             counts['applied'] += 1
                             counts['accepted'] += 1  # Keep the old progress contract as an alias.
                             applied.append(pair.id)

@@ -8,7 +8,7 @@ from alembic.config import Config
 
 from masterone.config import get_settings
 
-HEAD = "0029_pair_assessment"
+HEAD = "0030_review_reasons"
 
 
 def alembic_config(url: str, config_path: str | Path | None = None) -> Config:

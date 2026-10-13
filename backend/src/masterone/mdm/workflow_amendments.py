@@ -87,7 +87,7 @@ def amend_decision(db, run_id, pair_id, request, actor):
     if released:
         refresh_negative_assessment(db, run, pair)
     pair.decision = 'UNDECIDED'
-    apply_decision(db, run, pair, request.decision, actor)
+    apply_decision(db, run, pair, request.decision, actor, reason=request.reason)
     # Recheck affected old conflicts at the next publication; unrelated regions remain blocked.
     ids = {pair.baseline['left_id'], pair.baseline['right_id']}
     for row in db.query(WorkflowConflict).filter_by(run_id=run.id, resolved=False):

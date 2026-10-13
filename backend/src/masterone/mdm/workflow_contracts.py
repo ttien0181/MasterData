@@ -27,6 +27,7 @@ class Mutation(BaseModel):
 class DecisionRequest(Mutation):
     expected_pair_revision: int = Field(ge=0)
     decision: Literal['merge', 'no_merge', 'deny', 'defer']
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class AmendDecisionRequest(DecisionRequest):
@@ -62,11 +63,18 @@ class BulkRequest(Mutation):
     scope: BulkScope
     auto_only: bool = False
     preview_token: str | None = Field(default=None, min_length=64, max_length=64)
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class FinalizeRequest(Mutation):
     expected_decision_revision: int = Field(ge=0)
     allow_partial: bool = False
+
+
+class GroupApprovalRequest(Mutation):
+    expected_decision_revision: int = Field(ge=0)
+    record_ids: list[str] = Field(min_length=2, max_length=20)
+    reason: str = Field(min_length=1, max_length=500)
 
 
 class Selection(BaseModel):
