@@ -195,6 +195,9 @@ def start_run(
     task = create_task(run_id, request.app.state.session_factory)
     if task.status != "QUEUED":
         raise HTTPException(409, "Run đã được xử lý hoặc đang chạy")
+    from masterone.mdm.trace import emit
+    emit("queue.enqueue", "completed", run_id=run_id,
+         upload_session_id=run.upload_session_id, task_id=task.id)
     if previous_task is None or is_retry:
         db.add(ResolutionAuditEvent(
             run_id=run.id, actor_user_id=auth.user.id,
