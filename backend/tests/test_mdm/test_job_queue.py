@@ -296,6 +296,8 @@ def test_api_restart_preserves_queue_and_active_owner(snapshot, monkeypatch):
     from masterone import main
     factory, _, _ = snapshot
     engine = factory.kw["bind"]
+    monkeypatch.setattr(main.get_settings(), "app_env", "development")
+    monkeypatch.setattr(main.get_settings(), "mdm_embedded_worker_enabled", False)
     monkeypatch.setattr(main, "create_database", lambda *_: (engine, factory))
     monkeypatch.setattr(main, "require_current", lambda *_: None)
 
@@ -310,6 +312,42 @@ def test_api_restart_preserves_queue_and_active_owner(snapshot, monkeypatch):
     asyncio.run(restart())
     heartbeat(factory, claim)
     assert state(factory)[:2] == ("RUNNING", claim.attempt_id)
+
+
+def test_api_embedded_worker_starts_and_stops_with_lifespan(snapshot, monkeypatch):
+    import asyncio
+
+    from fastapi import FastAPI
+    from masterone import main
+
+    factory, _, _ = snapshot
+    engine = factory.kw["bind"]
+    events = []
+
+    class FakeWorker:
+        def __init__(self, received_factory):
+            assert received_factory is factory
+
+        def start(self):
+            events.append("start")
+
+        def close(self):
+            events.append("close")
+
+    monkeypatch.setattr(main.get_settings(), "app_env", "development")
+    monkeypatch.setattr(main.get_settings(), "mdm_embedded_worker_enabled", True)
+    monkeypatch.setattr(main, "create_database", lambda *_: (engine, factory))
+    monkeypatch.setattr(main, "require_current", lambda *_: None)
+    monkeypatch.setattr(main, "ResolutionWorker", FakeWorker)
+
+    async def run():
+        app = FastAPI()
+        async with main.lifespan(app):
+            assert app.state.resolution_worker is not None
+            assert events == ["start"]
+
+    asyncio.run(run())
+    assert events == ["start", "close"]
 
 
 def test_migration_preserves_jobs_and_attempt_history(tmp_path, monkeypatch):

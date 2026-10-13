@@ -3,10 +3,12 @@
 from hashlib import sha256
 from pathlib import Path
 from tempfile import mkdtemp
+from time import perf_counter
 from uuid import uuid4
 
 from sqlalchemy.orm import sessionmaker
 
+from masterone.config import get_settings
 from masterone.db.base import now_utc
 from masterone.mdm.job_queue import completed, current_claim, guard
 from masterone.mdm.models import (
@@ -22,7 +24,10 @@ from masterone.mdm.pipeline.golden_v2 import record_payload
 from masterone.mdm.pipeline.review_grouping import classify_pair
 from masterone.mdm.pipeline.scoring_engine import MemorySnapshot, ScoringConfig, ScoringEngine, iter_score_batches
 from masterone.mdm.pipeline.semantic_address import run_annotations, with_annotations
+
 from masterone.mdm.resolution_persistence import persist_snapshot
+from masterone.mdm.trace import emit, span, trace_context
+from masterone.mdm.trace import enabled as trace_enabled
 
 
 def _compute(records: list[dict], run_id: str, policy_version: str,
@@ -50,25 +55,29 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
             store=store, fault=_checkpoint_fault, event=_stream_event, normalize=_normalize)
         store = resume.store
         _attempt_id = resume.attempt_id
-        restored = resume.restore_result()
+        with span("pipeline.resume_restore"):
+            restored = resume.restore_result()
         if restored is not None:
             return restored
     fallback = streaming.fallback_reason(scoring_config, store)
     prepared = None
     if fallback is None:
-        records, candidate_result, scoring_engine, scoring_metrics, score_path, prepared = streaming.compute_scores(
-            records, run_id, workspace=score_dir, attempt_id=_attempt_id or (current_claim().attempt_id if current_claim() else None),
-            store=store, candidate_config=candidate_config, scoring_config=scoring_config, negative_pairs=negative_pairs,
-            normalize=_normalize, event=_stream_event, resume=resume)
+        with span("pipeline.streaming_compute"):
+            records, candidate_result, scoring_engine, scoring_metrics, score_path, prepared = streaming.compute_scores(
+                records, run_id, workspace=score_dir, attempt_id=_attempt_id or (current_claim().attempt_id if current_claim() else None),
+                store=store, candidate_config=candidate_config, scoring_config=scoring_config, negative_pairs=negative_pairs,
+                normalize=_normalize, event=_stream_event, resume=resume)
     else:
         if _stream_event:
             _stream_event("fallback:" + fallback, None)
-        candidate_result = CandidateEngine(candidate_config).generate(records)
+        with span("pipeline.build_candidates"):
+            candidate_result = CandidateEngine(candidate_config).generate(records)
         scoring_engine = ScoringEngine(MemorySnapshot(records), scoring_config, negative_pairs=negative_pairs)
         score_path = score_dir / "scored.parquet"
-        scoring_metrics = scoring_engine.write_scores(
-            ({"left_id": a, "right_id": b, "reasons": sorted(reasons)} for (a, b), reasons in sorted(candidate_result.pairs.items())),
-            score_path, expected_count=len(candidate_result.pairs))
+        with span("pipeline.score", candidate_count=len(candidate_result.pairs)):
+            scoring_metrics = scoring_engine.write_scores(
+                ({"left_id": a, "right_id": b, "reasons": sorted(reasons)} for (a, b), reasons in sorted(candidate_result.pairs.items())),
+                score_path, expected_count=len(candidate_result.pairs))
     candidate_blocks = candidate_result.pairs
     by_id = {record["id"]: record for record in records}
     from masterone.mdm.pipeline.cluster_policy import enabled as cluster_enabled
@@ -78,24 +87,43 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
     disk_decisions = cluster_enabled()
     pairs = DecisionStore(score_dir) if disk_decisions else []
     insufficient_count = 0
-    decisions = prepared if prepared is not None else (
-        {"left_id": scored.left_id, "right_id": scored.right_id, "result": scoring_engine.decide(scored, by_id)}
-        for batch in iter_score_batches(score_path, scoring_engine.config.batch_size) for scored in batch)
-    for item in decisions:
-        result = item["result"]
-        if result["decision"] == "INSUFFICIENT_EVIDENCE":
-            insufficient_count += 1
-            continue
-        pair_id = sha256(f"{run_id}:{item['left_id']}:{item['right_id']}:{policy_version}".encode()).hexdigest()
-        payload = {"id": pair_id, **result}
-        if disk_decisions:
-            pairs.add(payload)
-        else:
-            pairs.append(payload)
+    decide_timings = {}
+    def decisions_from_scores():
+        for batch in iter_score_batches(score_path, scoring_engine.config.batch_size):
+            started = perf_counter()
+            decided = [{"left_id": scored.left_id, "right_id": scored.right_id,
+                        "result": scoring_engine.decide(scored, by_id)} for scored in batch]
+            decide_timings["policy_compute_ms"] = decide_timings.get("policy_compute_ms", 0.0) + (perf_counter() - started) * 1000
+            yield from decided
+    decisions = prepared if prepared is not None else decisions_from_scores()
+    route_ms = 0.0
+    with span("pipeline.decide", candidate_count=len(candidate_blocks)) as metrics:
+        for item in decisions:
+            route_started = perf_counter()
+            result = item["result"]
+            if result["decision"] == "INSUFFICIENT_EVIDENCE":
+                insufficient_count += 1
+                route_ms += (perf_counter() - route_started) * 1000
+                continue
+            pair_id = sha256(f"{run_id}:{item['left_id']}:{item['right_id']}:{policy_version}".encode()).hexdigest()
+            payload = {"id": pair_id, **result}
+            if disk_decisions:
+                pairs.add(payload)
+            else:
+                pairs.append(payload)
+            route_ms += (perf_counter() - route_started) * 1000
+        metrics["insufficient_count"] = insufficient_count
+    decide_timings["route_ms"] = route_ms
+    for key, step in (("score_read_ms", "score_read"), ("policy_compute_ms", "policy_compute"),
+                      ("route_ms", "route")):
+        if key in decide_timings:
+            emit("pipeline.decide." + step, "completed", duration_ms=round(decide_timings[key], 3),
+                 batch_count=decide_timings.get("batch_count"), candidate_count=len(candidate_blocks))
     if disk_decisions:
         pairs.seal()
     clusters = build_proposals(records, pairs, run_id, policy_version, negative_pairs=negative_pairs,
                                execution_blocked_pairs=execution_blocked_pairs)
+
     review_cases = []
     pairs_by_id = None if disk_decisions else {item["id"]: item for item in pairs}
     for case in clusters["review_cases"]:
@@ -119,17 +147,62 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
             "streaming": {"mode": "serial" if fallback else "streaming", "reason": fallback},
             "_streaming_workspace": str(score_dir) if fallback is None else None}
     if resume:
-        resume.save_result(computed)
+        with span("pipeline.checkpoint_save"):
+            resume.save_result(computed)
     return computed
 
 
 def run_pipeline(run_id: str, factory: sessionmaker, progress, *, scoring_config: ScoringConfig | None = None) -> None:
     from masterone.mdm.engine_adapter import engine_context, select_engine
-    configuration = select_engine(factory, run_id)
-    if configuration is None:
+    with factory() as db:
+        run = db.get(ResolutionRun, run_id)
+        upload_session_id = run.upload_session_id if run else None
+    claim = current_claim()
+    with trace_context(run_id=run_id, upload_session_id=upload_session_id,
+                       attempt_id=claim.attempt_id if claim else None):
+        with span("pipeline.total"):
+            with span("pipeline.select_engine"):
+                configuration = select_engine(factory, run_id)
+            if configuration is None:
+                return
+            with engine_context(configuration):
+                return _run_selected_pipeline(run_id, factory, progress, scoring_config=scoring_config)
+
+
+def _emit_summary(factory, run_id: str, branch: str) -> None:
+    """Report committed results; pair and proposal counts have distinct meanings."""
+    from sqlalchemy import func
+
+    from masterone.mdm.models import ResolutionProposal, ResolutionReviewCase
+
+    with factory() as db:
+        run = db.get(ResolutionRun, run_id)
+        pairs = dict(db.query(ResolutionPair.triage_status, func.count(ResolutionPair.id))
+                     .filter_by(run_id=run_id).group_by(ResolutionPair.triage_status).all())
+        auto = db.query(ResolutionProposal.member_record_ids).filter_by(
+            run_id=run_id, status="AUTO_READY").all()
+        review_cases = db.query(func.count(ResolutionReviewCase.id)).filter_by(
+            run_id=run_id, status="OPEN").scalar()
+        emit("run.summary", "completed", run_id=run_id, branch=branch,
+             record_count=run.record_count, file_count=run.file_count,
+             candidate_count=run.candidate_count, insufficient_count=run.insufficient_count,
+             pair_count=sum(pairs.values()), review_pair_count=pairs.get("REVIEW", 0),
+             auto_pair_count=pairs.get("HIGH_CONFIDENCE_PROPOSAL", 0),
+             blocked_pair_count=sum(count for status, count in pairs.items()
+                                    if status in {"NOT_MERGEABLE", "BLOCKED", "NON_MATCH"}),
+             auto_proposal_count=len(auto),
+             auto_record_count=sum(len(members) for (members,) in auto),
+             review_case_count=review_cases)
+
+
+def _safe_summary(factory, run_id: str, branch: str) -> None:
+    if not trace_enabled():
         return
-    with engine_context(configuration):
-        return _run_selected_pipeline(run_id, factory, progress, scoring_config=scoring_config)
+    try:
+        _emit_summary(factory, run_id, branch)
+    except Exception as error:
+        emit("run.summary", "failed", run_id=run_id, branch=branch,
+             error_type=type(error).__name__)
 
 
 def _run_selected_pipeline(run_id, factory, progress, *, scoring_config=None):
@@ -138,22 +211,24 @@ def _run_selected_pipeline(run_id, factory, progress, *, scoring_config=None):
     with factory() as db:
         has_generation = db.get(ResolutionPublication, run_id) is not None
     if feature("generation_staging_enabled") or feature("stream_decide_materialize_enabled") or feature("pipeline_resume_enabled") or has_generation:
+        emit("pipeline.branch", "selected", branch="generation_staging")
         return _run_staged_pipeline(run_id, factory, progress, scoring_config=scoring_config)
-    with factory() as db:
-        run = db.get(ResolutionRun, run_id)
-        if run is None:
-            return
-        guard(db, run_id)
-        task = db.query(ResolutionTask).filter_by(run_id=run_id).one()
-        task.status = "RUNNING"
-        task.phase = "loading"
-        task.updated_at = now_utc()
-        record_count = db.query(ResolutionRecord).filter_by(run_id=run_id).count()
-        run.status = "RUNNING"
-        run.phase = "loading"
-        policy_version = run.policy_version
-        db_url = db.get_bind().url.render_as_string(hide_password=False)
-        db.commit()
+    with span("pipeline.load_metadata"):
+        with factory() as db:
+            run = db.get(ResolutionRun, run_id)
+            if run is None:
+                return
+            guard(db, run_id)
+            task = db.query(ResolutionTask).filter_by(run_id=run_id).one()
+            task.status = "RUNNING"
+            task.phase = "loading"
+            task.updated_at = now_utc()
+            record_count = db.query(ResolutionRecord).filter_by(run_id=run_id).count()
+            run.status = "RUNNING"
+            run.phase = "loading"
+            policy_version = run.policy_version
+            db_url = db.get_bind().url.render_as_string(hide_password=False)
+            db.commit()
 
     with factory() as db:
         negative_pairs = load_cannot_links(db, run_id)
@@ -161,7 +236,8 @@ def _run_selected_pipeline(run_id, factory, progress, *, scoring_config=None):
             for p in db.query(ResolutionPair).filter_by(run_id=run_id, user_decision="REJECTED").all())
 
     progress("blocking", 0, record_count)
-    if record_count > 10000:
+    if record_count > get_settings().mdm_stage_runner_threshold:
+        emit("pipeline.branch", "selected", branch="stage_runner", record_count=record_count)
         from masterone.mdm.pipeline.stage_runner import StageRunner
         runner = StageRunner(run_id=run_id, attempt_id=current_claim().attempt_id if current_claim() else task.id,
                              output_dir=Path(mkdtemp(prefix="p119-attempt-")), db_url=db_url)
@@ -173,9 +249,11 @@ def _run_selected_pipeline(run_id, factory, progress, *, scoring_config=None):
             runner.close_snapshot()
             runner.con.close()
     else:
-        with factory() as db:
-            records = [record_payload(item) for item in db.query(ResolutionRecord)
-                       .filter_by(run_id=run_id).order_by(ResolutionRecord.id).all()]
+        emit("pipeline.branch", "selected", branch="memory", record_count=record_count)
+        with span("pipeline.load_records", record_count=record_count):
+            with factory() as db:
+                records = [record_payload(item) for item in db.query(ResolutionRecord)
+                           .filter_by(run_id=run_id).order_by(ResolutionRecord.id).all()]
         computed = _compute(records, run_id, policy_version, negative_pairs=negative_pairs,
                             scoring_config=scoring_config, execution_blocked_pairs=execution_blocked_pairs,
                             _policy_factory=factory)
@@ -198,6 +276,7 @@ def _run_selected_pipeline(run_id, factory, progress, *, scoring_config=None):
             run.candidate_count = computed["candidate_count"]
             run.insufficient_count = computed["insufficient_count"]
             run.completed_at = now_utc()
+
     finally:
         from masterone.mdm.pipeline.decision_store import DecisionStore
         if isinstance(computed["pairs"], DecisionStore):
@@ -224,7 +303,8 @@ def _run_staged_pipeline(run_id, factory, progress, *, scoring_config=None):
     publisher = GenerationPublisher(factory)
     attempt_id = current_claim().attempt_id if current_claim() else str(uuid4())
     try:
-        identity = publisher.begin(run_id, config=config_identity(policy_version, scoring_config), attempt_id=attempt_id)
+        with span("pipeline.generation_begin"):
+            identity = publisher.begin(run_id, config=config_identity(policy_version, scoring_config), attempt_id=attempt_id)
     except BaseException:
         if current_claim() is None:
             publisher.start_failed(run_id, attempt_id, previous_attempt_id)
@@ -247,14 +327,19 @@ def _run_staged_pipeline(run_id, factory, progress, *, scoring_config=None):
             vetoes = frozenset(tuple(sorted((p.left_record_id, p.right_record_id)))
                 for p in db.query(ResolutionPair).filter_by(run_id=run_id, user_decision="REJECTED"))
         if already_promoted:
-            publisher.promote(identity)
+            with span("pipeline.promote"):
+                publisher.promote(identity)
+            _safe_summary(factory, run_id, "generation_staging")
             return
         if feature("pipeline_resume_enabled") and publisher.resume_ready(identity):
             progress("promoting", record_count, record_count)
-            publisher.promote(identity)
+            with span("pipeline.promote"):
+                publisher.promote(identity)
+            _safe_summary(factory, run_id, "generation_resume")
             return
         progress("blocking", 0, record_count)
-        if record_count > 10000:
+        if record_count > get_settings().mdm_stage_runner_threshold:
+            emit("pipeline.branch", "selected", branch="stage_runner", record_count=record_count)
             from masterone.mdm.pipeline.stage_runner import StageRunner
             # Scratch paths cannot collide across retries; publication checkpoints
             # are separate from these disposable local scoring artifacts.
@@ -264,16 +349,21 @@ def _run_staged_pipeline(run_id, factory, progress, *, scoring_config=None):
                 negative_pairs=negative_pairs, return_data=True, scoring_config=scoring_config,
                 execution_blocked_pairs=vetoes)
         else:
-            with factory() as db:
-                records = [record_payload(item) for item in db.query(ResolutionRecord)
-                           .filter_by(run_id=run_id).order_by(ResolutionRecord.id)]
+            emit("pipeline.branch", "selected", branch="memory", record_count=record_count)
+            with span("pipeline.load_records", record_count=record_count):
+                with factory() as db:
+                    records = [record_payload(item) for item in db.query(ResolutionRecord)
+                               .filter_by(run_id=run_id).order_by(ResolutionRecord.id)]
             computed = _compute(records, run_id, policy_version, negative_pairs=negative_pairs,
                 scoring_config=scoring_config, execution_blocked_pairs=vetoes, _attempt_id=identity.attempt_id,
                 _checkpoint_factory=factory)
         progress("staging", record_count, record_count)
-        publisher.stage(identity, computed)
+        with span("pipeline.stage", record_count=record_count):
+            publisher.stage(identity, computed)
         progress("promoting", record_count, record_count)
-        publisher.promote(identity)
+        with span("pipeline.promote", record_count=record_count):
+            publisher.promote(identity)
+        _safe_summary(factory, run_id, "generation_staging")
     except BaseException as error:
         if current_claim() is None:
             publisher.fail(identity, failure_code(error))
