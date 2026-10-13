@@ -1,3 +1,5 @@
+import { backendHeaders } from "./backendHeaders";
+
 export type UploadProgress = { loaded: number; total: number; percent: number };
 
 export function putToSignedUrl(
@@ -46,10 +48,10 @@ export async function mergeR2Files(objectKeys: string[], csrfToken: string): Pro
   const response = await fetch(`${apiBase}/api/v1/large-imports/merge`, {
     method: "POST",
     credentials: "include",
-    headers: {
+    headers: backendHeaders({
       "Content-Type": "application/json",
       "X-CSRF-Token": csrfToken,
-    },
+    }),
     body: JSON.stringify({ object_keys: objectKeys, cleanup_sources: true }),
   });
   if (!response.ok) {
@@ -73,10 +75,10 @@ export async function uploadFilesToR2(
     const signedResponse = await fetch(`${apiBase}/api/v1/large-imports/upload-url`, {
       method: "POST",
       credentials: "include",
-      headers: {
+      headers: backendHeaders({
         "Content-Type": "application/json",
         "X-CSRF-Token": csrfToken,
-      },
+      }),
       body: JSON.stringify({ filename: file.name, content_type: contentType }),
     });
     if (!signedResponse.ok) {
@@ -91,7 +93,7 @@ export async function uploadFilesToR2(
     const completeResponse = await fetch(`${apiBase}/api/v1/large-imports/complete`, {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+      headers: backendHeaders({ "Content-Type": "application/json", "X-CSRF-Token": csrfToken }),
       body: JSON.stringify({ object_name }),
     });
     if (!completeResponse.ok) {

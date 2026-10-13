@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { putToSignedUrl, type UploadProgress } from "@/lib/largeUpload";
+import { backendHeaders } from "@/lib/backendHeaders";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -21,10 +22,10 @@ export default function LargeFileUpload({ csrfToken }: { csrfToken: string }) {
         {
           method: "POST",
           credentials: "include",
-          headers: {
+          headers: backendHeaders({
             "Content-Type": "application/json",
             "X-CSRF-Token": csrfToken,
-          },
+          }),
           body: JSON.stringify({
             filename: file.name,
             content_type: file.type || "text/csv",
@@ -37,10 +38,10 @@ export default function LargeFileUpload({ csrfToken }: { csrfToken: string }) {
       const complete = await fetch(`${apiBase}/api/v1/large-imports/complete`, {
         method: "POST",
         credentials: "include",
-        headers: {
+        headers: backendHeaders({
           "Content-Type": "application/json",
           "X-CSRF-Token": csrfToken,
-        },
+        }),
         body: JSON.stringify({ object_name }),
       });
       if (!complete.ok)

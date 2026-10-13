@@ -1,4 +1,5 @@
 import { exportChoices } from "./resolutionChoices";
+import { backendHeaders } from "./backendHeaders";
 import type { ResolutionOverview, ResolutionRunHistory, ResolutionRun, ReviewCategory, SeparateRecord,
   ResolutionItem, ResolutionItemDetail, ResolutionExportReadiness, ResolutionExportSummary,
   ResolutionPreview, ResolutionMergeHistory, ResolutionSplitPreview, AuthUser, ResolutionTask,
@@ -26,7 +27,7 @@ function errorMessage(detail: unknown, status: number) {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method?.toUpperCase() ?? "GET";
-  const headers = new Headers(init?.headers);
+  const headers = backendHeaders(init?.headers);
   if (method !== "GET" && method !== "HEAD") headers.set("X-CSRF-Token", csrfToken);
   const response = await fetch(`${apiBase()}/api/v1/mdm${path}`, { ...init, credentials: "include", headers });
   if (!response.ok) {
@@ -40,12 +41,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export type { AuthUser } from "./contracts";
 export type BackendHealth = { status: string; env?: string };
 export async function getBackendHealth() {
-  const response = await fetch(`${apiBase()}/health`, { cache: "no-store" });
+  const response = await fetch(`${apiBase()}/health`, { cache: "no-store", headers: backendHeaders() });
   if (!response.ok) throw new ApiError(`Health check failed (${response.status})`, response.status);
   return response.json() as Promise<BackendHealth>;
 }
 async function authRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBase()}/api/v1/auth${path}`, { ...init, credentials: "include" });
+  const response = await fetch(`${apiBase()}/api/v1/auth${path}`, {
+    ...init, credentials: "include", headers: backendHeaders(init?.headers),
+  });
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
     throw new ApiError(errorMessage(detail?.detail, response.status), response.status);
@@ -118,6 +121,9 @@ export function uploadResolutionUploadPart(sessionId: string, fileId: string, pa
     xhr.setRequestHeader("Content-Type", "application/octet-stream");
     xhr.setRequestHeader("X-CSRF-Token", csrfToken);
     xhr.setRequestHeader("X-Chunk-SHA256", digest);
+    if (process.env.NEXT_PUBLIC_NGROK_BYPASS_WARNING === "true") {
+      xhr.setRequestHeader("ngrok-skip-browser-warning", "1");
+    }
     xhr.upload.onprogress = (event) => onProgress(event.loaded);
     xhr.onerror = () => reject(new Error("Kết nối bị gián đoạn khi tải file."));
     xhr.onabort = () => reject(new Error("Đã hủy khối upload."));
@@ -230,7 +236,7 @@ export const executeResolutionSplit = (runId: string, exportId: string, eventId:
     });
 
 async function requestCsv(path: string, method: "GET" | "POST", body?: object) {
-  const headers = new Headers();
+  const headers = backendHeaders();
   if (method !== "GET") {
     headers.set("X-CSRF-Token", csrfToken);
     headers.set("Content-Type", "application/json");
