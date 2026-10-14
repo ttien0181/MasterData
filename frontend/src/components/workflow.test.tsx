@@ -12,20 +12,59 @@ import * as api from '@/lib/workflowApi';
 import { SessionCacheProvider } from './SessionCache';
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), usePathname: () => '/app' }));
 vi.mock('./AppSession', () => ({ useAppUser: () => ({ id: 'u', email: 'u@example.test', capabilities: ['read','create_run'] }) }));
-vi.mock('@/lib/workflowApi', async importOriginal => ({ ...await importOriginal<typeof api>(), getWorkflow: vi.fn(), getPairSummary: vi.fn().mockResolvedValue({total:2,needs_review:2,accepted:0,denied:0,kept_separate:0,deferred:0,blocked:0,manual_available:2,auto_available:0,groups:[]}), getPairs: vi.fn(), getClusters: vi.fn(), getGoldenRecords: vi.fn(), decidePair: vi.fn(), finalizeDecisions: vi.fn(), saveGolden: vi.fn() }));
+vi.mock('@/lib/workflowApi', async importOriginal => ({ ...await importOriginal<typeof api>(), getWorkflow: vi.fn(), getPairSummary: vi.fn().mockResolvedValue({total:2,needs_review:2,accepted:0,denied:0,kept_separate:0,deferred:0,blocked:0,manual_available:2,auto_available:0,groups:[]}), getPairs: vi.fn(), getClusters: vi.fn(), getCluster:vi.fn(),getClusterGolden:vi.fn(),getGoldenResolution:vi.fn().mockResolvedValue({resolution:null,undo_operation_id:null,stale:false}),getGoldenRecords: vi.fn(), decidePair: vi.fn(), previewClusters:vi.fn(),finalizeDecisions: vi.fn(), saveGolden: vi.fn() }));
 vi.mock('@/lib/api', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/api')>(), getResolutionRuns: vi.fn().mockResolvedValue({ items: [], total: 0 }), getUploadSessions: vi.fn().mockResolvedValue({ items: [] }) }));
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 const w: WorkflowRead = { run_id: 'r', workflow_version: 2, workflow_state: 'DECIDE_REVIEW', workflow_revision: 3, decision_revision: 2, cluster_revision: 0, golden_revision: 0, counts: { records: { value: 3, unit: 'records' } }, allowed_actions: ['decide-pair', 'bulk-decisions', 'finalize-decisions'], blockers: [], active_operation: null, retryable_operation: null };
 const golden: GoldenRead = { cluster_id: 'c', cluster_revision: 1, golden_revision: 2, revision: 0, status: 'DRAFT', fields: { name: { value: 'Server', provenance: 'SURVIVORSHIP' }, phone: { value: '090', values: [{ value: '090' }, { value: '091' }] } }, alternatives: { name: [{ source_record_id: 'member', source_system: 'CRM', value: 'Source', auto_rule_available: true }] }, selections: {} };
 function workspace(ui: React.ReactNode, workflow = w) { return render(<SessionCacheProvider userId="test"><WorkflowContext.Provider value={{ workflow, refresh: vi.fn().mockResolvedValue(undefined) }}>{ui}</WorkflowContext.Provider></SessionCacheProvider>); }
+
+it('opens published groups by name and compares member fields without raw JSON',async()=>{
+ const group={cluster_id:'c',member_record_ids:['a','b'],member_count:2,singleton:false,status:'REVIEW_APPROVED',display_name:'Nguyễn Văn An',evidence:{items:[],total:0,next_cursor:null}};
+ const records=['a','b'].map((id,index)=>({record_id:id,source_system:index?'ERP':'CRM',raw_fields:{name:'Nguyễn Văn An',dob:index?'1990-05-16':'1990-05-15'},normalized_fields:{},extra_fields:{}}));
+ vi.mocked(api.getClusters).mockResolvedValue({items:[group],total:1,next_cursor:null});
+ vi.mocked(api.getCluster).mockResolvedValue({...group,members:{items:records,total:2,next_cursor:null},pair_evidence:{items:[],total:0,next_cursor:null},llm_stats:{},workflow_context:{}});
+ vi.mocked(api.getClusterGolden).mockResolvedValue(golden);
+ workspace(<ClusterWorkspace initialClusterId="c"/>,{...w,workflow_state:'GOLDEN_REVIEW',cluster_revision:1});
+ expect(await screen.findByRole('table',{name:'Đối chiếu thành viên nhóm'})).toBeVisible();
+ expect(screen.getByRole('button',{name:/Nhóm Nguyễn Văn An/})).toBeVisible();
+ expect(screen.getByText('1990-05-15')).toBeVisible();expect(screen.getByText('1990-05-16')).toBeVisible();
+});
+
+it('keeps separate groups with identical names keyed by their identities',async()=>{
+ const error=vi.spyOn(console,'error').mockImplementation(()=>{});
+ try{
+  const groups=['c1','c2'].map(id=>({cluster_id:id,member_record_ids:[id],member_count:1,singleton:true,
+   status:'DRAFT',display_name:'Same customer name',evidence:{items:[],total:0,next_cursor:null}}));
+  vi.mocked(api.getClusters).mockResolvedValue({items:groups,total:2,next_cursor:null});
+  workspace(<ClusterWorkspace/>,{...w,workflow_state:'GOLDEN_REVIEW',cluster_revision:1});
+  expect(await screen.findAllByRole('button',{name:/Singleton Same customer name/})).toHaveLength(2);
+  expect(error.mock.calls.flat().join(' ')).not.toContain('same key');
+ }finally{error.mockRestore();}
+});
+
+it('requests optional enrichment only after published groups and keeps publication separate',async()=>{
+ vi.mocked(api.getClusters).mockResolvedValue({items:[],total:0,next_cursor:null});
+ const request=vi.spyOn(api,'requestGroupAnnotations').mockResolvedValue({operation_id:'annotations',run_id:'r',
+  operation_type:'GROUP_ANNOTATIONS',status:'QUEUED',stage:'queued',progress:{},error_code:null,result:{}});
+ try{
+  workspace(<ClusterWorkspace/>,{...w,workflow_state:'GOLDEN_REVIEW',cluster_revision:2,
+   allowed_actions:['annotate-groups']});
+  fireEvent.click(await screen.findByRole('button',{name:'Bổ sung đối chiếu địa chỉ'}));
+  await waitFor(()=>expect(request).toHaveBeenCalledWith('r',expect.objectContaining({expected_cluster_revision:2})));
+  expect(api.finalizeDecisions).not.toHaveBeenCalled();
+ }finally{request.mockRestore();}
+});
 beforeEach(() => { vi.clearAllMocks(); sessionStorage.clear(); vi.mocked(api.getPairs).mockResolvedValue({ items: [{ pair_id: 'p', baseline: { id: 'p', left_id: 'a', right_id: 'b', score: 10, decision: 'INSUFFICIENT_EVIDENCE', primary_group: 'D', field_evidence: [] }, decision: 'UNDECIDED', revision: 1, score_unit: 'p119_rule_v1', eligibility: { manual_allowed: false, auto_allowed: false, blocked_reasons: ['NO_EVIDENCE'] } }], total: 1, next_cursor: null }); });
 it('hub starts at overview and performs no workflow computation', async () => { render(<SessionHub />); expect(await screen.findByRole('heading', { name: 'Tổng quan' })).toBeInTheDocument(); expect(api.finalizeDecisions).not.toHaveBeenCalled(); });
 it('shows insufficient evidence and server permissions, only explicit finalize creates groups', async () => {
+  vi.mocked(api.previewClusters).mockResolvedValue({operation_id:'preview',run_id:'r',operation_type:'CLUSTER_PREVIEW',status:'COMPLETED',stage:'complete',progress:{},error_code:null,result:{preview_token:'token',publication:{publication_status:'COMPLETE',covered_records:3,total_records:3,multi_record_groups:0,singletons:3,unresolved_records:0,clusters:3},groups:[{member_record_ids:['a'],singleton:true,status:'DRAFT'}],conflicts:[],conflict_count:0,pending_regions:[],source_decision_revision:2,source_assessment_id:null,allow_partial:false}});
   workspace(<DecisionWorkspace />);
-  expect(await screen.findByText('Thiếu bằng chứng')).toBeInTheDocument();
+  expect(await screen.findByText('Giữ riêng tạm thời; không cần duyệt để hoàn tất.')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Accept cặp p' })).toBeDisabled();
   expect(api.finalizeDecisions).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Hoàn tất phân loại và tạo nhóm' }));
+  await screen.findByRole('table',{name:'Nhóm dự kiến'});expect(api.finalizeDecisions).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Xác nhận tạo nhóm'}));
   await waitFor(() => expect(api.finalizeDecisions).toHaveBeenCalledTimes(1));
 });
 it('pending/defer blockers disable finalize, queued cluster never reads membership', () => {
@@ -112,4 +151,13 @@ it('run change/unmount cancels initial and active-operation polling reads', asyn
   view.rerender(<SessionCacheProvider userId="test"><SessionWorkspace key="second" runId="second"><span>Workspace</span></SessionWorkspace></SessionCacheProvider>);
   expect(signals[1].aborted).toBe(true); view.unmount(); expect(signals.slice(1).every(s => s.aborted)).toBe(true);
   expect(api.finalizeDecisions).not.toHaveBeenCalled();
+});
+it('keeps Golden actions locked until queued finalization finishes',async()=>{
+ vi.mocked(api.getGoldenRecords).mockResolvedValue({items:[golden],total:1,next_cursor:null});
+ workspace(<GoldenRecords/>,{...w,workflow_state:'GOLDEN_REVIEW',cluster_revision:1,
+  allowed_actions:['finalize-golden','resolve-golden'],active_operation:{operation_id:'final-job',run_id:'r',
+   operation_type:'FINALIZE_GOLDEN',status:'RUNNING',stage:'finalize-golden',progress:{},error_code:null,result:{}}});
+ await screen.findByText('Golden record',{selector:'h2'});
+ expect(screen.getByRole('button',{name:'Chốt phiên'})).toBeDisabled();
+ expect(screen.queryByRole('button',{name:'Chuẩn bị xuất CSV'})).not.toBeInTheDocument();
 });

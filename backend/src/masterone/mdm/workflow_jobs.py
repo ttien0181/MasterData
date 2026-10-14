@@ -18,8 +18,10 @@ def authorize_job(db, run, op):
     actor = db.query(User).filter_by(id=op.actor_user_id).with_for_update().populate_existing().one_or_none()
     required = {'PREPARE': {'create_run'}, 'DECIDE': {'start_run'},
                 'BULK_DECISIONS': {'approve_pair' if op.payload.get('decision') == 'merge' else 'reject_pair'},
-                'CLUSTER': {'approve_pair'}, 'GOLDEN_RESOLVE': {'edit_golden'},
-                'ASSESS_PAIRS': {'approve_pair'}, 'PAIR_ADVICE': {'approve_pair'}}[op.operation_type]
+                'CLUSTER': {'approve_pair'}, 'CLUSTER_PREVIEW': {'approve_pair'}, 'GOLDEN_RESOLVE': {'edit_golden'},
+                'ASSESS_PAIRS': {'approve_pair'}, 'PAIR_ADVICE': {'approve_pair'}, 'GROUP_ANNOTATIONS': {'approve_pair'},
+                'AUTOMATION_SHADOW': {'approve_pair'}, 'AUTOMATION_APPLY': {'approve_pair'},
+                'FINALIZE_GOLDEN': {'edit_golden'}}[op.operation_type]
     if op.operation_type == 'CLUSTER' and op.payload.get('repair_operation_id'):
         required |= {'reject_pair', 'edit_golden'}
     if (not get_settings().session_workflow_enabled or run.archived_at is not None or
@@ -63,15 +65,27 @@ def execute_workflow(operation_id, factory, progress):
     if kind == 'CLUSTER':
         from masterone.mdm.workflow_finalize import run_cluster
         return run_cluster(operation_id, factory, progress)
+    if kind == 'CLUSTER_PREVIEW':
+        from masterone.mdm.workflow_cluster_preview import run_preview
+        return run_preview(operation_id, factory, progress)
     if kind == 'GOLDEN_RESOLVE':
         from masterone.mdm.workflow_resolution import run_resolution
         return run_resolution(operation_id, factory, progress)
+    if kind == 'FINALIZE_GOLDEN':
+        from masterone.mdm.workflow_finalization import run_finalization
+        return run_finalization(operation_id, factory, progress)
     if kind == 'ASSESS_PAIRS':
         from masterone.mdm.workflow_assessment import run_assessment
         return run_assessment(operation_id, factory, progress)
     if kind == 'PAIR_ADVICE':
         from masterone.mdm.workflow_pair_advice import run_pair_advice
         return run_pair_advice(operation_id, factory, progress)
+    if kind == 'GROUP_ANNOTATIONS':
+        from masterone.mdm.workflow_group_annotations import run_group_annotations
+        return run_group_annotations(operation_id, factory, progress)
+    if kind in {'AUTOMATION_SHADOW','AUTOMATION_APPLY'}:
+        from masterone.mdm.workflow_automation import run_apply, run_shadow
+        return (run_shadow if kind=='AUTOMATION_SHADOW' else run_apply)(operation_id,factory,progress)
     profile = select_engine(factory, run_id)
     with engine_context(profile), TemporaryDirectory(prefix='workflow-compute-') as directory:
         execution_identity = digest(config_identity(policy))

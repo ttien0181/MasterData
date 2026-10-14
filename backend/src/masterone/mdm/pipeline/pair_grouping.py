@@ -55,4 +55,11 @@ def classify_result(result, identifier_relation=None):
     states = {entry['field']: entry['state'] for entry in result.get('field_evidence', [])}
     if not states:
         states = {field: value['state'] for field, value in result.get('comparisons', {}).items()}
+    # Describe retained weak evidence without manufacturing an actionable conflict.
+    # The evidence floor takes precedence over field-level contradictions.
+    if result.get('decision') == 'INSUFFICIENT_EVIDENCE':
+        if states and all(state in {'MI', 'IV', 'NC'} for state in states.values()):
+            return 'C', 'C_INSUFFICIENT_DATA'
+        return 'C', ('C_NO_VALID_IDENTITY_ANCHOR' if result.get('reason') == 'NO_VALID_IDENTITY_ANCHOR'
+                     else 'C_INSUFFICIENT_EVIDENCE')
     return classify_states(states, identifier_relation or result.get('unverified_identifier_relation', 'NOT_COMPARABLE'))

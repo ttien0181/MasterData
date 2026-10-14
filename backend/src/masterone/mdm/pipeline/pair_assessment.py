@@ -7,7 +7,7 @@ from masterone.mdm.pipeline.matching import compare_and_score_rule
 from masterone.mdm.pipeline.pair_grouping import classify_result, unverified_identifier_relation
 from masterone.mdm.pipeline.standardization import preserve_verification
 
-VERSION = 'person-review-assessment-v2'
+VERSION = 'person-review-assessment-v4'
 
 
 def assessment_profile(profile=None):
@@ -37,15 +37,24 @@ def assess_prepared_pair(left, right, frequencies=None, negative_pairs=frozenset
                                       defer_hard_constraints=True)
     result, evaluation, _ = evaluate_prepared(prepared, left, right, negative_pairs=negative_pairs)
     constraints = evaluation.constraints
+    rule_conclusion = result['decision']
+    if rule_conclusion == 'INSUFFICIENT_EVIDENCE':
+        from masterone.mdm.pipeline.review_recovery import support
+        recovered = support(left, right, prepared, frequencies)
+        if recovered:
+            result = {**result, 'rule_reason': result['reason'], 'decision': 'REVIEW',
+                      'triage_status': 'REVIEW', 'reason': 'REVIEW_SUPPORT_' + recovered['kind'],
+                      'triage_reason': 'REVIEW_SUPPORT_' + recovered['kind'], 'review_support': recovered}
     relation = unverified_identifier_relation(left, right)
     group, subgroup = classify(result, relation)
-    rule_conclusion = result['decision']
+    if result.get('review_support') and group == 'C':
+        subgroup = 'C_REVIEW_' + result['review_support']['kind']
     # Preserve the conclusion, while every clear pattern still requires review.
     if result['decision'] == 'MERGEABLE':
         result = {**result, 'triage_status': 'REVIEW', 'triage_reason': 'CLEAR_PATTERN_REVIEW',
                   'reason': 'CLEAR_PATTERN_REVIEW'}
     # A soft contradiction can never inherit automatic eligibility from a broad A rule.
-    if group == 'D' and result['decision'] not in {'NOT_MERGEABLE', 'BLOCKED', 'NON_MATCH'}:
+    if group == 'D' and not result.get('review_support') and result['decision'] not in {'NOT_MERGEABLE', 'BLOCKED', 'NON_MATCH', 'INSUFFICIENT_EVIDENCE'}:
         result = {**result, 'decision': 'REVIEW', 'triage_status': 'REVIEW',
                   'reason': 'UNVERIFIED_ID_CONFLICT' if relation == 'DIFFERENT_VALUE' else 'NON_HARD_CONFLICT'}
     return {**result, 'left_id': left['id'], 'right_id': right['id'],

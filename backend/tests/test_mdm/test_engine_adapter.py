@@ -213,7 +213,7 @@ def test_manual_review_new_engine_keeps_profile_when_global_flag_off(client):
     assert response.status_code == 200, response.text
     with client.session_factory() as db:
         golden = db.get(ResolutionProposal, response.json()["proposal_id"]).golden_fields
-        assert golden["survivorship_version"] == "p119_golden_v2"
+        assert golden["survivorship_version"] == "p119_golden_v3"
         assert golden["_golden_override"] == {"name": "Human"}
 
 

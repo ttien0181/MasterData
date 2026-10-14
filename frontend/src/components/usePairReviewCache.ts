@@ -70,15 +70,15 @@ export function usePairReviewCache(workflow: WorkflowRead, filter: PairFilter, o
 
   const prefetchGroup = useCallback((group: string) => {
     if (!allowed || workflow.active_operation || !(summary.data?.groups.find(item => item.key === group)?.total)) return;
-    void cache.client.prefetchQuery(pageOptions(cache.userId, run, { group }, 0, revision, assessmentId, adviceRevision));
-  }, [allowed, workflow.active_operation, summary.data, cache.client, cache.userId, run, revision, assessmentId, adviceRevision]);
+    void cache.client.prefetchQuery(pageOptions(cache.userId, run, { group, resolution:normalized.resolution }, 0, revision, assessmentId, adviceRevision));
+  }, [allowed, workflow.active_operation, summary.data, cache.client, cache.userId, run, revision, assessmentId, adviceRevision, normalized.resolution]);
   useEffect(() => {
     if (!allowed || workflow.active_operation || !read.data || read.previous || read.fetching || read.error || !summary.data || read.data.decisionRevision !== revision) return;
     let stopped = false;
     const tasks: ReturnType<typeof pageOptions>[] = [];
     if (read.data.next_cursor && read.data.loadedOffset === offset) tasks.push(pageOptions(cache.userId, run, normalized, offset + 10, revision, assessmentId, adviceRevision));
     for (const group of summary.data.groups.filter(item => item.total > 0 && item.key !== normalized.group).slice(0, 3)) {
-      tasks.push(pageOptions(cache.userId, run, { group: group.key }, 0, revision, assessmentId, adviceRevision));
+      tasks.push(pageOptions(cache.userId, run, { group: group.key, resolution:normalized.resolution }, 0, revision, assessmentId, adviceRevision));
     }
     const timer = setTimeout(async () => {
       for (const task of tasks) {

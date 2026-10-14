@@ -1,0 +1,120 @@
+{
+  "date": "2026-10-13",
+  "scope": "controlled automation mechanism; no production precision certification",
+  "precision_target": 0.995,
+  "backend": {
+    "passed": 1218,
+    "skipped": 2,
+    "exit_code": 0,
+    "command": "isolated_environment + pytest -p pytest_asyncio.plugin backend/tests -q --tb=short"
+  },
+  "frontend": {
+    "passed": 218,
+    "files": 31,
+    "exit_code": 0,
+    "typecheck": "tsc --noEmit passed",
+    "production_build": "existing Compose frontend build exit0"
+  },
+  "docker": {
+    "final_backend_worker_build_exit": 0,
+    "final_up_exit": 0,
+    "existing_compose_unchanged": true,
+    "migration": "0031_pair_automation",
+    "services": {
+      "backend": "running healthy",
+      "frontend": "running healthy",
+      "database": "running healthy",
+      "worker": "running"
+    },
+    "default_runtime": {
+      "enabled": false,
+      "certificate_configured": false,
+      "pin_configured": false,
+      "scope_configured": false,
+      "max_components": 20
+    }
+  },
+  "browser": {
+    "status": "PASS",
+    "checks": [
+      {
+        "check": "strict shadow is read-only; uncertified HTTP/UI application denied",
+        "candidate_components": 1,
+        "automatic_pairs": 0
+      },
+      {
+        "check": "stop persists across browser reload and keeps saved decisions"
+      },
+      {
+        "check": "stage3 review recovery never becomes an automatic candidate",
+        "automatic_pairs": 0
+      },
+      {
+        "check": "offline queued worker is cancelled immediately and manual review resumes before restart"
+      }
+    ],
+    "runs": [
+      "46d5ffed-709f-458c-ba7f-a718c2dc0d98",
+      "7161d94e-467a-4a19-9ffc-b84c9a9baafd"
+    ],
+    "pageErrors": [],
+    "scope": "local synthetic fixtures; no production certification/activation"
+  },
+  "certification": {
+    "stage3_cases_rechecked": 8,
+    "production_eligible_cases": 0,
+    "matcher_rerun": false,
+    "strict_modules_unchanged": true,
+    "certificate_builder_cli_expected_exit": 2,
+    "certificate_builder_cli_gate": {
+      "eligible": false,
+      "reasons": [
+        "NON_PRODUCTION_VALIDATION",
+        "NO_INDEPENDENT_HOLDOUT",
+        "NON_REPRESENTATIVE_LABELS",
+        "PRECISION_BOUND_BELOW_TARGET"
+      ],
+      "cohorts": {
+        "24470c8d2362c1bcf187e1a3615743aa2d1aebf3d614424e621198215452727c": {
+          "precision_lower_bound": 0.2065493143772375,
+          "attempted": 1,
+          "labelled": 1,
+          "correct": 1
+        }
+      },
+      "precision_target": 0.995,
+      "confidence": "Wilson95% two-sided, Bonferroni across certified component cohorts"
+    },
+    "runtime_activation": false,
+    "positive_path_scope": "isolated pytest certificate fixtures only; no certificate installed in Docker"
+  },
+  "review": {
+    "critical": 0,
+    "important_found": 2,
+    "important_resolved": 2,
+    "remaining": 0,
+    "fixes": [
+      "offline/running stop immediately retires owner/unlocks manual review",
+      "certified cohorts filtered before component cap",
+      "manual repair clears active automatic provenance and preserves audit",
+      "UI assessment text and automatic acceptance badge agree with current decision",
+      "component cohort binds record count"
+    ],
+    "regressions": "RED/GREEN for every fix; focused46 backend and26 UI passed; extra size44 focused passed; full final1218/218 passed"
+  },
+  "source_sha256": {
+    "backend/src/masterone/mdm/pipeline/pair_automation.py": "66d825d37a6e04cbb8c8a42d7d02038071ee935f9bf7a6dbf5abad0a096eaadc",
+    "backend/src/masterone/mdm/workflow_automation.py": "0287cc8a1174290a68b9839b55235cea17ab3033eb429f1599d662a15753a333",
+    "backend/src/masterone/mdm/workflow_resolution.py": "2b08252cc9cd2caae63bbd46137467510323f042abb054bb7338afb414bc55da",
+    "scripts/pair_automation_certificate.py": "f9b2b73930bdf65983cbfc147d2c157a73bafb9f300e72d9ff95d1b5ee401fb6",
+    "frontend/scripts/verify-pair-automation.mjs": "5be931a4dc36d80c0afafde8277cb11e2886b4d34754168d38c8becd225da992"
+  },
+  "git_whitespace_exit": 0,
+  "limitations": [
+    "Available data is explored synthetic, not independent representative production holdout",
+    "Operator attestations cannot be proven from JSON by software",
+    "No real-user time-saving study or production auto-merge canary",
+    "Stage3 recall/workload limitations remain",
+    "Old assessments need explicit reassessment for current execution identity"
+  ]
+}

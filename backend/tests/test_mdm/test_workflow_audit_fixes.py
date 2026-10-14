@@ -7,6 +7,10 @@ from tests.test_mdm.test_workflow_stages import read, ready_decisions, run_one
 
 def test_status_does_not_materialize_pair_payloads(client, workflow_run):
     ready_decisions(client, workflow_run)
+    from masterone.mdm.workflow_models import WorkflowPair
+    with client.session_factory.begin() as db:
+        pair = db.query(WorkflowPair).filter_by(run_id=workflow_run).first()
+        pair.decision = 'DEFERRED'
     statements = []
     engine = client.session_factory.kw['bind']
     def record(_conn, _cursor, statement, *_):
@@ -97,8 +101,8 @@ def test_partial_publication_repair_and_undo_are_fenced(client, workflow_run, mo
     url = f'/api/v1/mdm/runs/{workflow_run}/workflow'
     original = cluster_snapshot
     forced_pair = {}
-    def one_guard_failure(snapshot, run_id):
-        result = original(snapshot, run_id)
+    def one_guard_failure(snapshot, run_id, **kwargs):
+        result = original(snapshot, run_id, **kwargs)
         pair = next(p for p in snapshot['pairs'] if p['decision'] == 'MERGEABLE')
         forced_pair['id'] = pair['id']
         if snapshot['overlays'].get(pair['id']) != 'REJECTED':
@@ -138,7 +142,7 @@ def test_partial_publication_repair_and_undo_are_fenced(client, workflow_run, mo
         db.query(ResolutionTask).filter_by(run_id=workflow_run).one().max_attempts = 1
     claim = claim_next(client.session_factory, 'repair-failure', lease_seconds=300)
     with ownership(claim), monkeypatch.context() as patch:
-        def fail_compute(*_):
+        def fail_compute(*_, **_kwargs):
             raise ValueError('injected-repair-publication-failure')
         patch.setattr('masterone.mdm.workflow_finalize.cluster_snapshot', fail_compute)
         with pytest.raises(ValueError, match='injected-repair'):

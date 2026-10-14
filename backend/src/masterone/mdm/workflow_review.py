@@ -6,7 +6,6 @@ from masterone.mdm.pipeline.decision_semantics import ReviewDecision, adapt_eval
 from masterone.mdm.workflow_assessment_reads import effective_column, effective_result
 from masterone.mdm.workflow_models import WorkflowConflict, WorkflowPair
 from masterone.mdm.workflow_service import (
-    active_operation,
     audit,
     check_revision,
     conflict,
@@ -44,7 +43,7 @@ def eligibility(pair):
 
 def pair_read(pair):
     return {'pair_id': pair.id, 'baseline': effective_result(pair), 'decision': pair.decision,
-            'review_reason': pair.review_reason,
+            'review_reason': pair.review_reason, 'automation': pair.automation,
             'original_baseline': pair.baseline, 'assessment_id': pair.assessment_id,
             'advice': pair.advice, 'revision': pair.revision, 'eligibility': eligibility(pair), 'score_unit': 'p119_rule_v1'}
 
@@ -60,6 +59,7 @@ def scoped_pairs(db, run_id, filters=None):
     if filters.get('resolution'):
         from masterone.mdm.workflow_review_rules import pending_predicate
         query = query.filter(pending_predicate() if filters['resolution'] == 'REQUIRED' else
+                             effective_column()['decision'].as_string() == 'INSUFFICIENT_EVIDENCE' if filters['resolution'] == 'INSUFFICIENT' else
                              WorkflowPair.decision.in_(('UNDECIDED', 'DEFERRED')) if filters['resolution'] == 'PENDING'
                              else WorkflowPair.decision == filters['resolution'])
     return query
@@ -92,6 +92,7 @@ def apply_decision(db, run, pair, decision, actor, *, links=None, resolve_confli
             created_by=actor, reason='STEWARD_REJECT', active=True))
         links.add(key)
     pair.decision = DECISIONS[decision]
+    pair.automation = None
     pair.review_reason = (reason or '').strip() or None
     pair.revision += 1
     # Preserve historical no_merge semantics; explicit Deny is a durable cannot-link.
@@ -104,14 +105,15 @@ def apply_decision(db, run, pair, decision, actor, *, links=None, resolve_confli
 
 
 def decide_pair(db, run_id, pair_id, request, actor):
-    payload = request.model_dump()
+    payload = request.model_dump(exclude={'reason'} if request.reason is None else set())
     payload['pair_id'] = pair_id
     run = enabled_run(db, run_id, actor)
     prior = replay(db, run_id, 'PAIR_DECISION', request.request_id, payload)
     if prior:
         return prior.result
     check_revision(run, payload)
-    if run.workflow_state != 'DECIDE_REVIEW' or active_operation(db, run_id):
+    from masterone.mdm.workflow_service import review_blocking_operation
+    if run.workflow_state != 'DECIDE_REVIEW' or review_blocking_operation(db, run_id):
         conflict('DECISIONS_LOCKED')
     pair = db.query(WorkflowPair).filter_by(run_id=run_id, id=pair_id).one_or_none()
     if pair is None:

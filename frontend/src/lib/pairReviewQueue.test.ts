@@ -6,6 +6,18 @@ const state:WorkflowRead={run_id:'r',workflow_version:2,workflow_state:'DECIDE_R
 function setup(){const services={workflow:vi.fn().mockResolvedValue(state),pair:vi.fn().mockResolvedValue({pair_id:'a',revision:1}),bulk:vi.fn(),operation:vi.fn(),onPair:vi.fn(),refresh:vi.fn().mockResolvedValue(undefined),alive:vi.fn().mockReturnValue(true),onError:vi.fn(),delay:vi.fn().mockResolvedValue(undefined)};return{q:new PairReviewQueue(services),services};}
 const intent={key:'pair:a',label:'Accept a',assessmentId:'v1',decision:'merge' as const,pair:{id:'a',revision:0}};
 const settle=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
+it('retains reviewed group identifiers and evidence token in queued bulk writes',async()=>{
+ const {q,services}=setup();services.bulk.mockResolvedValue({operation_id:'job',status:'COMPLETED'});
+ q.add({key:'group-review',label:'Reviewed group',assessmentId:'v1',decision:'merge',scope:{pair_ids:['a']},
+   reviewGroupRecordIds:['r1','r2'],reviewGroupToken:'source-bound-token',reason:'Documents checked'});
+ await settle();expect(services.bulk).toHaveBeenCalledWith(expect.objectContaining({
+   review_group_record_ids:['r1','r2'],review_group_token:'source-bound-token'}));
+});
+it('persists reviewed group context before dispatch so it survives reload',()=>{
+ const saved=sessionReviewQueueStorage('group-test','run');
+ saved.save([{...intent,id:'group',status:'WAITING',reviewGroupRecordIds:['r1','r2'],reviewGroupToken:'token'}]);
+ expect(saved.load()[0]).toMatchObject({reviewGroupRecordIds:['r1','r2'],reviewGroupToken:'token'});saved.clear();
+});
 it('preserves approval reasons in queued single and bulk writes',async()=>{
  const {q,services}=setup();services.bulk.mockResolvedValue({operation_id:'job',status:'COMPLETED'});
  q.add({...intent,reason:'Checked source documents'});await settle();

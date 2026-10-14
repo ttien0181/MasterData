@@ -1,0 +1,296 @@
+[
+  {
+    "case": "TC1",
+    "assessment_version": "person-review-assessment-v3",
+    "records_available": 10022,
+    "source_parsing": {
+      "rejected_source_rows": 0
+    },
+    "records_loaded": 10022,
+    "partial_sample": false,
+    "sampling": "smallest SHA256(raw source identity); no truth used",
+    "truth_used_during_compute": false,
+    "candidates": 83124,
+    "candidate_hash": "253ac7e10b25bf6e6ce79bdc5c12f448c3fe2e2c5788b032cc4b84d27611ca06",
+    "evidence_hash": "5dc6f1637d5540e5e13cd5156d15d26f6f3f469831963f7117de5abb6c8337a4",
+    "decisions": {
+      "INSUFFICIENT_EVIDENCE": 65977,
+      "NOT_MERGEABLE": 12981,
+      "REVIEW": 4143,
+      "MERGEABLE": 23
+    },
+    "groups": {
+      "C": 65977,
+      "BLOCKED": 12981,
+      "A": 4166
+    },
+    "transitions": {
+      "INSUFFICIENT_EVIDENCE -> INSUFFICIENT_EVIDENCE": 65977,
+      "NOT_MERGEABLE -> NOT_MERGEABLE": 12981,
+      "REVIEW -> REVIEW": 4143,
+      "MERGEABLE -> MERGEABLE": 23
+    },
+    "mandatory_review": 4166,
+    "floor_failures": 65977,
+    "floor_promoted": 0,
+    "floor_failures_with_known_truth": 65977,
+    "floor_failures_same_entity": 0,
+    "truth_covered_records": 10022
+  },
+  {
+    "case": "TC13",
+    "assessment_version": "person-review-assessment-v3",
+    "records_available": 100000,
+    "source_parsing": {
+      "rejected_source_rows": 0
+    },
+    "records_loaded": 12000,
+    "partial_sample": true,
+    "sampling": "smallest SHA256(raw source identity); no truth used",
+    "truth_used_during_compute": false,
+    "candidates": 127511,
+    "candidate_hash": "927bc45a3b6d3fec04fd1296af28f12457ddff550fd4914e26abed1a8526f9d5",
+    "evidence_hash": "29e342fb3a603c86d77d75fa190976c9d4bc3ed6fd7be36501db151b97a3777a",
+    "decisions": {
+      "INSUFFICIENT_EVIDENCE": 126539,
+      "REVIEW": 753,
+      "MERGEABLE": 219
+    },
+    "groups": {
+      "C": 126539,
+      "D": 749,
+      "A": 223
+    },
+    "transitions": {
+      "INSUFFICIENT_EVIDENCE -> INSUFFICIENT_EVIDENCE": 126539,
+      "REVIEW -> REVIEW": 753,
+      "MERGEABLE -> MERGEABLE": 219
+    },
+    "mandatory_review": 972,
+    "floor_failures": 126539,
+    "floor_promoted": 0,
+    "floor_failures_with_known_truth": 126539,
+    "floor_failures_same_entity": 13,
+    "truth_covered_records": 12000
+  },
+  {
+    "case": "TC2",
+    "assessment_version": "person-review-assessment-v3",
+    "records_available": 10000,
+    "source_parsing": {
+      "rejected_source_rows": 0
+    },
+    "records_loaded": 10000,
+    "partial_sample": false,
+    "sampling": "smallest SHA256(raw source identity); no truth used",
+    "truth_used_during_compute": false,
+    "candidates": 72213,
+    "candidate_hash": "af34ca5b2a8788dd2ae90ac68e138f8368e14857f71b2049a052342b9869c4f0",
+    "evidence_hash": "7a00aeeffa8853286d7a9afb51915bc469e2854d07f778c7357e888640ec3a48",
+    "decisions": {
+      "INSUFFICIENT_EVIDENCE": 59002,
+      "NOT_MERGEABLE": 13210,
+      "REVIEW": 1
+    },
+    "groups": {
+      "C": 59002,
+      "BLOCKED": 13210,
+      "D": 1
+    },
+    "transitions": {
+      "INSUFFICIENT_EVIDENCE -> INSUFFICIENT_EVIDENCE": 59002,
+      "NOT_MERGEABLE -> NOT_MERGEABLE": 13210,
+      "REVIEW -> REVIEW": 1
+    },
+    "mandatory_review": 1,
+    "floor_failures": 59002,
+    "floor_promoted": 0,
+    "floor_failures_with_known_truth": 59002,
+    "floor_failures_same_entity": 0,
+    "truth_covered_records": 10000
+  },
+  {
+    "case": "TC3",
+    "assessment_version": "person-review-assessment-v3",
+    "records_available": 9992,
+    "source_parsing": {
+      "rejected_source_rows": 0
+    },
+    "records_loaded": 9992,
+    "partial_sample": false,
+    "sampling": "smallest SHA256(raw source identity); no truth used",
+    "truth_used_during_compute": false,
+    "candidates": 90129,
+    "candidate_hash": "9ead59649fdede90806334a068e7feb9686f877ba1f534a970dba9db9630acd1",
+    "evidence_hash": "8607fecdd806cd573d377ce105e7e92450ebf0d62679f7fc92411c665115c6a9",
+    "decisions": {
+      "INSUFFICIENT_EVIDENCE": 77287,
+      "NOT_MERGEABLE": 12841,
+      "REVIEW": 1
+    },
+    "groups": {
+      "C": 77287,
+      "BLOCKED": 12841,
+      "D": 1
+    },
+    "transitions": {
+      "INSUFFICIENT_EVIDENCE -> INSUFFICIENT_EVIDENCE": 77287,
+      "NOT_MERGEABLE -> NOT_MERGEABLE": 12841,
+      "REVIEW -> REVIEW": 1
+    },
+    "mandatory_review": 1,
+    "floor_failures": 77287,
+    "floor_promoted": 0,
+    "floor_failures_with_known_truth": 77287,
+    "floor_failures_same_entity": 2527,
+    "truth_covered_records": 9992
+  },
+  {
+    "case": "TC4",
+    "assessment_version": "person-review-assessment-v3",
+    "records_available": 10014,
+    "source_parsing": {
+      "rejected_source_rows": 0
+    },
+    "records_loaded": 10014,
+    "partial_sample": false,
+    "sampling": "smallest SHA256(raw source identity); no truth used",
+    "truth_used_during_compute": false,
+    "candidates": 79522,
+    "candidate_hash": "14499af5e4e9a47802220c18393d2ce7006bb5fe5b2f6e3077c5ba7e202a1c3c",
+    "evidence_hash": "42bd76f5bc5d0740093a802874d2163ae63a9eb63cf332200bdd24dc0ab899cb",
+    "decisions": {
+      "INSUFFICIENT_EVIDENCE": 59305,
+      "NOT_MERGEABLE": 17757,
+      "REVIEW": 2460
+    },
+    "groups": {
+      "C": 59305,
+      "BLOCKED": 17757,
+      "D": 2426,
+      "A": 34
+    },
+    "transitions": {
+      "INSUFFICIENT_EVIDENCE -> INSUFFICIENT_EVIDENCE": 59305,
+      "NOT_MERGEABLE -> NOT_MERGEABLE": 17757,
+      "REVIEW -> REVIEW": 2460
+    },
+    "mandatory_review": 2460,
+    "floor_failures": 59305,
+    "floor_promoted": 0,
+    "floor_failures_with_known_truth": 59305,
+    "floor_failures_same_entity": 0,
+    "truth_covered_records": 10014
+  },
+  {
+    "case": "TC5",
+    "assessment_version": "person-review-assessment-v3",
+    "records_available": 10010,
+    "source_parsing": {
+      "rejected_source_rows": 65
+    },
+    "records_loaded": 10010,
+    "partial_sample": false,
+    "sampling": "smallest SHA256(raw source identity); no truth used",
+    "truth_used_during_compute": false,
+    "candidates": 90684,
+    "candidate_hash": "0815f2d6d28fc20f0415b84b9aa59b824ca02f1086fce7c82cf6629764795443",
+    "evidence_hash": "c37f48279a5a101314c5dcd176e49cb5ada59bc72e1d0011004605cbc141c89b",
+    "decisions": {
+      "INSUFFICIENT_EVIDENCE": 66862,
+      "REVIEW": 4293,
+      "NOT_MERGEABLE": 19214,
+      "MERGEABLE": 315
+    },
+    "groups": {
+      "C": 67029,
+      "A": 3565,
+      "BLOCKED": 19214,
+      "D": 876
+    },
+    "transitions": {
+      "INSUFFICIENT_EVIDENCE -> INSUFFICIENT_EVIDENCE": 66862,
+      "REVIEW -> REVIEW": 4293,
+      "NOT_MERGEABLE -> NOT_MERGEABLE": 19214,
+      "MERGEABLE -> MERGEABLE": 315
+    },
+    "mandatory_review": 4608,
+    "floor_failures": 66862,
+    "floor_promoted": 0,
+    "floor_failures_with_known_truth": 65411,
+    "floor_failures_same_entity": 4204,
+    "truth_covered_records": 9801
+  },
+  {
+    "case": "TC6",
+    "assessment_version": "person-review-assessment-v3",
+    "records_available": 100000,
+    "source_parsing": {
+      "rejected_source_rows": 0
+    },
+    "records_loaded": 12000,
+    "partial_sample": true,
+    "sampling": "smallest SHA256(raw source identity); no truth used",
+    "truth_used_during_compute": false,
+    "candidates": 117017,
+    "candidate_hash": "189e80947b3f1423feaff7ce56f88768befcd17a5ee0fbab0f3232763148223b",
+    "evidence_hash": "8369430185532797a77c9c4619549e4c8f469629200dfd7d7e690f6c49d2a126",
+    "decisions": {
+      "INSUFFICIENT_EVIDENCE": 115849,
+      "MERGEABLE": 651,
+      "REVIEW": 517
+    },
+    "groups": {
+      "C": 115849,
+      "A": 1145,
+      "D": 23
+    },
+    "transitions": {
+      "INSUFFICIENT_EVIDENCE -> INSUFFICIENT_EVIDENCE": 115849,
+      "MERGEABLE -> MERGEABLE": 651,
+      "REVIEW -> REVIEW": 517
+    },
+    "mandatory_review": 1168,
+    "floor_failures": 115849,
+    "floor_promoted": 0,
+    "floor_failures_with_known_truth": 115849,
+    "floor_failures_same_entity": 93,
+    "truth_covered_records": 12000
+  },
+  {
+    "case": "TC8",
+    "assessment_version": "person-review-assessment-v3",
+    "records_available": 100000,
+    "source_parsing": {
+      "rejected_source_rows": 0
+    },
+    "records_loaded": 12000,
+    "partial_sample": true,
+    "sampling": "smallest SHA256(raw source identity); no truth used",
+    "truth_used_during_compute": false,
+    "candidates": 107544,
+    "candidate_hash": "7fc42e31f971d6d1ac5f92e915656e4fe87e4c51034006705397abe079c21205",
+    "evidence_hash": "0eac47e7585847710fa97b9df57e1294337148bc274198b01c9eab345c7c9856",
+    "decisions": {
+      "INSUFFICIENT_EVIDENCE": 107205,
+      "MERGEABLE": 334,
+      "REVIEW": 5
+    },
+    "groups": {
+      "C": 107205,
+      "A": 334,
+      "D": 5
+    },
+    "transitions": {
+      "INSUFFICIENT_EVIDENCE -> INSUFFICIENT_EVIDENCE": 107205,
+      "MERGEABLE -> MERGEABLE": 334,
+      "REVIEW -> REVIEW": 5
+    },
+    "mandatory_review": 339,
+    "floor_failures": 107205,
+    "floor_promoted": 0,
+    "floor_failures_with_known_truth": 107205,
+    "floor_failures_same_entity": 3,
+    "truth_covered_records": 10811
+  }
+]

@@ -1,0 +1,423 @@
+{
+  "cases": [
+    {
+      "case": "TC6",
+      "components": 1300,
+      "strata": {
+        "bridge_phone_email": 100,
+        "chain_3": 100,
+        "chain_5": 100,
+        "chain_10": 100,
+        "star": 100,
+        "two_clusters_false_bridge": 100,
+        "review_veto": 100,
+        "cannot_link": 100,
+        "same_source": 100,
+        "positive_control": 100,
+        "size_19": 100,
+        "size_20": 100,
+        "size_21": 100
+      },
+      "integrity": {
+        "decoded_records": 100000,
+        "selected_records": 10400,
+        "verified_inputs": [
+          {
+            "relative": "input_p119/bill-1.csv",
+            "sha256": "ee949e29f8e40dfbd83aa43e0cf0281ac76e9ae25fec029b846d4207ef05d0a6",
+            "workspace_recovery": false
+          },
+          {
+            "relative": "input_p119/bill-2.csv",
+            "sha256": "b0de0de95c259cc7966552afe5c5eac986fdd432a082bb4854c0588f819df4f5",
+            "workspace_recovery": true
+          },
+          {
+            "relative": "input_p119/crm-1.csv",
+            "sha256": "4b8a5d98757b74bbe8a43a2c9c874c0b1040bf55b42701f4ad87cd2254a5f007",
+            "workspace_recovery": false
+          },
+          {
+            "relative": "input_p119/crm-2.csv",
+            "sha256": "8dd0be755cfe3c525d6d2339e77af8c014f3ea95725f68c212ce3292888f1d60",
+            "workspace_recovery": true
+          },
+          {
+            "relative": "input_p119/csv-1.csv",
+            "sha256": "fd6f178fbb6d0767a194230b3fc10bc2d988211c06bd76cb1e180d4be5c4209e",
+            "workspace_recovery": false
+          },
+          {
+            "relative": "input_p119/csv-2.csv",
+            "sha256": "21ac775e2694c804d2db2861e1b9f759bd91a85f8200cc94cbecfd03e31e3b55",
+            "workspace_recovery": false
+          },
+          {
+            "relative": "input_p119/erp-1.csv",
+            "sha256": "58b741c5f2d331195424f0c2692b217c3953f74c8e5f977f2e6ca5e5a6107879",
+            "workspace_recovery": false
+          },
+          {
+            "relative": "input_p119/erp-2.csv",
+            "sha256": "279ca1ba0ccaeceb09f94f33ebef59d0ee2bee6461581edb67001de0132233e8",
+            "workspace_recovery": false
+          }
+        ],
+        "counts": {
+          "bill-1.csv": 12500,
+          "bill-2.csv": 12500,
+          "crm-1.csv": 12500,
+          "crm-2.csv": 12500,
+          "csv-1.csv": 12500,
+          "csv-2.csv": 12500,
+          "erp-1.csv": 12500,
+          "erp-2.csv": 12500
+        }
+      },
+      "production_assessment_counts": {
+        "REVIEW:REVIEW": 59801,
+        "INSUFFICIENT_EVIDENCE:INSUFFICIENT_EVIDENCE": 5999,
+        "MERGEABLE:REVIEW": 1400
+      },
+      "prepare_seconds": 11.682409299999563,
+      "manifest_sha256": "869275ad7312156c1d65cb92322f25bb8fbb5e74168b8c5bbf2c076dd44b5bab",
+      "manifest_files_verified": 19,
+      "integrity_status": "PASS"
+    },
+    {
+      "case": "TC8",
+      "components": 800,
+      "strata": {
+        "real_placeholder_name": 100,
+        "real_placeholder_phone": 100,
+        "real_placeholder_email": 100,
+        "real_jan1_dob": 100,
+        "real_common_name": 100,
+        "real_missing_contacts": 100,
+        "shared_household": 100,
+        "shared_accountant": 100
+      },
+      "integrity": {
+        "decoded_records": 100000,
+        "selected_records": 1600,
+        "verified_inputs": [
+          {
+            "relative": "input_p119/bill-1.csv",
+            "sha256": "9e9f4e48469970954d67b6d01daf5c2b28a31209deeb6c11814e368e3025caf8",
+            "workspace_recovery": false
+          },
+          {
+            "relative": "input_p119/bill-2.csv",
+            "sha256": "d58412aaa6b35d3832d0c5c3a4564c01c36e792e5a7a5f2aae92ea64ce3448ff",
+            "workspace_recovery": true
+          },
+          {
+            "relative": "input_p119/crm-1.csv",
+            "sha256": "a90d86de3ab9aa12bbcf243cf0c652446c304fb7095f65ac9e383e84f1e5ee83",
+            "workspace_recovery": false
+          },
+          {
+            "relative": "input_p119/crm-2.csv",
+            "sha256": "f52cc4dc180d952056abd30bc0ae5814b451a43f3b0b849b50fa3eb81fe8aeac",
+            "workspace_recovery": false
+          },
+          {
+            "relative": "input_p119/csv-1.csv",
+            "sha256": "cf362d789110e6ed89beda5a5f0ff432b4a06b8f5aa11d25a3d4754b6b1633a3",
+            "workspace_recovery": false
+          },
+          {
+            "relative": "input_p119/csv-2.csv",
+            "sha256": "29eff8030b1cda916bf9e9a38fd57ca83b4b503965133a3d5264ccd71b99d043",
+            "workspace_recovery": false
+          },
+          {
+            "relative": "input_p119/erp-1.csv",
+            "sha256": "34bf6e2340586925f42d758192a7c75db8f905610eed10355d3d1bef1ee55342",
+            "workspace_recovery": true
+          },
+          {
+            "relative": "input_p119/erp-2.csv",
+            "sha256": "b6436808802c07a50b0043d17fb9bcd93266cc0d199ea046bc39d3bb8f5a5cd9",
+            "workspace_recovery": false
+          }
+        ],
+        "counts": {
+          "bill-1.csv": 12500,
+          "bill-2.csv": 12500,
+          "crm-1.csv": 12500,
+          "crm-2.csv": 12500,
+          "csv-1.csv": 12500,
+          "csv-2.csv": 12500,
+          "erp-1.csv": 12500,
+          "erp-2.csv": 12500
+        }
+      },
+      "production_assessment_counts": {
+        "REVIEW:REVIEW": 600,
+        "MERGEABLE:REVIEW": 200
+      },
+      "prepare_seconds": 1.5413391000001866,
+      "manifest_sha256": "41d866ec3e1ad60dd242ac70d90fb893a6387a2de23d6be825debd279e62275f",
+      "manifest_files_verified": 19,
+      "integrity_status": "PASS"
+    }
+  ],
+  "offline": {
+    "selected_components": 168,
+    "selected_records": 960,
+    "pairs": 5440,
+    "strata": {
+      "bridge_phone_email": 8,
+      "chain_3": 8,
+      "chain_5": 8,
+      "chain_10": 8,
+      "star": 8,
+      "two_clusters_false_bridge": 8,
+      "review_veto": 8,
+      "cannot_link": 8,
+      "same_source": 8,
+      "positive_control": 8,
+      "size_19": 8,
+      "size_20": 8,
+      "size_21": 8,
+      "real_placeholder_name": 8,
+      "real_placeholder_phone": 8,
+      "real_placeholder_email": 8,
+      "real_jan1_dob": 8,
+      "real_common_name": 8,
+      "real_missing_contacts": 8,
+      "shared_household": 8,
+      "shared_accountant": 8
+    },
+    "full_seconds": 0.07466310000017984,
+    "changed_full_seconds": 0.04429140000138432,
+    "cached_seconds": 0.05829090000042925,
+    "region_cache": {
+      "reused_records": 0,
+      "recomputed_records": 960
+    },
+    "cached_full_equal": true,
+    "rejected_edge_kept_apart": true,
+    "offline_cross_entity_groups": 0,
+    "assessment_frequency_scope": "original complete scenario, not entire 100k bundle",
+    "simulated_review": "one rejection from actionable raw assessment; no truth-based acceptance"
+  },
+  "api": {
+    "records_uploaded": 83,
+    "simulated_no_merge_decisions": 388,
+    "simulated_clear_A_accept_decisions": 14,
+    "groups": 73,
+    "multi_record_groups": 6,
+    "offline_cross_entity_groups": 0,
+    "review_vetoes_preserved": true,
+    "covered_records": 83,
+    "prepare_decide_seconds": 1.5612032000026375,
+    "preview_seconds": 0.9504637999998522,
+    "first_page_seconds": 0.02840250000008382,
+    "publication_seconds": 0.5425343999995675,
+    "group_detail_seconds": 0.02284270000018296,
+    "preview_publication_exact_membership": true,
+    "worker_performance": {
+      "snapshot_seconds": 0.09192009999969741,
+      "validation_seconds": 0.21418790000097943,
+      "plan_reused": true,
+      "compute_seconds": 6.000009307172149e-07,
+      "publication_seconds": 0.03634070000043721
+    },
+    "mode": "actual HTTP routes + claimed workflow worker, in-process, isolated SQLite",
+    "simulated_review": "accept only raw MERGEABLE Group A; other required pairs kept apart; no truth-based acceptance"
+  },
+  "engine_identity": "bae5ad6d6549f765c1c13b7b5e22db9e593342980316f0ca315318659f903335",
+  "limits": [
+    "No entire 100k/1M run or multi-process/concurrent browser load measured",
+    "In-memory snapshot reconstruction remains proportional to full run size",
+    "Optional annotations use a separate requested job; no live provider latency measured",
+    "Timings are one local sample, not a production latency SLA"
+  ],
+  "verification": {
+    "backend": {
+      "passed": 1252,
+      "skipped": 2,
+      "seconds": 376.02,
+      "report": "artifacts/merge-baseline/20261013T145824Z-r7asiz49",
+      "exit_code": 0
+    },
+    "frontend": {
+      "passed": 228,
+      "files": 31,
+      "typecheck": "PASS",
+      "production_build": "PASS"
+    },
+    "python_lint": "PASS",
+    "diff_check": "PASS",
+    "independent_review": "3 important and duplicate-name key finding reproduced and fixed; no deferred minors",
+    "browser": {
+      "mode": "production Next build + actual API/claimed worker through isolated preauthenticated synthetic bridge",
+      "checks": [
+        "generic_D_bulk_rejected_even_with_reason",
+        "bounded_group_comparison_reason_queue_API_worker_accept",
+        "source_named_preview_Golden_comparison_publish_group_detail"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/auth/me",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/pairs",
+          "status": 0
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/pairs/summary",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/bulk-decisions/preview",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/pairs/2480b21d08989581a0e1f29689b0ec19bc72572eecac00e397cd7596527ea40e/review-cluster",
+          "status": 0
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/pairs",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/pairs",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/bulk-decisions/preview",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/bulk-decisions",
+          "status": 202
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow",
+          "status": 0
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/operations/4c80c88d-b3fd-4b6e-83ea-5469b1961def",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/operations/4c80c88d-b3fd-4b6e-83ea-5469b1961def",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/pairs",
+          "status": 0
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/pairs/summary",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/operations/4c80c88d-b3fd-4b6e-83ea-5469b1961def",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/cluster-preview",
+          "status": 202
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/operations/4c80c88d-b3fd-4b6e-83ea-5469b1961def",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/operations/99ff29d2-120f-4d46-a2c4-9d17fd6dc45e",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/finalize-decisions",
+          "status": 202
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/operations/4c80c88d-b3fd-4b6e-83ea-5469b1961def",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/golden/resolution",
+          "status": 0
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/clusters",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/clusters/bfb96edad1b9557460267fca137b3012b215f7570661ffb6cfbfccda12186d3c",
+          "status": 0
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/mdm/runs/e9f3291b-de83-498a-a9be-f81adf727a72/workflow/clusters/bfb96edad1b9557460267fca137b3012b215f7570661ffb6cfbfccda12186d3c/golden",
+          "status": 200
+        }
+      ],
+      "errors": [],
+      "real_developer_backend_requests": 0
+    }
+  },
+  "deployment": {
+    "performed": false,
+    "new_compose_files": 0,
+    "user_changes_preserved": true
+  }
+}

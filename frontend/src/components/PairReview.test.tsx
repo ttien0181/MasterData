@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { WorkflowContext } from './SessionWorkspace';
 import { SessionCacheProvider } from './SessionCache';
@@ -7,9 +7,28 @@ import PairBulkConfirmation from './PairBulkConfirmation';
 import { ApiError } from '@/lib/api';
 import * as api from '@/lib/workflowApi';
 import type { WorkflowRead } from '@/lib/workflowContracts';
+it('explains that uncertain pairs need review and automation requires separate validation',async()=>{
+ show();await screen.findByText('Person 0');
+ fireEvent.click(screen.getByText('Công cụ đánh giá'));
+ expect(screen.getByText(/Các cặp mơ hồ cần người duyệt; vùng tự động chỉ mở khi có kiểm định riêng/)).toBeInTheDocument();
+});
+it('shows retained insufficient evidence separately and filters it without calling it a human rejection',async()=>{
+ vi.mocked(api.getPairSummary).mockResolvedValue({total:3,insufficient:2,needs_review:1,accepted:0,denied:0,kept_separate:0,deferred:0,blocked:0,manual_available:3,auto_available:0,decision_revision:1,groups:[]});
+ const weak={...pair(0),baseline:{...pair(0).baseline,decision:'INSUFFICIENT_EVIDENCE',triage_status:'INSUFFICIENT_EVIDENCE',primary_group:'C',subgroup:'C_NO_VALID_IDENTITY_ANCHOR'}};
+ vi.mocked(api.getPairs).mockResolvedValue({items:[weak],total:1,next_cursor:null,offset:0});
+ show();await screen.findByText('Person 0');
+ expect(within(screen.getByRole('group',{name:'Thiếu bằng chứng'})).getByText('2')).toBeInTheDocument();
+ expect(screen.getByText('Giữ riêng tạm thời; không cần duyệt để hoàn tất.')).toBeInTheDocument();
+ expect(screen.getByRole('option',{name:'Thiếu bằng chứng'})).toBeInTheDocument();
+ fireEvent.change(screen.getByRole('combobox',{name:'Quyết định'}),{target:{value:'INSUFFICIENT'}});
+ await waitFor(()=>expect(api.getPairs).toHaveBeenLastCalledWith('r',expect.any(URLSearchParams),expect.any(AbortSignal)));
+ const params=vi.mocked(api.getPairs).mock.calls.at(-1)![1];
+ expect(params?.get('resolution')).toBe('INSUFFICIENT');
+ expect(api.decidePair).not.toHaveBeenCalled();
+});
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('@/lib/workflowApi', async original => ({ ...await original<typeof api>(),
-  getWorkflow:vi.fn(), getOperation:vi.fn(), getPair:vi.fn(), finalizeDecisions:vi.fn(), getPairs: vi.fn(), getPairSummary: vi.fn(), previewBulkDecisions: vi.fn(), bulkDecisions: vi.fn(), decidePair: vi.fn(),
+  getWorkflow:vi.fn(), getOperation:vi.fn(), getPair:vi.fn(), getReviewCluster:vi.fn(), previewClusters:vi.fn(),finalizeDecisions:vi.fn(), getPairs: vi.fn(), getPairSummary: vi.fn(), previewBulkDecisions: vi.fn(), bulkDecisions: vi.fn(), decidePair: vi.fn(),
 }));
 const workflow: WorkflowRead = { run_id:'r', workflow_version:2, workflow_state:'DECIDE_REVIEW', workflow_revision:4, decision_revision:1, cluster_revision:0, golden_revision:0, counts:{}, allowed_actions:['decide-pair','bulk-decisions'], blockers:[], active_operation:null,retryable_operation:null };
 const pair = (index: number) => ({ pair_id:`p${index}`, revision:0, decision:'UNDECIDED', score_unit:'p119_rule_v1', baseline:{ id:`p${index}`,left_id:`a${index}`,right_id:`b${index}`,primary_group:'A',subgroup:'A1_NAME_PHONE',decision:'REVIEW',score:5,field_evidence:[] }, eligibility:{manual_allowed:true,auto_allowed:false,blocked_reasons:[]}, left_record:{record_id:`a${index}`,source_system:'CRM',raw_fields:{name:`Person ${index}`,phone:'0901234567'},normalized_fields:{name:`person ${index}`},extra_fields:{}}, right_record:{record_id:`b${index}`,source_system:'BILL',raw_fields:{name:`Other ${index}`},normalized_fields:{},extra_fields:{}} });
@@ -26,6 +45,30 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 function show() { return render(<SessionCacheProvider userId="u"><WorkflowContext.Provider value={{workflow,refresh:vi.fn().mockResolvedValue(undefined)}}><DecisionWorkspace /></WorkflowContext.Provider></SessionCacheProvider>); }
+it('asks for a reason before a soft-conflict Accept and retains it through the queue',async()=>{
+ vi.mocked(api.getPairs).mockResolvedValue({items:[{...pair(0),baseline:{...pair(0).baseline,primary_group:'D'},eligibility:{manual_allowed:true,auto_allowed:false,blocked_reasons:[],reason_required:true}}],total:1,next_cursor:null});
+ show();await screen.findByText('Person 0');fireEvent.click(screen.getByRole('button',{name:'Accept cặp p0'}));
+ expect(api.decidePair).not.toHaveBeenCalled();const confirm=await screen.findByRole('button',{name:'Xác nhận Accept'});expect(confirm).toBeDisabled();
+ fireEvent.change(screen.getByRole('textbox',{name:'Lý do Accept'}),{target:{value:'Source documents match'}});fireEvent.click(confirm);
+ await waitFor(()=>expect(api.decidePair).toHaveBeenCalledWith('r','p0',expect.objectContaining({reason:'Source documents match',decision:'merge'})));
+});
+it('opens a cluster preview before any finalize write',async()=>{
+ const current={...workflow,allowed_actions:['decide-pair','bulk-decisions','finalize-decisions','preview-clusters']};
+ vi.mocked(api.previewClusters).mockResolvedValue({operation_id:'preview',run_id:'r',operation_type:'CLUSTER_PREVIEW',status:'COMPLETED',stage:'complete',progress:{},error_code:null,result:{preview_token:'token',publication:{publication_status:'COMPLETE',covered_records:2,total_records:2,multi_record_groups:1,singletons:0,unresolved_records:0,clusters:1},groups:[{member_record_ids:['a','b'],singleton:false,status:'DRAFT'}],conflicts:[],conflict_count:0,pending_regions:[],source_decision_revision:1,source_assessment_id:null,allow_partial:false}});
+ render(<SessionCacheProvider userId="preview-integration"><WorkflowContext.Provider value={{workflow:current,refresh:vi.fn().mockResolvedValue(undefined)}}><DecisionWorkspace/></WorkflowContext.Provider></SessionCacheProvider>);
+ fireEvent.click(screen.getByRole('button',{name:'Hoàn tất phân loại và tạo nhóm'}));await screen.findByRole('table',{name:'Nhóm dự kiến'});expect(api.finalizeDecisions).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('button',{name:'Xác nhận tạo nhóm'}));await waitFor(()=>expect(api.finalizeDecisions).toHaveBeenCalledWith('r',expect.objectContaining({preview_operation_id:'preview',preview_token:'token'})));
+});
+it('uses a full diagnostic standalone preview to expose bridge approval while server pairs remain pending',async()=>{
+ const current={...workflow,allowed_actions:['preview-clusters','finalize-partial','approve-group'],blockers:[{code:'PENDING_DECISIONS',count:1,unit:'pairs'}]};
+ vi.mocked(api.previewClusters).mockImplementation(async(_run,body)=>({operation_id:'diagnostic',run_id:'r',operation_type:'CLUSTER_PREVIEW',status:'COMPLETED',stage:'complete',progress:{},error_code:null,result:{preview_token:'diagnostic-token',publication:{publication_status:'PARTIAL',covered_records:0,total_records:3,multi_record_groups:0,singletons:0,unresolved_records:3,clusters:0},groups:[],conflicts:body.allow_partial?[]:[{pair_id:'ac',reason:'CLUSTER_BRIDGE_MISSING_EVIDENCE',record_ids:['a','b','c']}],conflict_count:body.allow_partial?0:1,pending_regions:[{record_ids:['a','b','c'],record_count:3,pending_pair_ids:['ac'],pending_pair_count:1}],source_decision_revision:1,source_assessment_id:null,allow_partial:body.allow_partial}}));
+ render(<SessionCacheProvider userId="diagnostic-pending"><WorkflowContext.Provider value={{workflow:current,refresh:vi.fn().mockResolvedValue(undefined)}}><DecisionWorkspace/></WorkflowContext.Provider></SessionCacheProvider>);
+ fireEvent.click(screen.getByRole('button',{name:'Xem trước nhóm dự kiến'}));
+ await waitFor(()=>expect(api.previewClusters).toHaveBeenCalledWith('r',expect.objectContaining({allow_partial:false})));
+ expect(await screen.findByRole('button',{name:'Duyệt ngoại lệ nhóm'})).toBeEnabled();
+ expect(screen.getByText('Server còn 1 cặp chưa duyệt hoặc đang hoãn.')).toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'Xác nhận tạo nhóm'})).toBeDisabled();expect(api.finalizeDecisions).not.toHaveBeenCalled();
+});
 it('keeps other pair actions enabled and queues a second click without parallel writes',async()=>{
   let complete!: (value:ReturnType<typeof pair>)=>void;
   vi.mocked(api.decidePair).mockImplementationOnce(()=>new Promise(resolve=>{complete=resolve;}));
@@ -155,5 +198,18 @@ it('offers partial generation beside the required filter before the pair list',a
  await screen.findByText('Person 0');const completion=screen.getByRole('region',{name:'Hoàn tất duyệt'}),list=screen.getByRole('table',{name:'Danh sách cặp bản ghi'});
  expect(completion.compareDocumentPosition(list)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
  fireEvent.click(screen.getByRole('button',{name:'Xem cặp cần xử lý'}));expect(screen.getByRole('combobox',{name:'Quyết định'})).toHaveValue('REQUIRED');
- fireEvent.click(screen.getByRole('button',{name:'Tạo nhóm phần đã xử lý'}));await waitFor(()=>expect(api.finalizeDecisions).toHaveBeenCalledWith('r',expect.objectContaining({allow_partial:true})));
+ vi.mocked(api.previewClusters).mockResolvedValue({operation_id:'preview-partial',run_id:'r',operation_type:'CLUSTER_PREVIEW',status:'QUEUED',stage:'queued',progress:{},error_code:null,result:{}});
+ fireEvent.click(screen.getByRole('button',{name:'Tạo các nhóm đủ điều kiện'}));await waitFor(()=>expect(api.previewClusters).toHaveBeenCalledWith('r',expect.objectContaining({allow_partial:true})));expect(api.finalizeDecisions).not.toHaveBeenCalled();
+});
+
+it('opens a cluster and queues only its exact pending pair IDs',async()=>{
+ vi.mocked(api.getReviewCluster).mockResolvedValue({seed_pair_id:'p0',complete:true,batch_allowed:true,blocked_reasons:[],pending_pair_ids:['p0','p1'],decision_revision:1,assessment_id:null,records:[pair(0).left_record,pair(0).right_record],pairs:[pair(0),pair(1)]});
+ show();await screen.findByText('Person 0');
+ expect(screen.getByRole('combobox',{name:'Quyết định'})).toHaveValue('REQUIRED');
+ fireEvent.click(screen.getByRole('button',{name:'Duyệt cụm từ cặp p0'}));
+ const clusterAccept=await screen.findByRole('button',{name:'Accept 2 cặp trong cụm'});
+ await waitFor(()=>expect(clusterAccept).toBeEnabled());fireEvent.click(clusterAccept);
+ const confirm=await screen.findByRole('button',{name:'Xác nhận Accept'});await waitFor(()=>expect(confirm).toBeEnabled());
+ expect(api.previewBulkDecisions).toHaveBeenLastCalledWith('r',expect.objectContaining({scope:{pair_ids:['p0','p1']},auto_only:false}),expect.any(AbortSignal));
+ fireEvent.click(confirm);await waitFor(()=>expect(api.bulkDecisions).toHaveBeenCalledWith('r',expect.objectContaining({scope:{pair_ids:['p0','p1']},decision:'merge',auto_only:false})));
 });

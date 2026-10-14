@@ -4,7 +4,7 @@ import { getWorkflow, decidePair, bulkDecisions, saveGolden } from './workflowAp
 import { sessionTabs, tabReadiness, sessionPath } from './workflowNavigation';
 import * as workflowApi from './workflowApi';
 it('sends preview, exact group approval and token-bound finalize contracts',async()=>{
- const fetcher=vi.fn().mockResolvedValue(new Response('{}',{status:200}));vi.stubGlobal('fetch',fetcher);
+ const fetcher=vi.fn().mockImplementation(async()=>new Response('{}',{status:200}));vi.stubGlobal('fetch',fetcher);
  const base={request_id:'req',expected_workflow_revision:4,expected_decision_revision:2,expected_assessment_id:'a'};
  await workflowApi.previewClusters('r',{...base,allow_partial:true});
  expect(fetcher.mock.calls[0][0]).toContain('/workflow/cluster-preview');

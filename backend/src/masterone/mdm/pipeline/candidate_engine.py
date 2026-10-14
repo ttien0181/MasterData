@@ -34,7 +34,7 @@ class CompositeKey:
     require_valid: bool = False
 
     def __post_init__(self):
-        if self.transform not in {"identity", "prefix", "suffix", "year"}:
+        if self.transform not in {"identity", "prefix", "suffix", "year", "street"}:
             raise ValueError("Unknown composite transformation")
         if type(self.length) is not int or self.length < 1:
             raise ValueError("Composite length must be positive")
@@ -47,6 +47,9 @@ class CompositeKey:
             return ""
         if self.require_valid and fields.get("_field_quality", {}).get(self.field) != "VALID":
             return ""
+        if self.transform == "street":
+            from masterone.mdm.pipeline.review_recovery import address_key
+            return address_key(value)
         if self.transform in {"prefix", "suffix"}:
             if len(value) < self.length:
                 return ""
@@ -72,6 +75,9 @@ DEFAULT_COMPOSITES = (
     CompositeRule("surname_year", (CompositeKey("_name_parts.surname"), CompositeKey("dob", "year"))),
     CompositeRule("name_province", (CompositeKey("name"), CompositeKey("address_parts.province")), 40),
     CompositeRule("phone_suffix_year", (CompositeKey("phone", "suffix", 4, True), CompositeKey("dob", "year"))),
+    CompositeRule("name_full_dob", (CompositeKey("name", require_valid=True), CompositeKey("dob", require_valid=True))),
+    CompositeRule("dob_numbered_street", (CompositeKey("dob", require_valid=True),
+                                          CompositeKey("address", "street", require_valid=True)), 20),
 )
 
 

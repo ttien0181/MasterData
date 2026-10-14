@@ -17,12 +17,12 @@ def _record_map(records):
 
 def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_version: str,
                     negative_pairs: frozenset | None = None,
-                    execution_blocked_pairs: frozenset = frozenset(), cluster_policy=None) -> dict:
+                    execution_blocked_pairs: frozenset = frozenset(), cluster_policy=None, frequencies=None, guard_budget=None) -> dict:
     """Create disjoint safe components and separate overlapping review cases."""
     from masterone.mdm.pipeline.cluster_policy import enabled, load_policy
     if enabled():
         return _build_safe_proposals(records, pairs, run_id, policy_version,
-                                     negative_pairs or frozenset(), execution_blocked_pairs, cluster_policy)
+                                     negative_pairs or frozenset(), execution_blocked_pairs, cluster_policy, frequencies, guard_budget)
     by_id = _record_map(records)
     policy = cluster_policy or load_policy(legacy=True)
 
@@ -150,7 +150,7 @@ def build_proposals(records: list[dict], pairs: list[dict], run_id: str, policy_
     return {"proposals": proposals, "review_cases": cases, "risky_pairs": risky}
 
 
-def _build_safe_proposals(records, pairs, run_id, policy_version, cannot_links, review_vetoes, policy):
+def _build_safe_proposals(records, pairs, run_id, policy_version, cannot_links, review_vetoes, policy, frequencies=None, guard_budget=None):
     from dataclasses import asdict
 
     from masterone.mdm.pipeline.cluster_guards import check_component
@@ -167,7 +167,7 @@ def _build_safe_proposals(records, pairs, run_id, policy_version, cannot_links, 
         raise ValueError("Duplicate cluster record IDs")
     owned = not isinstance(pairs, DecisionStore)
     store = DecisionStore() if owned else pairs
-    budget = GuardBudget()
+    budget = guard_budget if guard_budget is not None else GuardBudget()
     try:
         if owned:
             for pair in pairs:
@@ -184,7 +184,7 @@ def _build_safe_proposals(records, pairs, run_id, policy_version, cannot_links, 
                 rid = parent[rid]
             return rid
 
-        frequencies = value_frequencies(by_id.values() if isinstance(records, Mapping) else records)
+        frequencies = frequencies if frequencies is not None else value_frequencies(by_id.values() if isinstance(records, Mapping) else records)
         sequence = 0
         for pair in store.ordered(matches=True):
             a, b = pair["left_id"], pair["right_id"]

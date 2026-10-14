@@ -41,9 +41,9 @@ def submit_resolution(db, run_id, request, actor):
     if active_operation(db, run_id) or run.workflow_state not in ('DECIDE_REVIEW', 'GOLDEN_REVIEW'):
         conflict('GOLDEN_LOCKED')
     generation = current_generation(db, run)
-    from masterone.mdm.golden_service import selected_clusters
+    from masterone.mdm.workflow_generation_reads import GenerationReader
     if payload.get('cluster_ids') is not None or payload.get('excluded_cluster_ids'):
-        selected_clusters(db, run, payload)
+        GenerationReader(db, run, generation).scope_count(payload)
     op = new_operation(db, run, 'GOLDEN_RESOLVE', request.request_id, payload, actor)
     op.artifact_id = generation.artifact_id
     enqueue(db, run, op)
@@ -55,6 +55,7 @@ def submit_resolution(db, run_id, request, actor):
 
 def run_resolution(operation_id, factory, progress):
     from masterone.mdm.golden_service import selected_clusters, validate_selections
+    from masterone.mdm.workflow_generation_reads import GenerationReader
     from masterone.mdm.workflow_jobs import finish, job_identity
     with factory.begin() as db:
         run, op, task = job_identity(db, operation_id)
@@ -62,7 +63,19 @@ def run_resolution(operation_id, factory, progress):
         generation = current_generation(db, run)
         output = load(db, generation.artifact_id, run_id, 'CLUSTER')
         snapshot = deepcopy(resolution_snapshot(db, run_id, output))
-        selected = selected_clusters(db, run, op.payload) if output['clusters'] else []
+        reader = GenerationReader(db, run, generation)
+        default_scope = reader.virtual and op.payload.get('cluster_ids') is None
+        excluded = set(op.payload.get('excluded_cluster_ids', []))
+        if default_scope:
+            if reader.coverage()['clusters']:
+                reader.scope_count(op.payload)
+            selected = [c for c in reader.persisted_rows() if c.id not in excluded]
+            implicit_count = reader.coverage()['singletons'] - sum(c.payload['singleton'] for c in reader.persisted_rows())
+            implicit_count -= sum(reader.row(cid).payload['singleton'] and
+                                  db.get(WorkflowCluster, cid) is None for cid in excluded)
+        else:
+            selected = selected_clusters(db, run, op.payload) if reader.coverage()['clusters'] else []
+            implicit_count = 0
         selected_ids = [c.id for c in selected]
         # Selection of official groups never silently repairs an unrelated conflict region.
         conflicts = output['conflicts'] if op.payload.get('cluster_ids') is None else []
@@ -98,7 +111,11 @@ def run_resolution(operation_id, factory, progress):
         with engine_context(snapshot['profile']):
             if snapshot['execution_identity'] != digest(config_identity(snapshot['policy_version'])):
                 raise ValueError('WORKFLOW_CONFIG_CHANGED')
-        clusters = db.query(WorkflowCluster).filter(WorkflowCluster.id.in_(selected_ids), WorkflowCluster.generation_id == generation.id).all()
+        reader = GenerationReader(db, run, current_generation(db, run))
+        clusters = [reader.row(cid) for cid in selected_ids]
+        if default_scope:
+            for cid in excluded:
+                reader.materialize(reader.row(cid))
         confirmed, blocked = 0, 0
         for c in clusters:
             try:
@@ -106,7 +123,7 @@ def run_resolution(operation_id, factory, progress):
                 # Conflicting extra fields need an explicit source choice.
                 from masterone.mdm.golden_service import unresolved_extra_fields
                 unresolved = unresolved_extra_fields(db, c)
-                if unresolved or c.payload.get('requires_manual_review'):
+                if unresolved or c.payload.get('requires_manual_review') or c.payload.get('pending_selections'):
                     blocked += 1
                     continue
             except HTTPException:
@@ -114,7 +131,13 @@ def run_resolution(operation_id, factory, progress):
                 continue
             c.confirmed = True
             c.revision += 1
+            reader.materialize(c)
+            from masterone.mdm.workflow_entities import record_entity_version
+            record_entity_version(db, run, c, actor=op.actor_user_id)
             confirmed += 1
+        if default_scope and reader.coverage()['clusters']:
+            reader.confirm_default(op.actor_user_id)
+            confirmed += implicit_count
         if confirmed:
             run.golden_revision += 1
         op.artifact_id = artifact_id
@@ -158,10 +181,13 @@ def repair_command(db, run_id, request, actor, undo=False):
         expected_revision = change['revision'] + (1 if undo else 0)
         if pair.decision != expected_decision or pair.revision != expected_revision:
             conflict('REPAIR_STALE')
+        previous_automation = pair.automation
         pair.decision = change['before'] if undo else 'REJECTED'
+        pair.automation = None
         pair.revision += 1
         snapshot['overlays'][pair.id] = pair.decision
-        audit(db, run, actor, 'WORKFLOW_' + kind + '_PAIR', {'pair_id': pair.id, 'decision': pair.decision, 'revision': pair.revision})
+        audit(db, run, actor, 'WORKFLOW_' + kind + '_PAIR', {'pair_id': pair.id, 'decision': pair.decision, 'revision': pair.revision,
+            'previous_automation': previous_automation})
     for blocker in db.query(WorkflowConflict).filter_by(run_id=run_id, resolved=False):
         blocker.resolved = True  # The newly queued engine recreates all current conflicts.
     run.decision_revision += 1
@@ -189,17 +215,14 @@ def repair_command(db, run_id, request, actor, undo=False):
 
 
 def resolution_snapshot(db, run_id, cluster_output):
+    from masterone.mdm.workflow_artifacts import logical_artifact_id
     snapshot_hash = cluster_output['workflow_context']['snapshot_hash']
-    artifact = db.query(WorkflowArtifact.id).filter_by(run_id=run_id, phase='DECISION_SNAPSHOT',
-                                                      content_hash=snapshot_hash).first()
-    return load(db, artifact[0] if artifact else None, run_id, 'DECISION_SNAPSHOT')
+    artifact_id = logical_artifact_id(db, run_id, 'DECISION_SNAPSHOT', snapshot_hash)
+    return load(db, artifact_id, run_id, 'DECISION_SNAPSHOT')
 
 
 def repair_preview_groups(snapshot, run_id, revision):
     """Forecast exactly the guarded eligible records used by publication."""
-    from masterone.mdm.cluster_publication import with_singletons
-    from masterone.mdm.workflow_finalize import cluster_snapshot, partial_cluster_snapshot
-    result = partial_cluster_snapshot(snapshot, run_id) if snapshot.get('allow_partial') else cluster_snapshot(snapshot, run_id)
-    records = [record for record in snapshot['records'] if record['id'] not in set(result['conflict_record_ids'])]
-    groups = with_singletons(records, result['safe_clusters'], run_id, revision) if not result['conflicts'] else []
-    return result, groups
+    from masterone.mdm.workflow_finalize import compute_publication
+    result = compute_publication(snapshot, run_id, revision)
+    return result, result['clusters']

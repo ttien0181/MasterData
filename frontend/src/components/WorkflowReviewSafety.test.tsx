@@ -6,9 +6,12 @@ import PairComparison from './PairComparison';
 import PairBulkConfirmation from './PairBulkConfirmation';
 import PairReviewRow from './PairReviewRow';
 import PairConflicts from './PairConflicts';
+import PairAcceptReason from './PairAcceptReason';
+import GroupApprovalDialog from './GroupApprovalDialog';
+import {ApiError} from '@/lib/api';
 import * as api from '@/lib/workflowApi';
 import type {PairRead,WorkflowRead} from '@/lib/workflowContracts';
-vi.mock('@/lib/workflowApi',async original=>({...await original<typeof api>(),previewBulkDecisions:vi.fn(),getConflicts:vi.fn()}));
+vi.mock('@/lib/workflowApi',async original=>({...await original<typeof api>(),previewBulkDecisions:vi.fn(),getConflicts:vi.fn(),approveGroup:vi.fn()}));
 afterEach(()=>{cleanup();vi.clearAllMocks();});
 const w:WorkflowRead={run_id:'r',workflow_version:2,workflow_state:'DECIDE_REVIEW',workflow_revision:4,decision_revision:1,cluster_revision:0,golden_revision:0,counts:{},allowed_actions:[],blockers:[],active_operation:null,retryable_operation:null};
 const pair:PairRead={pair_id:'p',revision:1,decision:'UNDECIDED',score_unit:'rule',baseline:{id:'p',left_id:'a',right_id:'b',decision:'REVIEW',score:3,field_evidence:[]},eligibility:{manual_allowed:true,auto_allowed:false,blocked_reasons:[]},left_record:{record_id:'a',source_system:'CRM',raw_fields:{name:'Same',email:'left@example.com'},normalized_fields:{name:'same'},extra_fields:{custom:'left'}},right_record:{record_id:'b',source_system:'BILL',raw_fields:{name:'Same',email:'right@example.com'},normalized_fields:{name:'same'},extra_fields:{custom:'right'}}};
@@ -21,6 +24,12 @@ it('prioritizes differences and includes extra source fields in comparison',()=>
 it('offers keep-separate independently from Deny and defer',()=>{
  const decide=vi.fn();render(<table><tbody><PairReviewRow pair={pair} selected={false} toggle={vi.fn()} canWrite busy={false} decide={decide} compare={vi.fn()} explain={vi.fn()}/></tbody></table>);
  fireEvent.click(screen.getByRole('button',{name:'Không gộp cặp p'}));expect(decide).toHaveBeenCalledWith('no_merge');
+});
+it('rejects an oversized soft Accept reason and closes the write gate after assessment changes',()=>{
+ const confirm=vi.fn();const host=(workflow:WorkflowRead)=><SessionCacheProvider userId="accept-reason"><WorkflowContext.Provider value={{workflow,refresh:vi.fn()}}><PairAcceptReason pair={pair} close={vi.fn()} confirm={confirm}/></WorkflowContext.Provider></SessionCacheProvider>;
+ const view=render(host(w));const reason=screen.getByRole('textbox',{name:'Lý do Accept'}),submit=screen.getByRole('button',{name:'Xác nhận Accept'});
+ fireEvent.change(reason,{target:{value:'x'.repeat(501)}});expect(submit).toBeDisabled();fireEvent.change(reason,{target:{value:'Documents checked'}});expect(submit).toBeEnabled();
+ view.rerender(host({...w,assessment_id:'new'}));expect(submit).toBeDisabled();fireEvent.click(submit);expect(confirm).not.toHaveBeenCalled();
 });
 it('requires a reason before bulk Accept when preview contains soft conflict pairs',async()=>{
  vi.mocked(api.previewBulkDecisions).mockResolvedValue({total:2,applicable:2,blocked:0,skipped:0,workflow_revision:4,decision_revision:1,reason_required:1});
@@ -56,4 +65,27 @@ it('refreshes conflicts after reassessment even when decision revision is unchan
  const view=render(host(w));await screen.findByText(/Old evidence/);
  view.rerender(host({...w,workflow_revision:5,assessment_id:'new-assessment'}));
  await screen.findByText(/New assessment evidence/);
+});
+it('offers group exceptions only for bridge conflicts and requires the exact members and reason',async()=>{
+ const conflict=(reason:string)=>({conflict_id:reason,pair_id:'p',reason,record_ids:['a','b','c'],records:[],pairs:[],related_pair_count:0});
+ vi.mocked(api.getConflicts).mockResolvedValue({items:[conflict('CLUSTER_BRIDGE_MISSING_EVIDENCE'),conflict('CLUSTER_REVIEW_VETO'),conflict('CLUSTER_VERIFIED_ID_CONFLICT')],total:3,next_cursor:null});
+ vi.mocked(api.approveGroup).mockResolvedValue({operation_id:'approved',run_id:'r',operation_type:'GROUP_APPROVAL',status:'COMPLETED',stage:'complete',progress:{},error_code:null,result:{}});
+ render(<SessionCacheProvider userId="conflict-approval"><WorkflowContext.Provider value={{workflow:{...w,allowed_actions:['approve-group']},refresh:vi.fn().mockResolvedValue(undefined)}}><PairConflicts close={vi.fn()} compare={vi.fn()} amend={vi.fn()}/></WorkflowContext.Provider></SessionCacheProvider>);
+ const approve=await screen.findByRole('button',{name:'Duyệt ngoại lệ nhóm'});expect(screen.getAllByRole('button',{name:'Duyệt ngoại lệ nhóm'})).toHaveLength(1);fireEvent.click(approve);
+ expect(screen.getByText('a / b / c')).toBeInTheDocument();fireEvent.change(screen.getByRole('textbox',{name:'Lý do ngoại lệ nhóm'}),{target:{value:'Evidence checked'}});fireEvent.click(screen.getByRole('button',{name:'Xác nhận ngoại lệ nhóm'}));
+ await waitFor(()=>expect(api.approveGroup).toHaveBeenCalledWith('r',expect.objectContaining({record_ids:['a','b','c'],reason:'Evidence checked'})));
+});
+it('explains the actual hard constraint blocking group approval and preserves the reason after refresh',async()=>{
+ vi.mocked(api.approveGroup).mockRejectedValue(new ApiError('Blocked',409,{code:'GROUP_APPROVAL_BLOCKED',reason:'VERIFIED_GOV_ID_CONFLICT'}));
+ const refresh=vi.fn().mockResolvedValue(undefined),approved=vi.fn();
+ render(<SessionCacheProvider userId="blocked-approval"><WorkflowContext.Provider value={{workflow:{...w,allowed_actions:['approve-group']},refresh}}><GroupApprovalDialog recordIds={['a','b','c']} close={vi.fn()} approved={approved}/></WorkflowContext.Provider></SessionCacheProvider>);
+ fireEvent.change(screen.getByRole('textbox',{name:'Lý do ngoại lệ nhóm'}),{target:{value:'Documents checked'}});fireEvent.click(screen.getByRole('button',{name:'Xác nhận ngoại lệ nhóm'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('Giấy tờ đã xác minh mâu thuẫn');expect(screen.getByRole('textbox',{name:'Lý do ngoại lệ nhóm'})).toHaveValue('Documents checked');
+ expect(refresh).toHaveBeenCalledTimes(1);expect(api.approveGroup).toHaveBeenCalledTimes(1);expect(approved).not.toHaveBeenCalled();
+});
+it('retains the existing stale-revision explanation for unrelated group approval conflicts',async()=>{
+ vi.mocked(api.approveGroup).mockRejectedValue(new ApiError('Stale',409,{code:'STALE_REVISION'}));
+ render(<SessionCacheProvider userId="stale-approval"><WorkflowContext.Provider value={{workflow:{...w,allowed_actions:['approve-group']},refresh:vi.fn().mockResolvedValue(undefined)}}><GroupApprovalDialog recordIds={['a','b']} close={vi.fn()} approved={vi.fn()}/></WorkflowContext.Provider></SessionCacheProvider>);
+ fireEvent.change(screen.getByRole('textbox',{name:'Lý do ngoại lệ nhóm'}),{target:{value:'Documents checked'}});fireEvent.click(screen.getByRole('button',{name:'Xác nhận ngoại lệ nhóm'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('Phiên đã thay đổi hoặc chưa đủ điều kiện. Đã đọc lại server; lựa chọn chưa lưu vẫn được giữ.');
 });

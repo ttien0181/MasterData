@@ -5,13 +5,15 @@ from masterone.mdm.models import ResolutionAuditEvent, ResolutionNegativeEdge, R
 from masterone.mdm.workflow_models import WorkflowConflict, WorkflowPair
 from masterone.mdm.workflow_review import apply_decision, pair_read
 from masterone.mdm.workflow_service import (
-    active_operation,
     audit,
     check_revision,
     conflict,
     enabled_run,
     new_operation,
     replay,
+)
+from masterone.mdm.workflow_service import (
+    review_blocking_operation as active_operation,
 )
 
 

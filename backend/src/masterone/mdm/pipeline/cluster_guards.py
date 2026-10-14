@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# Shared-value: fraction of edges that are phone/email SH or DF across the cluster
+# Shared-value: fraction of edges with shared phone/email values across the cluster
 _SHARED_VALUE_EDGE_RATIO = 0.5
 
 # Anomaly thresholds
@@ -116,7 +116,7 @@ def _shared_value_guard(
     right_ids: frozenset[str],
     pairs: list[dict],
 ) -> GuardViolation | None:
-    """Warn if most edges linking the two clusters are driven by SH/DF contact values."""
+    """Warn if most edges linking the two clusters have shared contact values."""
     inter_pairs = [
         p for p in pairs
         if (p.get("left_id") in left_ids and p.get("right_id") in right_ids)
@@ -129,7 +129,7 @@ def _shared_value_guard(
         comps = pair.get("comparisons", {})
         phone_state = comps.get("phone", {}).get("state", "MI")
         email_state = comps.get("email", {}).get("state", "MI")
-        if phone_state in {"SH", "DF"} or email_state in {"SH", "DF"}:
+        if phone_state == "SH" or email_state == "SH":
             shared_count += 1
     if shared_count / len(inter_pairs) >= _SHARED_VALUE_EDGE_RATIO:
         return GuardViolation(
@@ -233,6 +233,11 @@ def check_component(member_ids, by_id, store, policy, budget, frequencies,
     from masterone.mdm.pipeline.matching import compare_and_score_rule
 
     ids = sorted(member_ids)
+    # Policy and evidence exemption form separate consistency certificates.
+    from dataclasses import asdict
+
+    from masterone.mdm.generation_staging import digest
+    mode = digest({'policy': asdict(policy), 'allow_missing_evidence': allow_missing_evidence})
     if len(ids) > policy.max_cluster_size:
         return "CLUSTER_SIZE_LIMIT"
     if len(ids) * (len(ids) - 1) // 2 > policy.max_pair_checks_per_union:
@@ -246,16 +251,16 @@ def check_component(member_ids, by_id, store, policy, budget, frequencies,
             return "CLUSTER_CONFIRMED_CANNOT_LINK"
         if (a, b) in review_vetoes:
             return "CLUSTER_REVIEW_VETO"
-        if budget.visited >= policy.max_pair_checks_per_run:
-            budget.blocked += 1
-            return "CLUSTER_GUARD_RUN_BUDGET"
-        budget.visited += 1
-        cached = store.check(a, b)
+        cached = store.check(a, b, mode=mode)
         if cached is not None:
             budget.cache_hits += 1
             if cached:
                 return cached
             continue
+        if budget.checked >= policy.max_pair_checks_per_run:
+            budget.blocked += 1
+            return "CLUSTER_GUARD_RUN_BUDGET"
+        budget.visited += 1
         budget.checked += 1
         hard = person_constraints(by_id[a], by_id[b])
         pair = store.get(a, b)
@@ -277,8 +282,21 @@ def check_component(member_ids, by_id, store, policy, budget, frequencies,
             contact = any(states.get(f) in {"EX", "NX"} for f in ("phone", "email"))
             name = states.get("name") in {"EX", "NX", "NA", "HS"}
             if not allow_missing_evidence and not id_anchor and not (contact and name):
-                reason = "CLUSTER_BRIDGE_MISSING_EVIDENCE"
-        store.save_check(a, b, reason)
+                # An explicitly accepted recovered pair may use its corroborating
+                # fields. Recompute from current inputs; a stored marker or an
+                # absent/undecided bridge never grants this permission.
+                from masterone.mdm.pipeline.review_recovery import VERSION, support
+                witness = pair.get('review_support') if pair else None
+                accepted_support = False
+                if (pair and pair.get('user_decision') == 'ACCEPTED' and isinstance(witness, dict)
+                        and witness.get('policy_version') == VERSION):
+                    fresh = compare_and_score_rule(by_id[a], by_id[b], set(), frequencies,
+                                                   defer_hard_constraints=True)
+                    current = support(by_id[a], by_id[b], fresh, frequencies)
+                    accepted_support = current is not None and current == witness
+                if not accepted_support:
+                    reason = "CLUSTER_BRIDGE_MISSING_EVIDENCE"
+        store.save_check(a, b, reason, mode=mode)
         if reason:
             return reason
     return ""

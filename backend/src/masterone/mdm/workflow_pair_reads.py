@@ -62,6 +62,18 @@ def pair_detail(db, run, pair_id):
                 WorkflowMember.record_id.in_(ids)).all()
         groups = {rid: {'cluster_id': group.id, 'member_count': len(group.payload['member_record_ids'])}
                   for rid, group in memberships}
+        from masterone.mdm.workflow_generation_reads import GenerationReader, virtual_cluster_id
+        generation = db.query(WorkflowGeneration).filter_by(run_id=run.id, revision=run.cluster_revision).one()
+        reader = GenerationReader(db, run, generation)
+        if reader.virtual:
+            for rid in ids:
+                if rid in groups:
+                    continue
+                try:
+                    reader.record(rid)
+                except HTTPException:
+                    continue
+                groups[rid] = {'cluster_id': virtual_cluster_id(generation.id, rid), 'member_count': 1}
         item['cluster_context'] = {'revision': run.cluster_revision, 'stale': metadata['stale'],
             'left_cluster': groups.get(ids[0]), 'right_cluster': groups.get(ids[1])}
     return item
@@ -84,12 +96,13 @@ def aggregate(db, query):
 
 def pair_summary(db, run):
     counters = dict(total=0, needs_review=0, accepted=0, denied=0, kept_separate=0, deferred=0,
-                    blocked=0, manual_available=0, auto_available=0)
+                    blocked=0, manual_available=0, auto_available=0, insufficient=0)
     groups = {}
     for group, subgroup, baseline, triage, decision, negative, count in aggregate(db, scoped_pairs(db, run.id)):
         counters['total'] += count
         required = review_required(decision, {'decision': baseline, 'triage_status': triage})
         counters['needs_review'] += count if required else 0
+        counters['insufficient'] += count if baseline == 'INSUFFICIENT_EVIDENCE' else 0
         for value, key in [('ACCEPTED', 'accepted'), ('NON_MATCH', 'denied'), ('REJECTED', 'kept_separate'), ('DEFERRED', 'deferred')]:
             counters[key] += count if decision == value else 0
         counters['blocked'] += count if baseline in BLOCKED or negative or decision in ('REJECTED', 'NON_MATCH') else 0
@@ -110,9 +123,9 @@ def pair_summary(db, run):
 
 
 def bulk_preview(db, run, request):
-    from masterone.mdm.workflow_bulk import selected_pairs
-    counts = dict(total=0, applicable=0, skipped=0, blocked=0)
-    for _, _, baseline, triage, decision, negative, count in aggregate(db, selected_pairs(db, run.id, request.scope.model_dump()).order_by(None)):
+    from masterone.mdm.workflow_bulk import selected_pairs, validate_soft_group
+    counts = dict(total=0, applicable=0, skipped=0, blocked=0, reason_required=0)
+    for group, _, baseline, triage, decision, negative, count in aggregate(db, selected_pairs(db, run.id, request.scope.model_dump()).order_by(None)):
         counts['total'] += count
         if decision not in UNRESOLVED:
             counts['skipped'] += count
@@ -121,6 +134,8 @@ def bulk_preview(db, run, request):
             counts['blocked'] += count
         else:
             counts['applicable'] += count
+            if request.decision == 'merge' and group == 'D':
+                counts['reason_required'] += count
     new_negative_links = 0
     if request.decision == 'deny':
         left = WorkflowPair.baseline['left_id'].as_string()
@@ -131,7 +146,10 @@ def bulk_preview(db, run, request):
         new_negative_links = selected_pairs(db, run.id, request.scope.model_dump()).order_by(None).filter(
             WorkflowPair.decision.in_(UNRESOLVED), ~negative).with_entities(
                 case((left < right, left), else_=right), case((left < right, right), else_=left)).distinct().count()
-    return {**counts, 'new_negative_links': new_negative_links,
+    group_review_required = bool(counts['reason_required'] and not request.review_group_token)
+    if counts['reason_required'] and request.review_group_token:
+        validate_soft_group(db, run, request.model_dump())
+    return {**counts, 'new_negative_links': new_negative_links, 'group_review_required': group_review_required,
             'workflow_revision': run.workflow_revision, 'decision_revision': run.decision_revision,
             'preview_token': bulk_preview_token(db, run, request.model_dump())}
 
@@ -143,6 +161,9 @@ def bulk_preview_token(db, run, payload):
     from masterone.mdm.workflow_bulk import selected_pairs
     token = sha256(digest({'decision': payload['decision'], 'scope': payload['scope'],
         'auto_only': payload.get('auto_only', False)}).encode())
+    if payload.get('review_group_token') or payload.get('review_group_record_ids'):
+        token.update(digest({'review_group_token': payload.get('review_group_token'),
+                             'review_group_record_ids': payload.get('review_group_record_ids')}).encode())
     query = selected_pairs(db, run.id, payload['scope'])
     for row in query.yield_per(1000):
         token.update(digest({'id': row.id, 'revision': row.revision, 'decision': row.decision,

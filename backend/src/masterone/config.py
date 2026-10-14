@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     gemini_thinking_budget: int | None = Field(default=0, ge=0, le=32768)
     semantic_address_enabled: bool = False
     session_workflow_enabled: bool = False
+    workflow_parquet_enabled: bool = False
     decision_semantics_v2_enabled: bool = False
     cluster_safety_v2_enabled: bool = False
     generation_staging_enabled: bool = False
@@ -65,6 +66,11 @@ class Settings(BaseSettings):
     llm_enabled: bool = False
     pair_assessment_auto_enabled: bool = False
     pair_review_model_path: str = ''
+    pair_automation_enabled: bool = False
+    pair_automation_certificate_path: str = ''
+    pair_automation_certificate_sha256: str = ''
+    pair_automation_data_scope: str = Field(default='',max_length=128)
+    pair_automation_max_components_per_run: int = Field(default=20,ge=1,le=100)
     llm_pair_assessment_enabled: bool = False
     llm_max_pair_assessment_calls_per_run: int = Field(default=100, ge=0)
     llm_explanation_enabled: bool = False
@@ -128,6 +134,7 @@ class Settings(BaseSettings):
     export_max_rss_bytes: int = Field(default=0, ge=0)
     export_timeout_seconds: float = Field(default=3600, gt=0)
     export_artifact_dir: str = "./data/export-artifacts"
+    workflow_artifact_dir: str = "./data/workflow-artifacts"
     export_parquet_enabled: bool = False
 
     # Resumable CSV parts use this directory when object storage is disabled.

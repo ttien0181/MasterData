@@ -124,7 +124,7 @@ def claim_next(factory, worker_id, *, lease_seconds=30, timeout_seconds=3600):
         if task.operation_id:
             from masterone.mdm.workflow_models import WorkflowOperation
             op = db.get(WorkflowOperation, task.operation_id)
-            if op is None or op.run_id != run.id or op.status not in ('QUEUED', 'RETRYABLE_FAILED') or op.operation_type not in ('PREPARE', 'DECIDE', 'BULK_DECISIONS', 'CLUSTER', 'GOLDEN_RESOLVE', 'ASSESS_PAIRS', 'PAIR_ADVICE'):
+            if op is None or op.run_id != run.id or op.status not in ('QUEUED', 'RETRYABLE_FAILED') or op.operation_type not in ('PREPARE', 'DECIDE', 'BULK_DECISIONS', 'CLUSTER', 'CLUSTER_PREVIEW', 'GOLDEN_RESOLVE', 'ASSESS_PAIRS', 'PAIR_ADVICE', 'GROUP_ANNOTATIONS', 'AUTOMATION_SHADOW', 'AUTOMATION_APPLY', 'FINALIZE_GOLDEN'):
                 raise OwnershipLostError('WORKFLOW_OPERATION_IDENTITY')
             op.status, op.stage = 'RUNNING', op.operation_type.lower()
             if op.operation_type == 'CLUSTER':

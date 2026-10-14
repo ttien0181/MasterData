@@ -55,8 +55,8 @@ def test_cluster_publication_rechecks_after_compute(client, workflow_run, monkey
     complete_reviews(client, workflow_run)
     assert finalize(client, workflow_run).status_code == 202
     original = workflow_finalize.cluster_snapshot
-    def compute(*args):
-        output = original(*args)
+    def compute(*args, **kwargs):
+        output = original(*args, **kwargs)
         if change == 'role':
             with client.session_factory.begin() as db:
                 db.get(User, db.get(ResolutionRun, workflow_run).owner_user_id).role = 'VIEWER'
@@ -73,7 +73,7 @@ def test_cluster_publication_rechecks_after_compute(client, workflow_run, monkey
 
 def test_repair_confirmation_scoped_and_undo_requires_review():
     from masterone.mdm.golden_service import repair_confirmation
-    row = SimpleNamespace(payload={'member_record_ids': ['safe']}, selections={}, golden={'fields': {}})
+    row = SimpleNamespace(payload={'member_record_ids': ['safe'], 'source_snapshot_hash': 'same-source'}, selections={}, golden={'fields': {}})
     old = SimpleNamespace(payload=row.payload, selections={}, golden=row.golden, confirmed=False)
     assert not repair_confirmation(row, [old], {'auto_confirm_record_ids': ['conflict']})
     old.confirmed = True

@@ -37,11 +37,11 @@ def test_workflow_finalize_snapshot_replay_singleton(client, workflow_run):
     assert client.post(url + '/finalize-decisions', json=body).json() == response.json()
     assert client.post(url + '/finalize-decisions', json={**body, 'request_id': 'second-tab'}).status_code == 409
     assert client.get(url + '/clusters').status_code == 409
+    run_one(client)
     with client.session_factory() as db:
         op = db.get(WorkflowOperation, response.json()['operation_id'])
         snapshot = deepcopy(db.get(WorkflowArtifact, op.artifact_id).payload)
         assert digest(snapshot) == db.get(WorkflowArtifact, op.artifact_id).content_hash
-    run_one(client)
     assert read(client, workflow_run)['workflow_state'] == 'GOLDEN_REVIEW'
     items = client.get(url + '/clusters').json()['items']
     members = [r for c in items for r in c['member_record_ids']]

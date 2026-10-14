@@ -202,8 +202,9 @@ def test_batch_assessment_preserves_inputs_and_prepares_each_record_only_once():
     assert calls['person_constraints'] == 3
 
 
-def test_missing_anchor_remains_insufficient_after_batch_assessment():
-    result = assess_pair(record('a', phone='', email=''), record('b', phone='', email=''))
+def test_missing_anchor_without_support_remains_insufficient_after_batch_assessment():
+    result = assess_pair(record('a', phone='', email='', dob='', address='Ha Noi'),
+                         record('b', phone='', email='', dob='', address='Ha Noi'))
     assert (result['primary_group'], result['decision']) == ('C', 'INSUFFICIENT_EVIDENCE')
 
 

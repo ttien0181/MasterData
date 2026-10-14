@@ -32,11 +32,19 @@ services:
       - ./data:/app/data
     environment:
       APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-masterone}:${POSTGRES_PASSWORD:-masterone}@database:5432/${POSTGRES_DB:-masterone}
+      MDM_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-masterone}:${POSTGRES_PASSWORD:-masterone}@database:5432/${POSTGRES_DB:-masterone}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       SESSION_WORKFLOW_ENABLED: "true"
       PAIR_ASSESSMENT_AUTO_ENABLED: "true"
       PAIR_REVIEW_MODEL_PATH: /app/data/models/pair-review-v2/manifest.json
-      LLM_PAIR_ASSESSMENT_ENABLED: "true"
+      LLM_PAIR_ASSESSMENT_ENABLED: "false"
+      LLM_SEMANTIC_ENABLED: "false"
+      SEMANTIC_ADDRESS_ENABLED: "false"
+      R2_ENDPOINT_URL: ""
+      R2_ACCESS_KEY_ID: ""
+      R2_SECRET_ACCESS_KEY: ""
+      R2_BUCKET: ""
       WORK_DIR: /app/data/work
     depends_on:
       database:
@@ -61,10 +69,18 @@ services:
       - ./data:/app/data
     environment:
       APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-masterone}:${POSTGRES_PASSWORD:-masterone}@database:5432/${POSTGRES_DB:-masterone}
+      MDM_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-masterone}:${POSTGRES_PASSWORD:-masterone}@database:5432/${POSTGRES_DB:-masterone}
       SESSION_WORKFLOW_ENABLED: "true"
       PAIR_ASSESSMENT_AUTO_ENABLED: "true"
       PAIR_REVIEW_MODEL_PATH: /app/data/models/pair-review-v2/manifest.json
-      LLM_PAIR_ASSESSMENT_ENABLED: "true"
+      LLM_PAIR_ASSESSMENT_ENABLED: "false"
+      LLM_SEMANTIC_ENABLED: "false"
+      SEMANTIC_ADDRESS_ENABLED: "false"
+      R2_ENDPOINT_URL: ""
+      R2_ACCESS_KEY_ID: ""
+      R2_SECRET_ACCESS_KEY: ""
+      R2_BUCKET: ""
       WORK_DIR: /app/data/work
     depends_on:
       backend:

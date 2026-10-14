@@ -1,0 +1,26 @@
+{
+  "backend": {
+    "passed": 1476,
+    "skipped": 2,
+    "failed": 0,
+    "wall_seconds": 492.53,
+    "command": ".venv/Scripts/python.exe -B -X utf8 scripts/run_cluster_checks.py --suite all --timeout 900",
+    "log_sha256": "e9bf519ed3cdb2516eda860756e852247834451de48b3cae0cad0b292b19d577",
+    "log_tail": [
+      "........................................................................ [ 87%]",
+      "........................................................................ [ 92%]",
+      "........................................................................ [ 97%]",
+      "......................................                                   [100%]",
+      "1476 passed, 2 skipped in 492.53s (0:08:12)"
+    ]
+  },
+  "frontend": {
+    "passed": 237,
+    "test_files": 33,
+    "typecheck_exit_code": 0,
+    "build_exit_code": 0
+  },
+  "compose_config_exit_code": 0,
+  "staged_diff_check_exit_code": 0,
+  "note": "Full backend after JSON partition-iterator fix; frontend unchanged since verified build; real browser rerun after backend fix."
+}

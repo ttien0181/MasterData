@@ -1,0 +1,25 @@
+{
+  "phase_files": 73,
+  "phase_issue_count": 0,
+  "whole_patch_files": 113,
+  "whole_patch_issue_count": 192,
+  "preexisting_issue_files": [
+    "backend/src/masterone/mdm/pipeline/pair_automation.py",
+    "backend/src/masterone/mdm/pipeline/review_recovery.py",
+    "backend/src/masterone/mdm/workflow_automation.py",
+    "backend/tests/test_mdm/test_automation_certificate_builder.py",
+    "backend/tests/test_mdm/test_pair_automation.py",
+    "backend/tests/test_mdm/test_pair_classification_regressions.py",
+    "backend/tests/test_mdm/test_pair_quality_benchmark.py",
+    "backend/tests/test_mdm/test_recovered_publication.py",
+    "backend/tests/test_mdm/test_review_candidate_coverage.py",
+    "backend/tests/test_mdm/test_review_recovery.py",
+    "backend/tests/test_mdm/test_workflow_automation.py",
+    "backend/tests/test_mdm/test_workflow_recovery.py",
+    "backend/tests/test_mdm/test_workflow_review_routing.py",
+    "scripts/pair_automation_certificate.py",
+    "scripts/verify_pair_correctness.py",
+    "scripts/verify_pair_quality.py"
+  ],
+  "note": "Phase checks compare protected dirty baseline; whole patch compares Git HEAD. Whole patch lint is not clean."
+}

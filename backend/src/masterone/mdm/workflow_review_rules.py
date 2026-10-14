@@ -4,7 +4,9 @@ from sqlalchemy import and_, or_
 from masterone.mdm.workflow_assessment_reads import effective_column
 from masterone.mdm.workflow_models import WorkflowPair
 
-TERMINAL_BASELINES = ('MERGEABLE', 'NON_MATCH', 'NOT_MERGEABLE', 'BLOCKED')
+# Insufficient evidence is retained for inspection/reassessment, not mandatory
+# work. An explicit human deferral still requires a decision.
+TERMINAL_BASELINES = ('MERGEABLE', 'NON_MATCH', 'NOT_MERGEABLE', 'BLOCKED', 'INSUFFICIENT_EVIDENCE')
 
 
 def review_required(decision, baseline):

@@ -1,61 +1,46 @@
 """Isolate unresolved candidate components without changing guarded clustering."""
-from collections import defaultdict, deque
-
 from masterone.mdm.workflow_review_rules import review_required
 
 
-def candidate_region(snapshot, seeds):
-    adjacency = defaultdict(set)
-    links = {tuple(sorted(pair)) for pair in snapshot['negative_pairs']}
-    for pair in snapshot['pairs']:
-        decision = snapshot['overlays'].get(pair['id'], 'UNDECIDED')
-        endpoints = (pair['left_id'], pair['right_id'])
-        if decision in ('REJECTED', 'NON_MATCH') or tuple(sorted(endpoints)) in links:
-            continue
-        if pair['decision'] in ('BLOCKED', 'NOT_MERGEABLE', 'NON_MATCH'):
-            continue
-        if decision != 'ACCEPTED' and pair['decision'] not in ('MERGEABLE', 'REVIEW', 'INSUFFICIENT_EVIDENCE'):
-            continue
-        a, b = endpoints
-        adjacency[a].add(b)
-        adjacency[b].add(a)
-    affected = set(seeds)
-    pending = deque(affected)
-    while pending:
-        for neighbor in adjacency[pending.popleft()] - affected:
-            affected.add(neighbor)
-            pending.append(neighbor)
-    return affected & {record['id'] for record in snapshot['records']}
+def candidate_adjacency(snapshot, *, index=None):
+    """Only actionable/accepted edges connect publication regions.
+
+    A retained insufficient candidate must not hold unrelated safe records.
+    Explicit deferral preserves the reviewer's affected region.
+    """
+    from masterone.mdm.workflow_cluster_index import SnapshotIndex
+    return (index or SnapshotIndex(snapshot, frequencies={})).adjacency
 
 
-def restricted_snapshot(snapshot, records):
-    return {**snapshot,
-            'records': [r for r in snapshot['records'] if r['id'] in records],
-            'pairs': [p for p in snapshot['pairs'] if {p['left_id'], p['right_id']} <= records]}
+def candidate_region(snapshot, seeds, *, index=None):
+    from masterone.mdm.workflow_cluster_index import SnapshotIndex
+    return (index or SnapshotIndex(snapshot, frequencies={})).region(seeds)
 
 
-def partial_snapshot(snapshot, run_id, compute):
+def restricted_snapshot(snapshot, records, *, index=None):
+    from masterone.mdm.workflow_cluster_index import SnapshotIndex
+    return (index or SnapshotIndex(snapshot, frequencies={})).subset(records)
+
+
+def partial_snapshot(snapshot, run_id, compute, *, index=None):
+    from masterone.mdm.workflow_cluster_index import SnapshotIndex
+    index = index or SnapshotIndex(snapshot)
     pending_pairs = [p for p in snapshot['pairs']
                      if review_required(snapshot['overlays'].get(p['id'], 'UNDECIDED'), p)]
-    pending_records = candidate_region(snapshot, {rid for p in pending_pairs for rid in (p['left_id'], p['right_id'])})
+    pending_records = index.region({rid for p in pending_pairs for rid in (p['left_id'], p['right_id'])})
     known = snapshot.get('known_conflicts', [])
     pair_ids = {p['id'] for p in snapshot['pairs']}
-    known_records = candidate_region(snapshot, {rid for c in known for rid in c.get('record_ids', [])})
     retained = [c for c in known if set(c.get('record_ids', [])) & pending_records
                 or c['pair_id'] not in pair_ids]
     reevaluated = [c['id'] for c in known if c not in retained]
     conflicts = [{k: v for k, v in c.items() if k != 'id'} for c in retained]
-    # Prior conflict components receive a fresh guarded evaluation before they
-    # can re-enter publication. Pending components remain completely excluded.
-    validation_records = known_records - pending_records
-    if validation_records:
-        validation = compute(restricted_snapshot(snapshot, validation_records), run_id)
-        conflicts.extend(validation['conflicts'])
-    unresolved = candidate_region(snapshot, pending_records | {rid for c in conflicts for rid in c['record_ids']})
-    eligible = {r['id'] for r in snapshot['records']} - unresolved
-    result = compute(restricted_snapshot(snapshot, eligible), run_id)
+    # The single fresh evaluation below includes prior conflict components.
+    # Pending components remain excluded; no component is checked twice.
+    unresolved = index.region(pending_records | {rid for c in conflicts for rid in c['record_ids']})
+    eligible = index.by_id.keys() - unresolved
+    result = compute(index.subset(eligible), run_id)
     conflicts.extend(result['conflicts'])
-    unresolved = candidate_region(snapshot, unresolved | {rid for c in conflicts for rid in c['record_ids']})
+    unresolved = index.region(unresolved | {rid for c in conflicts for rid in c['record_ids']})
     safe = [p for p in result['safe_clusters'] if not unresolved.intersection(p['member_record_ids'])]
     result.update(clusters=[] if conflicts or unresolved else safe, safe_clusters=safe,
                   conflicts=conflicts, conflict_record_ids=sorted(unresolved),

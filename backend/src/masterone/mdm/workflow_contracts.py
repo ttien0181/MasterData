@@ -8,6 +8,11 @@ TRANSITIONS = {('DATA_PREPARING', 'PREPARE'): 'DATA_PREPARING',
                ('DECIDE_REVIEW', 'CLUSTER'): 'CLUSTER_QUEUED',
                ('DECIDE_REVIEW', 'ASSESS_PAIRS'): 'DECIDE_REVIEW',
                ('DECIDE_REVIEW', 'PAIR_ADVICE'): 'DECIDE_REVIEW'}
+TRANSITIONS[('DECIDE_REVIEW', 'CLUSTER_PREVIEW')] = 'DECIDE_REVIEW'
+TRANSITIONS[('DECIDE_REVIEW', 'AUTOMATION_SHADOW')] = 'DECIDE_REVIEW'
+TRANSITIONS[('DECIDE_REVIEW', 'AUTOMATION_APPLY')] = 'DECIDE_REVIEW'
+for _state in ('DECIDE_REVIEW', 'GOLDEN_REVIEW'):
+    TRANSITIONS[(_state, 'GROUP_ANNOTATIONS')] = _state
 
 
 def transition(state, operation_type):
@@ -43,6 +48,10 @@ class PairAdviceRequest(Mutation):
     limit: int = Field(default=100, ge=1, le=100)
 
 
+class GroupAnnotationRequest(Mutation):
+    expected_cluster_revision: int = Field(ge=1)
+
+
 class PairFilter(BaseModel):
     model_config = ConfigDict(extra='forbid')
     group: str | None = None
@@ -64,24 +73,40 @@ class BulkRequest(Mutation):
     auto_only: bool = False
     preview_token: str | None = Field(default=None, min_length=64, max_length=64)
     reason: str | None = Field(default=None, max_length=500)
+    review_group_record_ids: list[str] | None = Field(default=None, min_length=2, max_length=20)
+    review_group_token: str | None = Field(default=None, min_length=64, max_length=64)
 
 
 class FinalizeRequest(Mutation):
     expected_decision_revision: int = Field(ge=0)
     allow_partial: bool = False
+    preview_operation_id: str | None = Field(default=None, min_length=1, max_length=36)
+    preview_token: str | None = Field(default=None, min_length=64, max_length=64)
+
+
+class AutomationShadowRequest(Mutation):
+    expected_decision_revision: int = Field(ge=0)
+
+
+class AutomationApplyRequest(AutomationShadowRequest):
+    preview_operation_id: str = Field(min_length=1,max_length=36)
+    preview_token: str = Field(min_length=64,max_length=64)
 
 
 class GroupApprovalRequest(Mutation):
     expected_decision_revision: int = Field(ge=0)
-    record_ids: list[str] = Field(min_length=2, max_length=20)
+    record_ids: list[str] = Field(min_length=2, max_length=100)
     reason: str = Field(min_length=1, max_length=500)
+    fingerprint: str | None = Field(default=None, min_length=64, max_length=64)
+    preview_operation_id: str | None = Field(default=None, min_length=1, max_length=36)
 
 
 class Selection(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    selection_mode: Literal['SOURCE_CHOICE', 'MANUAL_OVERRIDE']
+    selection_mode: Literal['SOURCE_CHOICE', 'MANUAL_OVERRIDE', 'DISCARD_PENDING']
     source_record_id: str | None = None
     value: Any = None
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class GoldenRevisionRequest(Mutation):
@@ -140,6 +165,7 @@ class WorkflowRead(BaseModel):
     golden_revision: int
     assessment_id: str | None = None
     advice_revision: str | None = None
+    annotation_revision: str | None = None
     counts: dict
     allowed_actions: list[str]
     blockers: list[dict]
@@ -147,3 +173,5 @@ class WorkflowRead(BaseModel):
     retryable_operation: OperationRead | None = None
     cluster_result: dict | None = None
     latest_cluster_operation: OperationRead | None = None
+    latest_automation_operation: OperationRead | None = None
+    automation_stopped: bool = False

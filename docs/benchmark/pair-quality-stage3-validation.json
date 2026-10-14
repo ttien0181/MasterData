@@ -1,0 +1,96 @@
+{
+  "date": "2026-10-13",
+  "precision_target": 0.995,
+  "backend": {
+    "passed": 1173,
+    "skipped": 2,
+    "exit_code": 0,
+    "command": "isolated_environment + pytest -p pytest_asyncio.plugin backend/tests -q --tb=short"
+  },
+  "frontend": {
+    "passed": 211,
+    "files": 30,
+    "typecheck": "tsc --noEmit passed",
+    "production_build": "existing Compose frontend image"
+  },
+  "docker": {
+    "backend_worker_build_exit": 0,
+    "compose_unchanged_in_stage3": true,
+    "running_backend_support_hash_matches": true
+  },
+  "browser": {
+    "status": "PASS",
+    "checks": [
+      {
+        "check": "recovered manual cluster publishes with all direct accepts",
+        "required": 3,
+        "automatic": 0,
+        "groups": [
+          1,
+          3
+        ]
+      },
+      {
+        "check": "partial DOB and generic city remain insufficient",
+        "mandatory": 0,
+        "groups": [
+          1,
+          1
+        ]
+      },
+      {
+        "check": "phone transposition is review-only and rejection stays separate",
+        "automatic": 0,
+        "groups": [
+          1,
+          1
+        ]
+      },
+      {
+        "check": "supported name conflict still requires a human reason",
+        "groups": [
+          2
+        ]
+      }
+    ],
+    "runs": [
+      "9d2bec02-ab72-4981-bb72-39518dcdd94d",
+      "c11af030-f077-4a68-b8cf-88cdf44e3bf5",
+      "b5446731-188d-4d96-9ef8-f6fa8bcea690",
+      "dedb3188-1e8a-4414-9c00-7fbf23a68024"
+    ],
+    "pageErrors": [],
+    "scope": "local synthetic fixtures; no production auto-merge certificate"
+  },
+  "benchmark": {
+    "cases": 8,
+    "before_after_raw_hashes_equal": true,
+    "source_hashes_equal": true,
+    "evaluation_code_hash": "ed797548e007f2e6481eaf6dae771e27bbf1e8b35363bfe9311dac70156e8c69",
+    "after_code_identity": "6e9bce86b7986cb382bf55e4b1fb639d30d1f4823d9b0796aba5729d789ff7b4",
+    "unchanged_strict_shadow": true,
+    "unsupported_recovery": 0,
+    "constraint_violations": 0,
+    "production_eligible_cases": 0,
+    "runtime_activation": false,
+    "additional_true_review_pairs": 2199,
+    "additional_false_review_pairs": 27
+  },
+  "review": {
+    "critical": 0,
+    "important_found": 2,
+    "important_resolved": 2,
+    "fix_regressions": "RED/GREEN; final47 focused passed before1173 full passed",
+    "minor_addressed": [
+      "code/policy fingerprints",
+      "email/historical/secondary contact tests"
+    ]
+  },
+  "git_whitespace_exit": 0,
+  "limitations": [
+    "Explored synthetic data; no independent production holdout",
+    "TC6/8/13 deterministic12k samples of100k",
+    "TC5 structural exclusions and70 unlabelled review pairs",
+    "TC3 review capture2.30%; TC5 remaining606 blocking misses/2229 insufficient candidates"
+  ]
+}

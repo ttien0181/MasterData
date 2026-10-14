@@ -22,7 +22,7 @@ export default function GoldenRecords() {
   const generations=[w.cluster_result,read.data?.generation,...(read.data?.items.map(g=>g.generation)||[])].filter(g=>!!g);
   const published=read.data?.generation ?? w.cluster_result;
   const generation=published?{...published,stale:generations.some(g=>g.stale),read_only:generations.some(g=>g.read_only)}:published;
-  const readOnly=!!generation?.read_only||!!generation?.stale||!!read.data?.items.some(g=>g.read_only)||['CLUSTER_QUEUED','CLUSTER_RUNNING'].includes(w.workflow_state);
+  const readOnly=!!w.active_operation||!!generation?.read_only||!!generation?.stale||!!read.data?.items.some(g=>g.read_only)||['CLUSTER_QUEUED','CLUSTER_RUNNING'].includes(w.workflow_state);
   const incomplete=generations.some(g=>g.stale||g.publication_status==='PARTIAL'||g.covered_records!==g.total_records);
   const view = useTabView(w.run_id, 'golden', !!read.data);
   if (!ready) return <section className="workflow-panel"><h2>Golden record</h2><p>Golden chưa sẵn sàng. Cần nhóm chính thức sau hoàn tất phân loại.</p></section>;

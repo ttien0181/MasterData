@@ -1,12 +1,13 @@
 """Fenced reassessment of existing candidate pairs without rewriting history."""
 from collections import Counter
-from uuid import uuid4
 from hashlib import sha256
 from pathlib import Path
+from uuid import uuid4
+
 from sqlalchemy import bindparam, update
 
 from masterone.mdm.engine_adapter import engine_context
-from masterone.mdm.generation_staging import config_identity, digest
+from masterone.mdm.generation_staging import config_identity, digest, digest_sequence
 from masterone.mdm.models import ResolutionEngineSelection, ResolutionRecord
 from masterone.mdm.pipeline.decision_semantics import load_cannot_links
 from masterone.mdm.pipeline.golden_v2 import record_payload
@@ -18,9 +19,17 @@ from masterone.mdm.workflow_models import WorkflowAssessment, WorkflowConflict, 
 
 
 def assessment_code_identity():
-    from masterone.mdm.pipeline import pair_assessment, pair_grouping, matching, decision_semantics, standardization, soft_model
+    from masterone.mdm.pipeline import (
+        decision_semantics,
+        matching,
+        pair_assessment,
+        pair_grouping,
+        review_recovery,
+        soft_model,
+        standardization,
+    )
     return digest({module.__name__: sha256(Path(module.__file__).read_bytes()).hexdigest()
-                   for module in (pair_assessment, pair_grouping, matching, decision_semantics, standardization, soft_model)})
+                   for module in (pair_assessment, pair_grouping, matching, decision_semantics, standardization, soft_model, review_recovery)})
 
 
 def compute_assessment(records, pairs, profile, links, progress=lambda *_: None, model_scope=None):
@@ -61,7 +70,8 @@ def compute_assessment(records, pairs, profile, links, progress=lambda *_: None,
             'source_input_hash': digest(records), 'source_profile_identity': digest(profile),
             'profile': upgraded, 'profile_identity': digest(upgraded), 'policy_version': VERSION,
             'execution_identity': identity, 'negative_pairs_hash': digest(sorted(links)),
-            'groups': dict(groups), 'model': model_state, 'assessment_code_identity': assessment_code_identity()}
+            'groups': dict(groups), 'model': model_state, 'assessment_code_identity': assessment_code_identity(),
+            'contact_frequency_version': 1, 'contact_frequencies': {field: dict(counts) for field, counts in frequencies.items()}}
 
 
 def publish_assessment(db, run, op, payload, artifact_id):
@@ -69,7 +79,7 @@ def publish_assessment(db, run, op, payload, artifact_id):
     if current:
         current.active = False
         db.flush()
-    configuration = {key: value for key, value in payload.items() if key not in {'pairs', 'records'}}
+    configuration = {key: value for key, value in payload.items() if key not in {'pairs', 'records', 'contact_frequencies'}}
     assessment = WorkflowAssessment(id=str(uuid4()), run_id=run.id, artifact_id=artifact_id,
                                     active=True, configuration=configuration)
     db.add(assessment)
@@ -140,8 +150,8 @@ def validate_assessed_snapshot(db, run_id, snapshot):
         raise ValueError('ASSESSMENT_CONFIG_CHANGED')
     if assessment.configuration['assessment_code_identity'] != assessment_code_identity():
         raise ValueError('ASSESSMENT_CODE_CHANGED')
-    current = [record_payload(row) for row in db.query(ResolutionRecord).filter_by(run_id=run_id).order_by(ResolutionRecord.id)]
-    if digest(current) != snapshot['source_input_hash']:
+    from masterone.mdm.workflow_snapshot_producers import record_stream
+    if digest_sequence(record_stream(db, run_id)) != snapshot['source_input_hash']:
         raise ValueError('ASSESSMENT_INPUT_CHANGED')
     selected = db.get(ResolutionEngineSelection, run_id)
     if digest(selected.configuration if selected else {}) != snapshot['source_profile_identity']:

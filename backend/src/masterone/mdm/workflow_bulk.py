@@ -16,6 +16,33 @@ def selected_pairs(db, run_id, scope):
     return query.order_by(WorkflowPair.id)
 
 
+def validate_soft_group(db, run, payload):
+    """One source-bound reviewed component, at most 20 members; no filtered D batches."""
+    if payload['decision'] != 'merge':
+        return
+    from masterone.mdm.pipeline.cluster_policy import load_policy
+    policy = load_policy()
+    from masterone.mdm.workflow_assessment_reads import effective_column
+    from masterone.mdm.workflow_models import WorkflowPair
+    from masterone.mdm.workflow_review_clusters import review_cluster
+    query = selected_pairs(db, run.id, payload['scope']).filter(
+        WorkflowPair.decision.in_(('UNDECIDED', 'DEFERRED')),
+        effective_column()['primary_group'].as_string() == 'D')
+    seed = query.first()
+    if seed is None:
+        return
+    if (payload['scope'].get('pair_ids') is None or not payload.get('review_group_token') or
+            not payload.get('review_group_record_ids')):
+        conflict('SOFT_BULK_GROUP_REVIEW_REQUIRED')
+    group = review_cluster(db, run, seed.id)
+    members = payload['review_group_record_ids']
+    selected = {p.id for p in selected_pairs(db, run.id, payload['scope']).limit(policy.max_pair_checks_per_union + 1)}
+    if (not group['batch_allowed'] or len(members) > policy.max_cluster_size or len(members) != len(set(members)) or
+            set(members) != {r['record_id'] for r in group['records']} or
+            selected != set(group['pending_pair_ids']) or group['review_scope_token'] != payload['review_group_token']):
+        conflict('SOFT_BULK_GROUP_REVIEW_CHANGED')
+
+
 def run_bulk_decisions(operation_id, factory, progress):
     """Persist each bounded batch and its cursor together; retry never repeats writes."""
     from masterone.mdm.job_queue import guard

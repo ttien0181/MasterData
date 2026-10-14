@@ -4,6 +4,7 @@ import PairCompletion from './PairCompletion';
 import GenerationStatus from './GenerationStatus';
 import PairAmendment from './PairAmendment';
 import PairConflicts from './PairConflicts';
+import ClusterWorkspace from './ClusterWorkspace';
 import {WorkflowContext} from './SessionWorkspace';
 import {SessionCacheProvider} from './SessionCache';
 import * as api from '@/lib/workflowApi';
@@ -16,11 +17,20 @@ const host=(children:React.ReactNode)=><SessionCacheProvider userId="u"><Workflo
 it('lists blockers and queue attention while blocking both generation actions',()=>{
  render(<PairCompletion workflow={w} pending={2} attention={1} busy={false} required={vi.fn()} conflicts={vi.fn()} finalize={vi.fn()}/>);
  expect(screen.getByText(/2 yêu cầu đang chờ/)).toBeInTheDocument();expect(screen.getByText(/1 yêu cầu cần đối chiếu/)).toBeInTheDocument();
- expect(screen.getByRole('button',{name:'Tạo nhóm phần đã xử lý'})).toBeDisabled();expect(screen.getByRole('button',{name:'Hoàn tất phân loại và tạo nhóm'})).toBeDisabled();
+ expect(screen.getByRole('button',{name:'Tạo các nhóm đủ điều kiện'})).toBeDisabled();expect(screen.getByRole('button',{name:'Hoàn tất phân loại và tạo nhóm'})).toBeDisabled();
+});
+it('allows a read-only preview while queued decisions still block creation',()=>{
+ const preview=vi.fn();render(<PairCompletion workflow={{...w,allowed_actions:['preview-clusters','finalize-partial']}} pending={2} attention={1} busy={false} required={vi.fn()} conflicts={vi.fn()} finalize={vi.fn()} preview={preview}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Xem trước nhóm dự kiến'}));expect(preview).toHaveBeenCalledTimes(1);expect(screen.getByRole('button',{name:'Tạo các nhóm đủ điều kiện'})).toBeDisabled();
+});
+it('shows first generation queue progress before any cluster result is ready',()=>{
+ const queued={...w,workflow_state:'CLUSTER_QUEUED' as const,latest_cluster_operation:{operation_id:'job',run_id:'r',operation_type:'FINALIZE_DECISIONS',status:'QUEUED',stage:'queued',progress:{},error_code:null,result:{}}};
+ render(<SessionCacheProvider userId="first-generation"><WorkflowContext.Provider value={{workflow:queued,refresh:vi.fn()}}><ClusterWorkspace/></WorkflowContext.Provider></SessionCacheProvider>);
+ expect(screen.getByText(/Chờ tạo nhóm/)).toBeInTheDocument();expect(screen.queryByText(/Hoàn tất phân loại để tạo nhóm/)).not.toBeInTheDocument();
 });
 it('offers explicitly partial generation when unresolved decisions remain',()=>{
  const finalize=vi.fn();render(<PairCompletion workflow={w} pending={0} attention={0} busy={false} required={vi.fn()} conflicts={vi.fn()} finalize={finalize}/>);
- fireEvent.click(screen.getByRole('button',{name:'Tạo nhóm phần đã xử lý'}));expect(finalize).toHaveBeenCalledWith(true);
+ fireEvent.click(screen.getByRole('button',{name:'Tạo các nhóm đủ điều kiện'}));expect(finalize).toHaveBeenCalledWith(true);
 });
 it('shows a positive readiness explanation when full completion is allowed',()=>{
  render(<PairCompletion workflow={{...w,allowed_actions:['finalize-decisions'],blockers:[]}} pending={0} attention={0} busy={false} required={vi.fn()} conflicts={vi.fn()} finalize={vi.fn()}/>);
@@ -38,7 +48,7 @@ it('loads unresolved records only after opening and pages through bounded result
  fireEvent.click(screen.getByText('Bản ghi chưa giải quyết'));await screen.findByText('First person');
  expect(api.getUnresolvedRecords).toHaveBeenCalledWith('r',expect.any(URLSearchParams),expect.any(AbortSignal));expect(vi.mocked(api.getUnresolvedRecords).mock.calls[0][1]?.get('limit')).toBe('25');
  fireEvent.click(screen.getByRole('button',{name:'Trang tiếp'}));await screen.findByText('Second person');expect(vi.mocked(api.getUnresolvedRecords).mock.calls[1][1]?.get('cursor')).toBe('25');
- expect(screen.getByRole('button',{name:'Tạo nhóm phần đã xử lý'})).toBeDisabled();expect(screen.getByRole('button',{name:'Hoàn tất phân loại và tạo nhóm'})).toBeDisabled();
+ expect(screen.getByRole('button',{name:'Tạo các nhóm đủ điều kiện'})).toBeDisabled();expect(screen.getByRole('button',{name:'Hoàn tất phân loại và tạo nhóm'})).toBeDisabled();
 });
 it('explains the approval permission blocker in Vietnamese',()=>{
  render(<PairCompletion workflow={{...w,allowed_actions:[],blockers:[{code:'APPROVE_PERMISSION_REQUIRED'}]}} pending={0} attention={0} busy={false} required={vi.fn()} conflicts={vi.fn()} finalize={vi.fn()}/>);

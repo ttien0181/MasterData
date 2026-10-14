@@ -1,0 +1,74 @@
+// Browser → actual API routes → claimed worker. The local bridge owns a fresh
+// SQLite fixture; every backend request is redirected before it reaches port 8001.
+import {chromium,expect as originalExpect} from '@playwright/test';
+import {readFile,mkdir,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+const expect=originalExpect.configure({timeout:15000});
+const out=resolve('../artifacts/handoff-browser-20261013');
+await mkdir(out,{recursive:true});
+const fixture=JSON.parse(await readFile(`${out}/fixture.json`,'utf8'));
+const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
+const context=await browser.newContext();
+const page=await context.newPage(),errors=[],requests=[],checks=[];
+page.on('pageerror',error=>errors.push(error.message));
+await context.route('http://localhost:8001/**',async route=>{
+ const req=route.request(),url=new URL(req.url());
+ requests.push({method:req.method(),path:url.pathname,status:0});
+ const response=await route.fetch({url:`${fixture.bridge}${url.pathname}${url.search}`,headers:{'content-type':req.headers()['content-type']||'application/json'}});
+ requests.at(-1).status=response.status();
+ await route.fulfill({response,headers:{...response.headers(),'access-control-allow-origin':'http://localhost:3013','access-control-allow-credentials':'true'}});
+});
+try{
+ await page.goto(`http://localhost:3013/app/sessions/${fixture.run_id}/decisions`);
+ await expect(page.getByRole('table',{name:'Danh sách cặp bản ghi'})).toBeVisible();
+ await page.getByRole('combobox',{name:'Phạm vi thao tác'}).selectOption('all');
+ await page.getByRole('button',{name:'Accept theo phạm vi',exact:true}).click();
+ let dialog=page.getByRole('dialog',{name:'Xác nhận Accept',exact:true});
+ await expect(dialog.getByText(/Nhóm D chỉ được Accept hàng loạt/)).toBeVisible();
+ await dialog.getByRole('textbox',{name:'Lý do Accept'}).fill('Synthetic review');
+ await expect(dialog.getByRole('button',{name:'Xác nhận Accept',exact:true})).toBeDisabled();
+ await dialog.getByRole('button',{name:'Hủy',exact:true}).click();
+ checks.push('generic_D_bulk_rejected_even_with_reason');
+ await page.getByRole('button',{name:/Duyệt cụm từ cặp/}).first().click();
+ dialog=page.getByRole('dialog',{name:/Duyệt theo cụm/});
+ await expect(dialog.getByRole('table')).toBeVisible();
+ await page.screenshot({path:`${out}/actual-group-review.png`,fullPage:true});
+ await dialog.getByRole('button',{name:/Accept.*cụm|Accept.*nhóm/}).click();
+ dialog=page.getByRole('dialog',{name:'Xác nhận Accept',exact:true});
+ await expect(dialog.getByRole('button',{name:'Xác nhận Accept',exact:true})).toBeDisabled();
+ await dialog.getByRole('textbox',{name:'Lý do Accept'}).fill('Compared synthetic source records within this group');
+ await dialog.getByRole('button',{name:'Xác nhận Accept',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Hoàn tất phân loại và tạo nhóm',exact:true})).toBeEnabled();
+ checks.push('bounded_group_comparison_reason_queue_API_worker_accept');
+ await page.getByRole('button',{name:'Hoàn tất phân loại và tạo nhóm',exact:true}).click();
+ dialog=page.getByRole('dialog',{name:'Xem trước các nhóm sẽ tạo'});
+ await expect(dialog.getByRole('table',{name:'Nhóm dự kiến'})).toBeVisible();
+ await expect(dialog.getByRole('cell',{name:/Nguyen Van An CRM/}).first()).toBeVisible();
+ await dialog.getByRole('button',{name:/Đối chiếu nhóm/}).first().click();
+ await expect(dialog.getByRole('table',{name:'Đối chiếu thành viên nhóm'})).toBeVisible();
+ await page.screenshot({path:`${out}/actual-preview.png`,fullPage:true});
+ await dialog.getByRole('button',{name:'Xác nhận tạo nhóm',exact:true}).click();
+ await expect(page).toHaveURL(/\/clusters$/);
+ await expect(page.getByRole('heading',{name:'Các nhóm bản ghi',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:/^Nhóm Nguyen Van An/}).first().click();
+ await expect(page.getByRole('table',{name:'Đối chiếu thành viên nhóm'})).toBeVisible();
+ await page.screenshot({path:`${out}/actual-published-group.png`,fullPage:true});
+ checks.push('source_named_preview_Golden_comparison_publish_group_detail');
+ await expect(page.getByText('Old supplemental choice',{exact:true})).toBeVisible();
+ const discard=page.getByRole('button',{name:'Bỏ lựa chọn cũ obsolete_extra'});
+ await expect(discard).toBeDisabled();
+ await page.getByRole('textbox',{name:'Lý do bỏ lựa chọn obsolete_extra'}).fill('Source removed from the synthetic group');
+ await discard.click();
+ await page.getByRole('button',{name:'Lưu lựa chọn Golden'}).click();
+ await expect(page.getByText('Lịch sử bỏ lựa chọn cũ',{exact:true})).toBeVisible();
+ await page.getByText('Lịch sử bỏ lựa chọn cũ',{exact:true}).click();
+ await expect(page.getByText(/obsolete_extra: Source removed from the synthetic group/)).toBeVisible();
+ await page.reload();
+ await expect(page.getByText('Lịch sử bỏ lựa chọn cũ',{exact:true})).toBeVisible();
+ await page.screenshot({path:`${out}/actual-pending-discard.png`,fullPage:true});
+ checks.push('orphaned_extra_explicit_reason_save_API_audit_history_reload');
+ expect(errors).toEqual([]);expect(requests.filter(r=>r.status>=400)).toEqual([]);
+ await writeFile(`${out}/browser.json`,JSON.stringify({mode:'production Next build + actual API/claimed worker through isolated preauthenticated synthetic bridge',checks,requests,errors,real_developer_backend_requests:0},null,2));
+ console.log(JSON.stringify({checks,requests:requests.length,errors},null,2));
+}catch(error){await writeFile(`${out}/failure.json`,JSON.stringify({error:String(error),checks,requests,errors},null,2));await page.screenshot({path:`${out}/failure.png`,fullPage:true});throw error;}
+finally{await context.close();await browser.close();}

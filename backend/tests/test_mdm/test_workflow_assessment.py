@@ -43,6 +43,7 @@ def test_historical_pair_still_uses_baseline_and_saved_deny_blocks_assessed_acce
 
 def test_new_decide_can_publish_assessment_without_automatic_accept(client, workflow_run, monkeypatch):
     from masterone.config import get_settings
+
     from tests.test_mdm.test_workflow_stages import ready_decisions
     monkeypatch.setattr(get_settings(), 'pair_assessment_auto_enabled', True)
     state = ready_decisions(client, workflow_run)
@@ -86,6 +87,7 @@ def test_reassessment_is_idempotent_keeps_decisions_and_original_artifact(client
 
 def test_finalize_pins_the_effective_assessment_and_cluster_policy(client, workflow_run):
     from masterone.mdm.workflow_models import WorkflowArtifact
+
     from tests.test_mdm.test_workflow_contract import request
     from tests.test_mdm.test_workflow_stages import read, ready_decisions, run_one
     state = ready_decisions(client, workflow_run)
@@ -99,9 +101,9 @@ def test_finalize_pins_the_effective_assessment_and_cluster_policy(client, workf
     response = client.post(url + '/finalize-decisions', json=request(state['workflow_revision'],
         expected_decision_revision=state['decision_revision']))
     assert response.status_code == 202, response.text
+    run_one(client)
     with client.session_factory() as db:
         artifact = db.query(WorkflowArtifact).filter_by(run_id=workflow_run, phase='DECISION_SNAPSHOT').one()
         assert artifact.payload.get('assessment_id') == state['assessment_id']
         assert artifact.payload['profile']['decision_semantics_v2_enabled'] is True
-    run_one(client)
     assert read(client, workflow_run)['workflow_state'] == 'GOLDEN_REVIEW'

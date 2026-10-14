@@ -65,7 +65,84 @@ def encode(value):
 
 
 def digest(value):
-    return sha256(encode(value)).hexdigest()
+    result = sha256()
+    for chunk in _canonical_chunks(value):
+        result.update(chunk)
+    return result.hexdigest()
+
+
+def _string_chunks(value):
+    """Bound escaping and UTF-8 allocations even for one large string leaf."""
+    yield b'"'
+    for position in range(0, len(value), 4096):
+        yield json.encoder.encode_basestring(value[position:position + 4096])[1:-1].encode('utf-8')
+    yield b'"'
+
+
+def digest_sequence(values):
+    """Canonical array hash from a single-pass iterable without an array copy."""
+    result = sha256(b'[')
+    first = True
+    for value in values:
+        if not first:
+            result.update(b',')
+        first = False
+        for chunk in _canonical_chunks(value):
+            result.update(chunk)
+    result.update(b']')
+    return result.hexdigest()
+
+
+def _canonical_chunks(value):
+    """The encode() byte contract, emitted with bounded leaf/container traversal.
+
+    Dictionary keys still sort in Python order, exactly like JSON sort_keys; array
+    members and encoded strings are never assembled into a complete JSON value.
+    """
+    active = set()
+    stack = [('value', value)]
+    while stack:
+        event = stack.pop()
+        if event[0] == 'close':
+            active.remove(event[2])
+            yield event[1]
+        elif event[0] == 'items':
+            iterator, first, mapping = event[1:]
+            try:
+                item = next(iterator)
+            except StopIteration:
+                continue
+            if not first:
+                yield b','
+            stack.append(('items', iterator, False, mapping))
+            if mapping:
+                key, current = item
+                if not isinstance(key, str):
+                    if key is not None and not isinstance(key, (int, float, bool)):
+                        raise TypeError('JSON keys must be str, int, float, bool or None')
+                    key = json.dumps(key, allow_nan=False)
+                yield from _string_chunks(key)
+                yield b':'
+                stack.append(('value', current))
+            else:
+                stack.append(('value', item))
+        else:
+            current = event[1]
+            if isinstance(current, (dict, list, tuple)):
+                identity = id(current)
+                if identity in active:
+                    raise ValueError('Circular reference detected')
+                active.add(identity)
+                mapping = isinstance(current, dict)
+                yield b'{' if mapping else b'['
+                stack.append(('close', b'}' if mapping else b']', identity))
+                iterator = iter(sorted(current.items())) if mapping else iter(current)
+                stack.append(('items', iterator, True, mapping))
+            elif isinstance(current, str):
+                yield from _string_chunks(current)
+            else:
+                yield json.dumps(current, sort_keys=True, ensure_ascii=False,
+                                 separators=(',', ':'), allow_nan=False).encode('utf-8')
 
 
 def batches(values, size):

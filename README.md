@@ -110,7 +110,39 @@ npm --prefix frontend run build
 
 [Báo cáo manual MVP](eval/results/report.md) liên kết ảnh chụp và CSV kết quả thực tế. Đây là bằng chứng thao tác sản phẩm; test tự động trong `backend/tests/` và `frontend/` kiểm tra hành vi code. Script `scripts/evaluate_linh_resolution.py` dùng để đo thuật toán offline, không thay thế 5 ca manual.
 
+### Phân loại cặp và tạo nhóm
+
+Accept cặp có xung đột mềm thuộc Group D cần lý do đối chiếu. `Không gộp` giữ riêng theo quyết định hiện tại; `Deny` xác nhận khác thực thể và tạo ràng buộc lâu dài. Cả hai đều ngăn nhóm chứa hai bản ghi trong lần tạo nhóm, kể cả qua liên kết gián tiếp.
+
+Trước khi tạo nhóm, giao diện chạy tác vụ xem trước và hiển thị độ phủ, thành viên dự kiến, xung đột và vùng còn chờ duyệt. Xem trước được gắn với snapshot quyết định; khi quyết định hoặc đánh giá thay đổi cần tính lại. Đủ độ phủ bản ghi không chứng minh chất lượng nhận dạng.
+
+Ngoại lệ nhóm chỉ áp dụng cho đúng 2–20 thành viên đã được nối bằng các liên kết Accept, kèm lý do và lịch sử. Ngoại lệ có thể xác nhận các cặp nội bộ còn chờ nhưng vẫn giữ kiểm tra ràng buộc cứng, Deny, Không gộp, quy tắc nguồn và kích thước. Thay đổi thành viên hoặc bằng chứng liên quan làm mất hiệu lực của ngoại lệ.
+
+Luồng duyệt nhóm lớn riêng hỗ trợ 21–100 thành viên qua preview đã niêm phong,
+phân trang thành viên/bằng chứng và lý do xác nhận. Đây không phải mở rộng giới hạn
+của thao tác bulk thông thường; nhóm trên 100 vẫn bị chặn và không tự chia nhỏ.
+
+Chuỗi migration mới gồm `0030_review_reasons` → `0031_pair_automation` →
+`0032_generation_coverage`; chạy migration theo hướng dẫn cài đặt trước khi dùng
+backend/worker mới. Không cần tạo hay thay thế file Docker Compose.
+
+Kiểm chứng có môi trường SQLite riêng, tắt dịch vụ bên ngoài:
+
+```powershell
+./.venv/Scripts/python.exe -X utf8 scripts/run_merge_baseline.py --suite all --timeout 600
+npm.cmd --prefix frontend test
+npm.cmd --prefix frontend run lint
+npm.cmd --prefix frontend run build
+```
+
+[Báo cáo kiểm chứng nhóm](docs/benchmark/cluster-handoff-20261013.md) phân biệt test backend, kiểm tra giao diện và benchmark offline. [Hiệu chỉnh thử nghiệm](docs/benchmark/cluster-calibration-20261013.md) dùng benchmark tổng hợp, không bật tự động gộp production hoặc chọn mức rủi ro thay cho người dùng.
+
 ## Phạm vi hiện tại
+
+Bản kiểm thử chất lượng nhóm/Golden và singleton ảo trên `Nam_Backup` có
+[hướng dẫn kiểm thử và phần còn dở](docs/benchmark/cluster-quality-scale-20261014-review.md).
+Nhánh Parquet hiện được giữ sau cờ `WORKFLOW_PARQUET_ENABLED=false`; đọc phạm vi
+trong báo cáo trước khi bật thử. Benchmark phiên này chỉ dùng TC1/10k theo yêu cầu.
 
 Các run không so khớp chéo nhau. Điểm matching là trọng số rule có điều chỉnh tần suất, **không phải xác suất đã hiệu chỉnh** và pipeline không dùng Splink. Gemini không tự quyết định gộp. MVP local dùng SQLite và một worker backend; trước khi triển khai Internet công khai cần bổ sung xác minh email, khôi phục mật khẩu, MFA và chính sách chống đăng ký tự động. Không nạp dữ liệu khách hàng thật vào bản demo.
 

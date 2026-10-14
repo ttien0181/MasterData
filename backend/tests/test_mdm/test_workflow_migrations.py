@@ -17,4 +17,31 @@ def test_workflow_migration_additive(tmp_path):
         assert db.execute(text("SELECT workflow_version, workflow_revision, status FROM mdm_resolution_runs WHERE id='legacy'")).one() == (1, 0, 'COMPLETED')
         assert db.execute(text('SELECT version_num FROM alembic_version')).scalar() == HEAD
     assert 'mdm_workflow_operations' in inspect(engine).get_table_names()
+    columns = {column['name']: column for column in inspect(engine).get_columns('mdm_workflow_pairs')}
+    assert columns['review_reason']['nullable'] is True
+    assert columns['review_reason']['type'].length == 500
     engine.dispose()
+
+
+def test_generation_receipts_upgrade_real_0031_layout(tmp_path):
+    url = f"sqlite:///{(tmp_path / 'generation.db').as_posix()}"
+    cfg = alembic_config(url)
+    command.upgrade(cfg, '0031_pair_automation')
+    engine = create_engine(url)
+    # Historical table creation imports current ORM metadata. Remove the new
+    # fields here so this test exercises a genuine pre-0032 column layout.
+    with engine.begin() as db:
+        for column in ('coverage', 'singleton_confirmation', 'storage_version'):
+            db.execute(text(f'ALTER TABLE mdm_workflow_generations DROP COLUMN {column}'))
+        db.execute(text("INSERT INTO mdm_workflow_generations (id, run_id, revision, artifact_id) VALUES ('old-gen', 'run', 1, 'old-artifact')"))
+    command.upgrade(cfg, 'head')
+    with engine.connect() as db:
+        assert db.execute(text("SELECT coverage, singleton_confirmation, storage_version FROM mdm_workflow_generations WHERE id='old-gen'")).one() == ('{}', '{}', 'workflow_json_v1')
+    assert len(ScriptDirectory.from_config(cfg).get_heads()) == 1
+    assert workflow_cluster_id_length() >= 75
+    engine.dispose()
+
+
+def workflow_cluster_id_length():
+    from masterone.mdm.workflow_models import WorkflowCluster
+    return WorkflowCluster.__table__.c.id.type.length

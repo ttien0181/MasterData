@@ -50,6 +50,9 @@ def test_workflow_corrupt_artifact_does_not_publish(client, workflow_run):
     complete_reviews(client, workflow_run)
     response = finalize(client, workflow_run)
     claim = claim_next(client.session_factory, 'corrupt', lease_seconds=300)
+    from masterone.mdm.workflow_cluster_preview import operation_snapshot
+    with ownership(claim):
+        operation_snapshot(response.json()['operation_id'], client.session_factory, lambda *_: None)
     with client.session_factory.begin() as db:
         op_id = db.get(ResolutionTask, claim.task_id).operation_id
         from masterone.mdm.workflow_models import WorkflowOperation
@@ -84,7 +87,9 @@ def test_workflow_insufficient_never_auto_merges_and_group_d_policy(client, work
         db.flush()
         assert eligibility(insufficient)['auto_allowed'] is False
         assert eligibility(WorkflowPair(baseline={**row.baseline, 'decision': 'REVIEW', 'primary_group': 'D'}, decision='UNDECIDED'))['auto_allowed'] is False
-    assert finalize(client, workflow_run).status_code == 409
+    # Retained insufficient candidates cannot auto-merge and do not manufacture
+    # mandatory human work. Genuine D review remains covered independently.
+    assert finalize(client, workflow_run).status_code == 202
 
 
 def test_workflow_zero_candidate_singleton(client, monkeypatch):
@@ -118,6 +123,10 @@ def test_workflow_auth_csrf_origin_owner_and_paging(client, workflow_run):
 
 
 def test_workflow_source_choice_multivalue_extra_and_confirmation(client, workflow_run):
+    # Supplementary sources must be present before the official snapshot freezes.
+    with client.session_factory.begin() as db:
+        row = db.query(ResolutionRecord).filter_by(run_id=workflow_run).order_by(ResolutionRecord.id).first()
+        row.extra_fields = {**row.extra_fields, 'custom_field': 'Source Extra'}
     clusters = ready_golden(client, workflow_run)
     current = read(client, workflow_run)
     assert 'finalize-golden' not in current['allowed_actions']
@@ -125,9 +134,6 @@ def test_workflow_source_choice_multivalue_extra_and_confirmation(client, workfl
     cluster = next(c for c in clusters if c['member_count'] > 1)
     cid = cluster['cluster_id']
     url = f'/api/v1/mdm/runs/{workflow_run}/workflow'
-    with client.session_factory.begin() as db:
-        row = db.get(ResolutionRecord, cluster['member_record_ids'][0])
-        row.extra_fields = {**row.extra_fields, 'custom_field': 'Source Extra'}
     body = golden_request(client, workflow_run, selections={'custom_field': {'selection_mode': 'SOURCE_CHOICE', 'source_record_id': row.id}})
     assert client.put(url + f'/clusters/{cid}/golden', json=body).status_code == 200
     golden = client.get(url + f'/clusters/{cid}/golden').json()

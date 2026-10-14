@@ -52,6 +52,7 @@ class WorkflowPair(Base):
     advice: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     decision: Mapped[str] = mapped_column(String(24), default='UNDECIDED')
     review_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    automation: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     revision: Mapped[int] = mapped_column(Integer, default=0)
 
 
@@ -76,11 +77,14 @@ class WorkflowGeneration(Base):
     artifact_id: Mapped[str] = mapped_column(ForeignKey('mdm_workflow_artifacts.id'))
     result_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     finalized_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    coverage: Mapped[dict] = mapped_column(JSON, default=dict, server_default='{}')
+    singleton_confirmation: Mapped[dict] = mapped_column(JSON, default=dict, server_default='{}')
+    storage_version: Mapped[str] = mapped_column(String(32), default='workflow_json_v1', server_default='workflow_json_v1')
 
 
 class WorkflowCluster(Base):
     __tablename__ = 'mdm_workflow_clusters'
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
     generation_id: Mapped[str] = mapped_column(ForeignKey('mdm_workflow_generations.id', ondelete='CASCADE'), index=True)
     payload: Mapped[dict] = mapped_column(JSON)
     golden: Mapped[dict] = mapped_column(JSON)
@@ -94,7 +98,7 @@ class WorkflowMember(Base):
     __table_args__ = (UniqueConstraint('generation_id', 'record_id', name='uq_workflow_membership'),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     generation_id: Mapped[str] = mapped_column(ForeignKey('mdm_workflow_generations.id', ondelete='CASCADE'), index=True)
-    cluster_id: Mapped[str] = mapped_column(ForeignKey('mdm_workflow_clusters.id', ondelete='CASCADE'), index=True)
+    cluster_id: Mapped[str] = mapped_column(String(128), ForeignKey('mdm_workflow_clusters.id', ondelete='CASCADE'), index=True)
     record_id: Mapped[str] = mapped_column(ForeignKey('mdm_resolution_records.id'))
 
 

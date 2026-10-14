@@ -29,7 +29,7 @@ class DecisionStore:
         self.con.execute("CREATE TABLE edges (id TEXT PRIMARY KEY, left_id TEXT, right_id TEXT, weight REAL, decision TEXT, payload TEXT, UNIQUE(left_id,right_id))")
         self.con.execute("CREATE INDEX edge_order ON edges(weight DESC,left_id,right_id)")
         self.con.execute("CREATE INDEX edge_decision_order ON edges(decision, weight DESC, left_id, right_id)")
-        self.con.execute("CREATE TABLE checks (left_id TEXT, right_id TEXT, reason TEXT, PRIMARY KEY(left_id,right_id))")
+        self.con.execute("CREATE TABLE checks (left_id TEXT, right_id TEXT, mode TEXT, reason TEXT, PRIMARY KEY(left_id,right_id,mode))")
         self.sealed = False
 
     def add(self, pair):
@@ -85,12 +85,12 @@ class DecisionStore:
     def update(self, pair):
         self.con.execute("UPDATE edges SET payload=? WHERE id=?", (json.dumps(pair), pair["id"]))
 
-    def check(self, a, b):
-        row = self.con.execute("SELECT reason FROM checks WHERE left_id=? AND right_id=?", (a, b)).fetchone()
+    def check(self, a, b, *, mode='strict'):
+        row = self.con.execute("SELECT reason FROM checks WHERE left_id=? AND right_id=? AND mode=?", (*sorted((a, b)), mode)).fetchone()
         return row[0] if row else None
 
-    def save_check(self, a, b, reason):
-        self.con.execute("INSERT INTO checks VALUES (?,?,?)", (a, b, reason))
+    def save_check(self, a, b, reason, *, mode='strict'):
+        self.con.execute("INSERT OR REPLACE INTO checks VALUES (?,?,?,?)", (*sorted((a, b)), mode, reason))
 
     def close(self):
         self.con.close()

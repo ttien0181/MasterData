@@ -34,15 +34,20 @@ it('isolates reassessed pages while reusing Group pages within the same assessme
   const view=render(host());
   await screen.findByRole('checkbox',{name:'Chọn cặp ALL-all-0'});
   expect(reads('ALL',0)).toBe(1);
+  // Warm both old-assessment groups explicitly. Prefetch may otherwise win
+  // this race on a busy machine, making total reads depend on test timing.
+  await waitFor(()=>expect(reads('A',0)).toBe(1));
+  await waitFor(()=>expect(reads('D',0)).toBe(1));
   view.rerender(host({...workflow,assessment_id:'assessment-2'}));
   await waitFor(()=>expect(reads('ALL',0)).toBe(2));
   fireEvent.change(screen.getByRole('combobox',{name:'Group'}),{target:{value:'A'}});
   await screen.findByRole('checkbox',{name:'Chọn cặp A-all-0'});
+  await waitFor(()=>expect(reads('A',0)).toBe(2));
   fireEvent.change(screen.getByRole('combobox',{name:'Group'}),{target:{value:'D'}});
   await screen.findByRole('checkbox',{name:'Chọn cặp D-all-0'});
   fireEvent.change(screen.getByRole('combobox',{name:'Group'}),{target:{value:'A'}});
   expect(screen.getByRole('checkbox',{name:'Chọn cặp A-all-0'})).toBeInTheDocument();
-  expect(reads('A',0)).toBe(1);
+  expect(reads('A',0)).toBe(2);
 });
 it('refreshes cached pages after advice publication even without a decision change',async()=>{
   const view=render(host());

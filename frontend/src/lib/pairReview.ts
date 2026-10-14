@@ -8,10 +8,12 @@ export const groups: Record<string,{title:string;description:string;tone:string}
   UNCLASSIFIED:{title:'Chưa phân nhóm',description:'Chưa đến bước phân nhóm vì thiếu bằng chứng hoặc bị ràng buộc chặn. Xem lý do từng cặp.',tone:'neutral'},
 };
 export const subgroups: Record<string,string> = {
+  C_REVIEW_NAME_FULL_DOB:'Tên và ngày sinh đầy đủ',C_REVIEW_FULL_DOB_DETAIL_ADDRESS:'Ngày sinh và địa chỉ cụ thể',
+  C_REVIEW_NAME_UNVERIFIED_ID:'Tên và giấy tờ chưa xác minh',C_REVIEW_NAME_NEAR_CONTACT_DOB:'Tên, liên hệ gần khớp và ngày sinh',C_REVIEW_NAME_NEAR_CONTACT_ADDRESS:'Tên, liên hệ gần khớp và địa chỉ',
   A1_NAME_PHONE:'Tên và điện thoại',A2_NAME_EMAIL:'Tên và email',A3_NAME_PHONE_DOB:'Tên, điện thoại và ngày sinh',A3_NAME_GOV_ID:'Tên và giấy tờ định danh',
   C1_EMAIL_DOB:'Email và ngày sinh',C2_PHONE_NAME:'Điện thoại và tên',C3_GOV_ID_ONLY:'Giấy tờ, thiếu xác nhận tên',C_MULTI:'Nhiều tín hiệu chưa đủ',C_NAME_ANCHOR_WEAK:'Tên tương đồng yếu',C_NAME_ANCHOR_MISSING:'Thiếu xác nhận tên',
   D1_NAME_PHONE_CONFLICT:'Điện thoại mâu thuẫn',D2_NAME_CONFLICT:'Họ tên mâu thuẫn',D3_IDENTITY_CONFLICT:'Email hoặc giấy tờ mâu thuẫn',D4_DOB_CONFLICT:'Ngày sinh mâu thuẫn',D_MULTI:'Nhiều trường mâu thuẫn',
-  D_UNVERIFIED_ID_CONFLICT:'Giấy tờ chưa xác minh khác nhau',C_INSUFFICIENT_DATA:'Không có dữ liệu hữu ích để đối chiếu',C_NO_VALID_IDENTITY_ANCHOR:'Chưa có điểm neo nhận dạng',
+  D_UNVERIFIED_ID_CONFLICT:'Giấy tờ chưa xác minh khác nhau',C_INSUFFICIENT_DATA:'Không có dữ liệu hữu ích để đối chiếu',C_NO_VALID_IDENTITY_ANCHOR:'Chưa có điểm neo nhận dạng',C_INSUFFICIENT_EVIDENCE:'Bằng chứng chưa đủ mạnh',
   PERSON_ORG_MISMATCH:'Khác loại thực thể',PERSON_POLICY_OUT_OF_SCOPE:'Ngoài phạm vi cá nhân',VERIFIED_GOV_ID_CONFLICT:'Giấy tờ đã xác minh mâu thuẫn',VERIFIED_DOB_CONFLICT:'Ngày sinh đã xác minh mâu thuẫn',STEWARD_NEGATIVE_DECISION:'Có cannot-link từ Deny',
 };
 export const subgroupLabel = (key?: string) => key ? subgroups[key] || key : 'Chưa có Subgroup';
@@ -20,6 +22,14 @@ export const baselineLabels: Record<string,string> = {MERGEABLE:'Đủ bằng ch
 export const decisionLabels: Record<string,string> = {UNDECIDED:'Chưa duyệt',ACCEPTED:'Đã Accept',NON_MATCH:'Đã xác nhận khác thực thể (Deny)',DENIED:'Đã xác nhận khác thực thể (Deny)',REJECTED:'Giữ riêng liên kết',DEFERRED:'Đang hoãn'};
 export const reasons: Record<string,string> = {CLUSTER_REVIEW_VETO:'Liên kết đã bị từ chối nhưng còn đường ghép gián tiếp; đối chiếu các cặp liên quan',CLUSTER_PAIR_PERMISSION_CONFLICT:'Liên kết không đủ quyền ghép hoặc bằng chứng đã thay đổi',CLUSTER_CANNOT_LINK_CONFLICT:'Có hai bản ghi không được cùng nhóm, kể cả qua liên kết gián tiếp',CLUSTER_NEGATIVE_LINK_CONFLICT:'Ràng buộc khác thực thể xung đột với đường ghép hiện có',CLUSTER_SIZE_LIMIT:'Nhóm vượt giới hạn thành viên; kiểm tra các liên kết trong nhóm',CLUSTER_VERIFIED_ID_CONFLICT:'Thành viên có giấy tờ đã xác minh mâu thuẫn',SAME_TYPE_GOV_ID_CONFLICT:'Giấy tờ cùng loại không khớp',VERIFIED_GOV_ID_CONFLICT:'Giấy tờ đã xác minh mâu thuẫn',VERIFIED_DOB_CONFLICT:'Ngày sinh đã xác minh mâu thuẫn',NO_VALID_IDENTITY_ANCHOR:'Thiếu điểm neo nhận dạng',STEWARD_NEGATIVE_DECISION:'Có quyết định Deny ngăn cùng nhóm',REVIEW_VETO:'Liên kết này đã bị từ chối',PERSON_ORG_MISMATCH:'Khác loại thực thể',PERSON_POLICY_OUT_OF_SCOPE:'Ngoài phạm vi dữ liệu cá nhân',PAIR_MERGE_BLOCKED:'Chưa đủ điều kiện Accept',NON_HARD_CONFLICT:'Có thông tin cần đối chiếu'};
 Object.assign(reasons, {
+  REVIEW_SUPPORT_NAME_FULL_DOB:'Tên phù hợp, cùng ngày sinh đầy đủ; cần duyệt',
+  REVIEW_SUPPORT_FULL_DOB_DETAIL_ADDRESS:'Cùng ngày sinh đầy đủ và địa chỉ cụ thể; cần duyệt',
+  REVIEW_SUPPORT_NAME_UNVERIFIED_ID:'Tên phù hợp, giấy tờ chưa xác minh trùng; cần duyệt',
+  REVIEW_SUPPORT_NAME_NEAR_CONTACT_DOB:'Tên phù hợp, liên hệ gần khớp và ngày sinh; cần duyệt',
+  REVIEW_SUPPORT_NAME_NEAR_CONTACT_ADDRESS:'Tên phù hợp, liên hệ gần khớp và địa chỉ cụ thể; cần duyệt',
+  SOFT_ACCEPT_REASON_REQUIRED:'Cần bổ sung lý do đối chiếu cho quyết định Accept có xung đột mềm',
+  CLUSTER_GUARD_UNION_BUDGET:'Chưa kiểm tra xong các liên kết trong nhóm vì đạt giới hạn xử lý. Tạo các nhóm đủ điều kiện hoặc thử lại sau khi xử lý các vùng còn chờ',
+  CLUSTER_GUARD_RUN_BUDGET:'Chưa kiểm tra xong các liên kết trong phiên vì đạt giới hạn xử lý. Tạo các nhóm đủ điều kiện hoặc thử lại sau khi xử lý các vùng còn chờ',
   ASSESSMENT_ACCEPTED_CONFLICT:'Đánh giá mới phát hiện ràng buộc mâu thuẫn với quyết định cùng thực thể; đối chiếu lại các bản ghi',
   CLUSTER_CONFIRMED_CANNOT_LINK:'Có quyết định khác thực thể ngăn các thành viên cùng nhóm, kể cả qua liên kết gián tiếp',
   CLUSTER_NEGATIVE_EDGE:'Có ràng buộc ngăn hai thành viên cùng nhóm; kiểm tra các quyết định và nguồn ràng buộc',

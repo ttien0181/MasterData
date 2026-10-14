@@ -1,0 +1,217 @@
+{
+  "scope": "Recheck of explored stage3 synthetic summary counts, not a new matching run or deployed certificate",
+  "stage3_report_sha256": "8a9381fca357781f2115c1bb0eb9fc3e6211ef00b876a650f891219d48851c60",
+  "strict_engine_files_unchanged": {
+    "matching.py": true,
+    "evidence_floor.py": true,
+    "policy_engine.py": true,
+    "hard_constraints.py": true,
+    "candidate_engine.py": true,
+    "pair_assessment.py": true,
+    "review_recovery.py": true,
+    "pair_grouping.py": true,
+    "clustering.py": true,
+    "cluster_guards.py": true,
+    "decision_semantics.py": true
+  },
+  "compose_unchanged": true,
+  "cases": [
+    {
+      "case": "TC1",
+      "components_attempted": 23,
+      "gate": {
+        "eligible": false,
+        "reasons": [
+          "NON_PRODUCTION_VALIDATION",
+          "NO_INDEPENDENT_HOLDOUT",
+          "NON_REPRESENTATIVE_LABELS",
+          "PRECISION_BOUND_BELOW_TARGET"
+        ],
+        "cohorts": {
+          "e69909dbf405e64e480b6baa831bd37cc64d9b1e9e0066f07c5190cfd048aba1": {
+            "precision_lower_bound": 0.8568833815495732,
+            "attempted": 23,
+            "labelled": 23,
+            "correct": 23
+          }
+        },
+        "precision_target": 0.995,
+        "confidence": "Wilson95% two-sided, Bonferroni across certified component cohorts"
+      },
+      "runtime_activation": false
+    },
+    {
+      "case": "TC13",
+      "components_attempted": 219,
+      "gate": {
+        "eligible": false,
+        "reasons": [
+          "NON_PRODUCTION_VALIDATION",
+          "NO_INDEPENDENT_HOLDOUT",
+          "NON_REPRESENTATIVE_LABELS",
+          "PRECISION_BOUND_BELOW_TARGET"
+        ],
+        "cohorts": {
+          "506258d6dbde3b2162d74dff5f9e16864f52f09d4d953ab636b823806fd65837": {
+            "precision_lower_bound": 0.9827614715815288,
+            "attempted": 219,
+            "labelled": 219,
+            "correct": 219
+          }
+        },
+        "precision_target": 0.995,
+        "confidence": "Wilson95% two-sided, Bonferroni across certified component cohorts"
+      },
+      "runtime_activation": false
+    },
+    {
+      "case": "TC2",
+      "components_attempted": 0,
+      "gate": {
+        "eligible": false,
+        "reasons": [
+          "NON_PRODUCTION_VALIDATION",
+          "NO_INDEPENDENT_HOLDOUT",
+          "NON_REPRESENTATIVE_LABELS",
+          "INCOMPLETE_LABEL_COVERAGE",
+          "PRECISION_BOUND_BELOW_TARGET"
+        ],
+        "cohorts": {
+          "9c1ff0947488c7f6c86aca717776784aaf967b0ff71cfa767edcba472fdafa9b": {
+            "precision_lower_bound": null,
+            "attempted": 0,
+            "labelled": 0,
+            "correct": 0
+          }
+        },
+        "precision_target": 0.995,
+        "confidence": "Wilson95% two-sided, Bonferroni across certified component cohorts"
+      },
+      "runtime_activation": false
+    },
+    {
+      "case": "TC3",
+      "components_attempted": 0,
+      "gate": {
+        "eligible": false,
+        "reasons": [
+          "NON_PRODUCTION_VALIDATION",
+          "NO_INDEPENDENT_HOLDOUT",
+          "NON_REPRESENTATIVE_LABELS",
+          "INCOMPLETE_LABEL_COVERAGE",
+          "PRECISION_BOUND_BELOW_TARGET"
+        ],
+        "cohorts": {
+          "1226bfcbfe6220729d433967dd48870d8b2fb36b9f070a85fda1c56030fbf7e1": {
+            "precision_lower_bound": null,
+            "attempted": 0,
+            "labelled": 0,
+            "correct": 0
+          }
+        },
+        "precision_target": 0.995,
+        "confidence": "Wilson95% two-sided, Bonferroni across certified component cohorts"
+      },
+      "runtime_activation": false
+    },
+    {
+      "case": "TC4",
+      "components_attempted": 0,
+      "gate": {
+        "eligible": false,
+        "reasons": [
+          "NON_PRODUCTION_VALIDATION",
+          "NO_INDEPENDENT_HOLDOUT",
+          "NON_REPRESENTATIVE_LABELS",
+          "INCOMPLETE_LABEL_COVERAGE",
+          "PRECISION_BOUND_BELOW_TARGET"
+        ],
+        "cohorts": {
+          "53bf5773e0f044e2a259c0308bb137bf992c6c6bd2a995315b292a09b9a0d53d": {
+            "precision_lower_bound": null,
+            "attempted": 0,
+            "labelled": 0,
+            "correct": 0
+          }
+        },
+        "precision_target": 0.995,
+        "confidence": "Wilson95% two-sided, Bonferroni across certified component cohorts"
+      },
+      "runtime_activation": false
+    },
+    {
+      "case": "TC5",
+      "components_attempted": 299,
+      "gate": {
+        "eligible": false,
+        "reasons": [
+          "NON_PRODUCTION_VALIDATION",
+          "NO_INDEPENDENT_HOLDOUT",
+          "NON_REPRESENTATIVE_LABELS",
+          "INCOMPLETE_LABEL_COVERAGE",
+          "PRECISION_BOUND_BELOW_TARGET"
+        ],
+        "cohorts": {
+          "d841d96617f91f454c6c4bc2f2c39b67e2b388b8e306a25075fed33816f3c04b": {
+            "precision_lower_bound": 0.9872732565112066,
+            "attempted": 299,
+            "labelled": 298,
+            "correct": 298
+          }
+        },
+        "precision_target": 0.995,
+        "confidence": "Wilson95% two-sided, Bonferroni across certified component cohorts"
+      },
+      "runtime_activation": false
+    },
+    {
+      "case": "TC6",
+      "components_attempted": 515,
+      "gate": {
+        "eligible": false,
+        "reasons": [
+          "NON_PRODUCTION_VALIDATION",
+          "NO_INDEPENDENT_HOLDOUT",
+          "NON_REPRESENTATIVE_LABELS",
+          "PRECISION_BOUND_BELOW_TARGET"
+        ],
+        "cohorts": {
+          "29525eb1afb96e3837b1dddfd46be03719b937cde7ffff148776db35c22b7fb5": {
+            "precision_lower_bound": 0.9925960835330591,
+            "attempted": 515,
+            "labelled": 515,
+            "correct": 515
+          }
+        },
+        "precision_target": 0.995,
+        "confidence": "Wilson95% two-sided, Bonferroni across certified component cohorts"
+      },
+      "runtime_activation": false
+    },
+    {
+      "case": "TC8",
+      "components_attempted": 334,
+      "gate": {
+        "eligible": false,
+        "reasons": [
+          "NON_PRODUCTION_VALIDATION",
+          "NO_INDEPENDENT_HOLDOUT",
+          "NON_REPRESENTATIVE_LABELS",
+          "PRECISION_BOUND_BELOW_TARGET"
+        ],
+        "cohorts": {
+          "b1b302190fc9f06120e03470a8bf689eea599b2ffdcaedbce50d054021d35197": {
+            "precision_lower_bound": 0.9886294037620382,
+            "attempted": 334,
+            "labelled": 334,
+            "correct": 334
+          }
+        },
+        "precision_target": 0.995,
+        "confidence": "Wilson95% two-sided, Bonferroni across certified component cohorts"
+      },
+      "runtime_activation": false
+    }
+  ],
+  "certified_cases": 0
+}

@@ -89,6 +89,24 @@ def test_size_and_guard_cost_bounds(safety, policy, reason):
     assert result["cluster_metrics"]["visited"] <= policy.max_pair_checks_per_run
 
 
+def test_cached_consistency_does_not_consume_new_check_budget(safety):
+    from masterone.mdm.pipeline.cluster_guards import check_component
+    from masterone.mdm.pipeline.cluster_policy import GuardBudget
+    from masterone.mdm.pipeline.matching import value_frequencies
+    a, b = record('a'), record('b')
+    policy, budget = ClusterPolicy(max_pair_checks_per_run=1), GuardBudget()
+    store = DecisionStore()
+    try:
+        store.add(edge(a, b))
+        store.seal()
+        for _ in range(3):
+            assert check_component({'a', 'b'}, {'a': a, 'b': b}, store, policy, budget,
+                                   value_frequencies([a, b])) == ''
+        assert budget.checked == 1 and budget.cache_hits == 2
+    finally:
+        store.close()
+
+
 def test_cursor_requires_complete_barrier_and_rejects_duplicate(safety, tmp_path):
     a, b = record("a"), record("b")
     store = DecisionStore(tmp_path)
@@ -116,7 +134,7 @@ def test_golden_source_verification_real_timestamp_and_ties(safety):
     a["normalized_fields"]["_name_verified"] = True
     assert build_golden(["a", "b"], by_id)["fields"]["name"]["value"] == "First"
     a["source_system"] = "BILL"
-    assert build_golden(["a", "b"], by_id)["fields"]["name"]["value"] == "Second"
+    assert build_golden(["a", "b"], by_id)["fields"]["name"]["value"] == "First"
     b["source_updated_at"] = "not-a-timestamp"
     assert timestamp(b["source_updated_at"]) is None
     assert timestamp("2024-01-01") is None

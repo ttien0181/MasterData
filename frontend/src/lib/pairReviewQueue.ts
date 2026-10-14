@@ -6,6 +6,7 @@ export type ReviewIntent = {
   status:'WAITING'|'SENDING'|'RUNNING'|'DONE'|'FAILED'|'CANCELLED'|'NEEDS_REVIEW';
   error?:string; operationId?:string; pair?:{id:string;revision:number}; scope?:BulkScope;
   expectedDecisionRevision?:number; previewToken?:string; request?:DecisionRequest|BulkRequest; receiptAbsent?:boolean;
+  reviewGroupRecordIds?:string[]; reviewGroupToken?:string;
 };
 type Services = {
   workflow:()=>Promise<WorkflowRead>;pair:(id:string,body:DecisionRequest)=>Promise<PairRead>;
@@ -41,7 +42,8 @@ export function sessionReviewQueueStorage(userId:string,runId:string):QueuePersi
       if(typeof window==='undefined')return;
       const data=items.filter(retained).map(item=>({id:item.id,key:item.key,label:item.label,assessmentId:item.assessmentId,
         decision:item.decision,status:item.status,pair:item.pair,scope:item.scope,error:item.error,operationId:item.operationId,
-        expectedDecisionRevision:item.expectedDecisionRevision,previewToken:item.previewToken,request:item.request}));
+        expectedDecisionRevision:item.expectedDecisionRevision,previewToken:item.previewToken,request:item.request,
+        reviewGroupRecordIds:item.reviewGroupRecordIds,reviewGroupToken:item.reviewGroupToken}));
       if(data.length)window.sessionStorage.setItem(key,JSON.stringify(data));else window.sessionStorage.removeItem(key);
     },
     clear:()=>{if(typeof window!=='undefined')window.sessionStorage.removeItem(key);},
@@ -191,7 +193,8 @@ export class PairReviewQueue {
           const body=item.request||(item.pair?
             {...revision,expected_pair_revision:item.pair.revision,decision:item.decision}:
             {...revision,expected_decision_revision:item.expectedDecisionRevision??w.decision_revision,decision:item.decision,scope:item.scope!,auto_only:false,
-              ...(item.previewToken?{preview_token:item.previewToken}:{})});
+              ...(item.previewToken?{preview_token:item.previewToken}:{}),
+              ...(item.reviewGroupToken?{review_group_token:item.reviewGroupToken,review_group_record_ids:item.reviewGroupRecordIds}:{})});
           if(!this.change(item.id,{status:'SENDING',request:body,receiptAbsent:false,error:undefined})){
             this.change(item.id,{status:'FAILED',request:item.request,receiptAbsent:item.receiptAbsent,error:storageMessage});continue;
           }

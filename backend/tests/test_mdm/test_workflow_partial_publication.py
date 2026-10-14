@@ -14,6 +14,27 @@ def edge(a, b):
     return {**candidate_edge(a, b), 'triage_status': 'HIGH_CONFIDENCE_PROPOSAL'}
 
 
+def test_unreviewed_edges_do_not_transitively_expand_one_dependency():
+    from masterone.mdm.workflow_partial import candidate_region
+    records = [record(rid) for rid in 'abcd']
+    pairs = [edge(records[i], records[i + 1]) for i in range(3)]
+    for pair in pairs:
+        pair['decision'] = 'REVIEW'
+    source = snapshot(records, pairs)
+    assert candidate_region(source, {'a', 'b'}) == {'a', 'b'}
+    # Explicitly accepted links still carry the affected dependency to the full group.
+    source['overlays'][pairs[1]['id']] = 'ACCEPTED'
+    assert candidate_region(source, {'a', 'b'}) == {'a', 'b', 'c'}
+
+
+def test_all_pending_endpoints_remain_unresolved_even_without_review_propagation():
+    records = [record(rid) for rid in 'abcd']
+    pairs = [edge(records[i], records[i + 1]) for i in range(3)]
+    for pair in pairs:
+        pair['decision'] = 'REVIEW'
+    assert partial_result(snapshot(records, pairs))['unresolved_record_ids'] == list('abcd')
+
+
 def partial_result(snapshot):
     from masterone.mdm import workflow_finalize
     compute = getattr(workflow_finalize, 'partial_cluster_snapshot', None)
@@ -83,7 +104,7 @@ def test_known_conflict_is_regenerated_and_disconnected_safe_group_survives():
     assert len(result['safe_clusters']) == 2
 
 
-@pytest.mark.parametrize('baseline', ['REVIEW', 'INSUFFICIENT_EVIDENCE'])
+@pytest.mark.parametrize('baseline', ['REVIEW'])
 def test_unresolved_review_expands_through_automatic_candidate_chain(baseline):
     a, b, c, d, x, y = [record(rid) for rid in ('a', 'b', 'c', 'd', 'x', 'y')]
     pairs = [edge(a, b), edge(b, c), edge(c, d), edge(x, y)]
@@ -211,8 +232,8 @@ def test_cluster_operation_bounds_blockers_without_truncating_artifact(client, w
     complete_reviews(client, workflow_run)
     original = workflow_finalize.cluster_snapshot
 
-    def many_conflicts(snapshot, run_id):
-        result = original(snapshot, run_id)
+    def many_conflicts(snapshot, run_id, **kwargs):
+        result = original(snapshot, run_id, **kwargs)
         record_ids = [r['id'] for r in snapshot['records']]
         evidence = record_ids + [f'conflict-record-{index}' for index in range(150 - len(record_ids))]
         result.update(clusters=[], safe_clusters=[], conflict_record_ids=record_ids,
