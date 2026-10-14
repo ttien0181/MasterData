@@ -238,3 +238,10 @@ backend/data/export-artifacts/
 !docs/superpowers/plans/2026-10-13-cluster-quality-scale.md
 !docs/benchmark/cluster-quality-scale-20261013-baseline.md
 !docs/benchmark/cluster-quality-scale-20261014-review.md
+
+# Review branch: keep plans and generated benchmark reports locally.
+/docs/superpowers/plans/2026-10-13-*.md
+/docs/superpowers/specs/2026-10-13-*.md
+/docs/benchmark/*-20261013*.md
+/docs/benchmark/*.json
+/docs/benchmark/cluster-quality-scale-20261013-baseline.md

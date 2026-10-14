@@ -97,14 +97,15 @@ preview → publication → đối chiếu nhóm và bỏ lựa chọn bổ sung
 Fixture browser là dữ liệu tổng hợp để kiểm tra thao tác, không phải benchmark TC khác.
 
 `docker compose config --quiet` đạt trên file Compose hiện có; không khởi động
-container. `git diff --cached --check` đạt. Chi tiết lint và browser:
-[lint.json](cluster-quality-scale-20261014-lint.json),
-[browser.json](cluster-quality-scale-20261014-browser.json).
+container. `git diff --cached --check` đạt. Báo cáo JSON lint/browser được giữ
+cục bộ; nhánh review chỉ giữ hướng dẫn này cùng code, test và công cụ kiểm thử.
 
 TC1/10k hoàn tất với trạng thái **SIMULATED_REVIEW_END_TO_END**, `FINALIZED` và
 CSV đã xuất. Độ phủ 10.022/10.022 bản ghi, không lặp/thiếu ID nguồn; 9.999 dòng CSV,
 gồm 23 nhóm hai thành viên và 9.976 singleton. Code/input hashes khớp ở cuối lượt.
-Chi tiết: [tc1-10k.json](cluster-quality-scale-20261014-tc1-10k.json).
+Báo cáo chi tiết của lượt chạy nằm tại
+`artifacts/cluster-improvements-20261013/tc1-10k-after-reader-fix/report.json`
+trong máy đã chạy kiểm thử; không đưa kết quả sinh ra lên nhánh review.
 
 | Chỉ số trên TC1/10k | Kết quả |
 | --- | ---: |
@@ -136,8 +137,9 @@ quyền gộp hoặc dùng truth để nâng kết quả của lượt này.
 này không chứng minh các bước chuyển tiếp đã đủ nhanh hay bộ nhớ đã đạt mục tiêu
 quy mô lớn. Đây là lý do giữ phần chuyển đổi theo luồng trong danh sách còn dở.
 
-Log/cache đầy đủ nằm trong `artifacts/` được ignore. Các thống kê và hash được giữ
-trong báo cáo này cùng JSON tổng hợp để người review không cần cache gốc của tác giả.
+Log/cache đầy đủ nằm trong `artifacts/` được ignore. Các thống kê cần cho review
+được giữ trong hướng dẫn này. Người review có thể chạy lại bằng các lệnh ở trên;
+không cần dataset/cache/DB/CSV hay tài liệu kế hoạch của tác giả để chạy unit tests.
 
 ## Quyết định và giới hạn khi bàn giao
 
@@ -164,6 +166,6 @@ trong báo cáo này cùng JSON tổng hợp để người review không cần 
   `list_page → digest` đọc/hash lại phần nguồn. Kiểm thử tái hiện mỗi phần bị
   hash 6 lần/lượt đọc. Iterator JSON mới xác minh từng phần một lần và lọc cursor
   trước truy vấn thành viên, giữ kiểm tra hash/chủ sở hữu/số dòng. Bộ hồi quy
-  singleton/storage/hash/harness đạt **67 tests**. Bằng chứng lượt chưa hoàn tất:
-  [first-attempt.json](cluster-quality-scale-20261014-first-attempt.json).
+  singleton/storage/hash/harness đạt **67 tests**. Log lượt chưa hoàn tất được
+  giữ cục bộ để đối chiếu.
   Lượt kiểm tra lại vẫn chỉ dùng TC1/10k với cache nguồn đã kiểm tra hash.

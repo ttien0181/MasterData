@@ -135,7 +135,9 @@ npm.cmd --prefix frontend run lint
 npm.cmd --prefix frontend run build
 ```
 
-[Báo cáo kiểm chứng nhóm](docs/benchmark/cluster-handoff-20261013.md) phân biệt test backend, kiểm tra giao diện và benchmark offline. [Hiệu chỉnh thử nghiệm](docs/benchmark/cluster-calibration-20261013.md) dùng benchmark tổng hợp, không bật tự động gộp production hoặc chọn mức rủi ro thay cho người dùng.
+[Hướng dẫn review backend và frontend](docs/benchmark/cluster-quality-scale-20261014-review.md)
+ghi cách kiểm thử, kết quả đã đo và phần còn dở. Báo cáo JSON sinh ra và tài liệu
+kế hoạch được giữ cục bộ; không cần các file này để chạy ứng dụng hay kiểm thử.
 
 ## Phạm vi hiện tại
 
