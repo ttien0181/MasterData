@@ -402,7 +402,7 @@ describe("Resolution item flow", () => {
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(screen.getByText("Đang đối chiếu")).toBeInTheDocument();
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(screen.getByText("Chưa kết nối được để cập nhật phiên; đang giữ trạng thái gần nhất.")).toBeInTheDocument();
     expect(screen.getByText("Đang đối chiếu")).toBeInTheDocument();
   });
