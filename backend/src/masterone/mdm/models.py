@@ -27,7 +27,8 @@ from masterone.db.base import Base, now_utc
 
 class ResolutionRun(Base):
     __tablename__ = "mdm_resolution_runs"
-    __table_args__ = (UniqueConstraint("upload_session_id", name="uq_mdm_run_upload_session"),)
+    __table_args__ = (UniqueConstraint("upload_session_id", name="uq_mdm_run_upload_session"),
+                     Index('uq_m1_run_owner', 'id', 'owner_user_id', unique=True))
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
@@ -271,16 +272,23 @@ class ResolutionExplanation(Base):
 
 class ResolutionAuditEvent(Base):
     __tablename__ = "mdm_resolution_audit_events"
-    __table_args__ = (Index("ix_mdm_resolution_audit_run_created", "run_id", "created_at"),)
+    __table_args__ = (Index("ix_mdm_resolution_audit_run_created", "run_id", "created_at"),
+        CheckConstraint("run_id IS NOT NULL OR (owner_user_id IS NOT NULL AND data_scope IS NOT NULL AND length(data_scope) > 0 AND subject_type IS NOT NULL AND subject_id IS NOT NULL AND action IN ('MATCH_PROFILE_CREATED','MATCH_PROFILE_VALIDATED','MATCH_PROFILE_APPLIED','MATCH_PROFILE_RETIRED','MATCH_DATASET_REGISTERED','MATCH_EVALUATION_REGISTERED'))", name='ck_m1_audit_subject'),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    run_id: Mapped[str] = mapped_column(ForeignKey("mdm_resolution_runs.id", ondelete="CASCADE"), index=True)
+    run_id: Mapped[str | None] = mapped_column(ForeignKey("mdm_resolution_runs.id", ondelete="CASCADE"), nullable=True, index=True)
     actor_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
     pair_id: Mapped[str | None] = mapped_column(ForeignKey("mdm_resolution_pairs.id"), nullable=True)
     proposal_id: Mapped[str | None] = mapped_column(ForeignKey("mdm_resolution_proposals.id"), nullable=True)
     action: Mapped[str] = mapped_column(String(40))
     details: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+    owner_user_id: Mapped[str | None] = mapped_column(ForeignKey('users.id', ondelete='RESTRICT'), nullable=True)
+    data_scope: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    subject_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    subject_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    workflow_pair_id: Mapped[str | None] = mapped_column(ForeignKey('mdm_workflow_pairs.id', ondelete='RESTRICT'), nullable=True)
 
 
 class ResolutionExport(Base):
@@ -670,3 +678,11 @@ def _bump_summary_versions(session, flush_context):
         return
     connection.execute(update(ResolutionRunSummary).where(ResolutionRunSummary.run_id.in_(touched))
                        .values(version=ResolutionRunSummary.version + 1))
+
+
+# Register additive workflow/foundation tables in API, worker and migration processes.
+from masterone.mdm import workflow_models as _workflow_models  # noqa: E402,F401
+from masterone.mdm import matching_foundation_models as _foundation_models  # noqa: E402,F401
+from masterone.mdm.matching_foundation_guards_v1 import register_guards  # noqa: E402
+
+register_guards([ResolutionAuditEvent.__table__])

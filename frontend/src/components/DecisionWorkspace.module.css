@@ -1,4 +1,27 @@
 .workspace { --accent: #2563eb; color: var(--ink, #15243a); min-width: 0; }
+.groupFilters { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:10px; padding:14px; }
+.workspace .groupFilters button { display:grid; grid-template-columns:1fr auto; gap:8px; text-align:left; padding:14px; border:1px solid var(--line,#dce4ef); border-radius:10px; color:var(--ink,#15243a); background:var(--surface,#fff); }
+.groupFilters button > span:last-child:not(:first-child) { grid-column:1 / -1; font-size:12px; color:var(--ink-2,#475569); }
+.groupFilters strong { font-variant-numeric:tabular-nums; }
+.workspace .groupFilters button[aria-pressed="true"] { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); background:var(--bg-subtle,#eff6ff); }
+.groupFilters .green { border-top:3px solid #10b981 !important; }
+.groupFilters .amber { border-top:3px solid #eab308 !important; }
+.groupFilters .red { border-top:3px solid #f43f5e !important; }
+.groupMenu { position:relative; min-width:0; }
+.groupMenuHeading { display:flex; height:100%; }
+.groupMenuHeading > button:first-child { flex:1; min-width:0; border-radius:10px 0 0 10px !important; }
+.workspace .groupMenuHeading .groupToggle { display:flex; align-items:center; justify-content:center; padding:10px; width:34px; border-radius:0 10px 10px 0; border-left:0; }
+.subgroupMenu { position:absolute; top:calc(100% + 6px); left:0; z-index:20; width:max-content; min-width:100%; max-width:380px; max-height:350px; overflow:auto; padding:6px; background:var(--surface,#fff); border:1px solid var(--line,#dce4ef); border-radius:10px; box-shadow:0 12px 28px #15243a26; }
+.workspace .subgroupMenu button { width:100%; border:0; padding:12px; align-items:center; }
+.workspace .subgroupMenu button > span { grid-column:auto; font-size:13px; }
+.subgroupMenu p { margin:12px; }
+.currentSubgroup { padding:8px 10px; font-size:13px; color:var(--accent); }
+.subgroupName { margin-top:8px; max-width:180px; line-height:1.5; }
+.reviewStatus { margin-top:8px; color:var(--ink-2,#475569); font-size:12px; }
+.comparisonStatus { font-weight:600; }
+.explanationPanel { margin-top:18px; padding:16px; border:1px solid var(--line,#dce4ef); border-radius:10px; }
+.explanationPanel h3 { margin:16px 0 8px; font-size:15px; }
+.explanationPanel p { line-height:1.6; }
 :global(html[data-theme="dark"]) .workspace { --accent: #93b4ff; }
 .heading, .sectionHeading, .listHeader, .globalActions, .finalize { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18px; }
 .heading { margin: 14px 0 12px; gap: 10px; }
@@ -60,7 +83,7 @@
 .tableScroll { overflow-x: auto; }
 .workspace .selectionCell { width: 52px; padding: 8px; }
 .checkedRow { background: var(--bg-subtle, #f3f7ff); }
-.list table { min-width: 1080px; width: 100%; font-size: 12px; }
+.list table { min-width: 850px; width: 100%; font-size: 12px; }
 .workspace th, .comparison th { color: var(--ink-3, #64748b); background: var(--bg-subtle, #f5f8fc); font-size: 11px; font-weight: 600; padding: 12px 16px; border-top: 1px solid var(--line, #dce4ef); }
 .workspace td, .comparison td { padding: 12px 14px; vertical-align: middle; border-color: var(--line, #e8edf4); }
 .workspace td > small, .comparison td > small { display: block; margin-top: 7px; font-size: 10px; color: var(--ink-3, #64748b); }

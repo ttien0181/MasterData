@@ -1,0 +1,20 @@
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, expect, it } from 'vitest';
+import DecisionProgress from './DecisionProgress';
+import type { WorkflowRead } from '@/lib/workflowContracts';
+afterEach(cleanup);
+const workflow: WorkflowRead = { run_id: 'r', workflow_version: 2, workflow_state: 'DECIDE_RUNNING', workflow_revision: 2, decision_revision: 0, cluster_revision: 0, golden_revision: 0, counts: {}, allowed_actions: [], blockers: [], retryable_operation: null, active_operation: { operation_id: 'd', run_id: 'r', operation_type: 'DECIDE', status: 'RUNNING', stage: 'candidate-generation', progress: { candidate_count: 14 }, error_code: null, result: {} } };
+it('replaces the candidate counter with measured classification and reserves completion for publication', () => {
+  const view = render(<DecisionProgress workflow={workflow} />);
+  expect(screen.getByRole('status')).toHaveTextContent('14 cặp');
+  expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  view.rerender(<DecisionProgress workflow={{ ...workflow, active_operation: { ...workflow.active_operation!, progress: { candidate_count: 20, classified_count: 10, classification_started: true } } }} />);
+  expect(screen.queryByText('Đang tạo các cặp bản ghi')).not.toBeInTheDocument();
+  expect(screen.getByRole('progressbar')).toHaveAttribute('value', '50');
+  expect(screen.getByRole('status')).toHaveTextContent('10 / 20');
+  view.rerender(<DecisionProgress workflow={{...workflow,active_operation:{...workflow.active_operation!,stage:'publish-decisions',progress:{candidate_count:20,classified_count:20,classification_started:true}}}}/>);
+  expect(screen.getByText('Đang lưu kết quả phân loại')).toBeInTheDocument();
+  expect(screen.getByRole('progressbar')).toHaveAttribute('value','99');
+  view.rerender(<DecisionProgress workflow={{ ...workflow, workflow_state: 'DECIDE_REVIEW', active_operation: null, counts: { candidates: { value: 20, unit: 'pairs' } } }} />);
+  expect(screen.getByRole('progressbar')).toHaveAttribute('value', '100');
+});

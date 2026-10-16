@@ -1,0 +1,1705 @@
+{
+  "audit_date": "2026-10-14",
+  "drive_live_access": "UNVERIFIED: web tool internal error; connector not installed",
+  "files": [
+    {
+      "path": "masterone_test/bill.csv",
+      "rows": 7000,
+      "columns": [
+        "record_id",
+        "entity_id",
+        "source",
+        "name",
+        "phone",
+        "email",
+        "address",
+        "address_id",
+        "noise_type",
+        "difficulty",
+        "temporal_case",
+        "billing_account_id",
+        "latest_invoice_number",
+        "latest_invoice_date",
+        "invoice_due_date",
+        "invoice_status",
+        "invoice_amount_vnd",
+        "outstanding_amount_vnd",
+        "last_payment_date",
+        "payment_method",
+        "invoice_delivery_channel",
+        "currency"
+      ],
+      "missing": {
+        "phone": 49,
+        "last_payment_date": 2527,
+        "email": 332
+      },
+      "exact_duplicate_rows": 0,
+      "sources": {
+        "BILL": 7000
+      },
+      "splits": {},
+      "labels": {},
+      "byte_sha256": "7b6dbe5d07408efc336fdb01fae0981edde053efbd8aa3b0f6ce816f6ae3d5c8"
+    },
+    {
+      "path": "masterone_test/crm.csv",
+      "rows": 7000,
+      "columns": [
+        "record_id",
+        "entity_id",
+        "source",
+        "name",
+        "phone",
+        "email",
+        "address",
+        "address_id",
+        "noise_type",
+        "difficulty",
+        "temporal_case",
+        "crm_customer_id",
+        "customer_status",
+        "lifecycle_stage",
+        "lead_source",
+        "customer_segment",
+        "preferred_contact_channel",
+        "marketing_consent",
+        "consent_updated_at",
+        "assigned_sales_rep_id",
+        "loyalty_tier",
+        "last_contact_at"
+      ],
+      "missing": {
+        "email": 274,
+        "phone": 46
+      },
+      "exact_duplicate_rows": 0,
+      "sources": {
+        "CRM": 7000
+      },
+      "splits": {},
+      "labels": {},
+      "byte_sha256": "80f21a39a21e23f9c5f4de6c12984554cfd32cc1188aa569713845c92964f293"
+    },
+    {
+      "path": "masterone_test/erp.csv",
+      "rows": 7000,
+      "columns": [
+        "record_id",
+        "entity_id",
+        "source",
+        "name",
+        "phone",
+        "email",
+        "address",
+        "address_id",
+        "noise_type",
+        "difficulty",
+        "temporal_case",
+        "erp_customer_code",
+        "customer_group",
+        "sales_organization",
+        "distribution_channel",
+        "division",
+        "account_status",
+        "payment_terms",
+        "credit_limit_vnd",
+        "currency",
+        "customer_since",
+        "order_count",
+        "lifetime_sales_vnd"
+      ],
+      "missing": {
+        "email": 279,
+        "phone": 42
+      },
+      "exact_duplicate_rows": 0,
+      "sources": {
+        "ERP": 7000
+      },
+      "splits": {},
+      "labels": {},
+      "byte_sha256": "4c3426a404813ff38d75c3cf8478a1bdebe0b52e72b98d216e86eea4e96bb9d9"
+    },
+    {
+      "path": "masterone_test/pairs.csv",
+      "rows": 1200,
+      "columns": [
+        "id_a",
+        "id_b",
+        "is_match",
+        "case_type",
+        "difficulty",
+        "split",
+        "hard_negative_type",
+        "entity_a",
+        "entity_b"
+      ],
+      "missing": {
+        "hard_negative_type": 960,
+        "entity_a": 960,
+        "entity_b": 960
+      },
+      "exact_duplicate_rows": 0,
+      "sources": {},
+      "splits": {
+        "test": 1200
+      },
+      "labels": {
+        "1": 960,
+        "0": 240
+      },
+      "byte_sha256": "50982c914c097a8410ed1348641d2c085bbbbe3da95bac1a4e718de46d057e8b"
+    },
+    {
+      "path": "masterone_test/records.csv",
+      "rows": 4213,
+      "columns": [
+        "id",
+        "entity_id",
+        "source_system",
+        "full_name",
+        "phone_number",
+        "email_address",
+        "raw_address",
+        "address_id",
+        "noise_type",
+        "difficulty",
+        "temporal_case"
+      ],
+      "missing": {
+        "phone_number": 137,
+        "email_address": 273
+      },
+      "exact_duplicate_rows": 0,
+      "sources": {
+        "ERP": 1398,
+        "BILL": 1407,
+        "CRM": 1408
+      },
+      "splits": {},
+      "labels": {},
+      "byte_sha256": "955ab23b71876ba4ed4ee844a6feb2f90c133fa253575125fb346b3b206d3bf7"
+    },
+    {
+      "path": "benchmark/datasets/masterone_test/pairs.csv",
+      "rows": 1200,
+      "columns": [
+        "id_a",
+        "id_b",
+        "is_match",
+        "case_type",
+        "difficulty",
+        "split",
+        "hard_negative_type",
+        "entity_a",
+        "entity_b"
+      ],
+      "missing": {
+        "hard_negative_type": 960,
+        "entity_a": 960,
+        "entity_b": 960
+      },
+      "exact_duplicate_rows": 0,
+      "sources": {},
+      "splits": {
+        "test": 1200
+      },
+      "labels": {
+        "1": 960,
+        "0": 240
+      },
+      "byte_sha256": "50982c914c097a8410ed1348641d2c085bbbbe3da95bac1a4e718de46d057e8b"
+    },
+    {
+      "path": "benchmark/datasets/masterone_test/records.csv",
+      "rows": 4213,
+      "columns": [
+        "id",
+        "entity_id",
+        "source_system",
+        "full_name",
+        "phone_number",
+        "email_address",
+        "raw_address",
+        "address_id",
+        "noise_type",
+        "difficulty",
+        "temporal_case"
+      ],
+      "missing": {
+        "phone_number": 137,
+        "email_address": 273
+      },
+      "exact_duplicate_rows": 0,
+      "sources": {
+        "ERP": 1398,
+        "BILL": 1407,
+        "CRM": 1408
+      },
+      "splits": {},
+      "labels": {},
+      "byte_sha256": "955ab23b71876ba4ed4ee844a6feb2f90c133fa253575125fb346b3b206d3bf7"
+    },
+    {
+      "path": "benchmark/datasets/data_reference/config/column_alias_dictionary_v1.csv",
+      "rows": 26,
+      "columns": [
+        "canonical_field",
+        "alias",
+        "language",
+        "alias_type",
+        "version"
+      ],
+      "missing": {},
+      "exact_duplicate_rows": 0,
+      "sources": {},
+      "splits": {},
+      "labels": {},
+      "byte_sha256": "2abbbc96dbe8b0a385cd0664885b8f30a914270c2535be1d1e2a6a5fad617087"
+    },
+    {
+      "path": "benchmark/datasets/data_reference/reference/administrative_mapping/administrative_aliases_v1.csv",
+      "rows": 66629,
+      "columns": [
+        "unit_id",
+        "alias",
+        "alias_type",
+        "admin_version"
+      ],
+      "missing": {},
+      "exact_duplicate_rows": 0,
+      "sources": {},
+      "splits": {},
+      "labels": {},
+      "byte_sha256": "60bdcfb9f51b17a296711f55a9ec4a5668177099023aa81ddf50667cd5ded140"
+    },
+    {
+      "path": "benchmark/datasets/data_reference/reference/administrative_mapping/administrative_dictionary_v1.csv",
+      "rows": 13349,
+      "columns": [
+        "unit_id",
+        "unit_name",
+        "unit_level",
+        "parent_id",
+        "admin_version",
+        "effective_date"
+      ],
+      "missing": {
+        "parent_id": 13349,
+        "effective_date": 10033
+      },
+      "exact_duplicate_rows": 0,
+      "sources": {},
+      "splits": {},
+      "labels": {},
+      "byte_sha256": "79286a0c577b8c87e50d6187511a325dfb1f76e64094caf7f4064d9ec2a1ed5d"
+    }
+  ],
+  "cached_bundles": [
+    {
+      "manifest": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/1m/seed-7/manifest.json",
+      "case": "TC8",
+      "target_records": 1000000,
+      "generated_records": 1000000,
+      "realism_level": "L0",
+      "generation_mode": "independent_scale",
+      "entities": 673000,
+      "positive_pairs": 227000,
+      "file_counts": {
+        "crm-1.csv": 125000,
+        "erp-1.csv": 125000,
+        "bill-1.csv": 125000,
+        "csv-1.csv": 125000,
+        "crm-2.csv": 125000,
+        "erp-2.csv": 125000,
+        "bill-2.csv": 125000,
+        "csv-2.csv": 125000
+      },
+      "manifest_file_entries": 19,
+      "hash_matched": 19,
+      "missing": [],
+      "hash_mismatches": [],
+      "csv_files": 8,
+      "row_quality_profile_complete": true,
+      "input_csv_profiles": [
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/1m/seed-7/input_p119/bill-1.csv",
+          "rows": 125000,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 125000,
+            "government_id_type": 125000,
+            "address": 12500,
+            "phone": 248,
+            "email": 248
+          },
+          "sources": {
+            "BILL": 125000
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/1m/seed-7/input_p119/bill-2.csv",
+          "rows": 125000,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 125000,
+            "government_id_type": 125000,
+            "address": 12500,
+            "phone": 252,
+            "email": 252
+          },
+          "sources": {
+            "BILL": 125000
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/1m/seed-7/input_p119/crm-1.csv",
+          "rows": 125000,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "address": 12500,
+            "government_id": 125000,
+            "government_id_type": 125000,
+            "phone": 246,
+            "email": 246
+          },
+          "sources": {
+            "CRM": 125000
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/1m/seed-7/input_p119/crm-2.csv",
+          "rows": 125000,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 125000,
+            "government_id_type": 125000,
+            "address": 12500,
+            "phone": 254,
+            "email": 254
+          },
+          "sources": {
+            "CRM": 125000
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/1m/seed-7/input_p119/csv-1.csv",
+          "rows": 125000,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 125000,
+            "government_id_type": 125000,
+            "address": 12500
+          },
+          "sources": {
+            "CSV": 125000
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/1m/seed-7/input_p119/csv-2.csv",
+          "rows": 125000,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 125000,
+            "government_id_type": 125000,
+            "address": 12500
+          },
+          "sources": {
+            "CSV": 125000
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/1m/seed-7/input_p119/erp-1.csv",
+          "rows": 125000,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 125000,
+            "government_id_type": 125000,
+            "address": 12502
+          },
+          "sources": {
+            "ERP": 125000
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/1m/seed-7/input_p119/erp-2.csv",
+          "rows": 125000,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 125000,
+            "government_id_type": 125000,
+            "address": 12498
+          },
+          "sources": {
+            "ERP": 125000
+          },
+          "exact_duplicate_rows_sha256": 0
+        }
+      ],
+      "observed_input_rows": 1000000,
+      "duplicate_source_keys": 0,
+      "parquet_inventory": [
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/1m/seed-7/evaluation/forbidden_pairs.parquet",
+          "rows": 2000,
+          "columns": [
+            "record_key_a",
+            "record_key_b",
+            "stratum"
+          ]
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/1m/seed-7/evaluation/positive_pairs.parquet",
+          "rows": 227000,
+          "columns": [
+            "record_key_a",
+            "record_key_b",
+            "stratum"
+          ]
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/1m/seed-7/truth/records.parquet",
+          "rows": 1000000,
+          "columns": [
+            "record_key",
+            "entity_id",
+            "label_status",
+            "component_id",
+            "stratum",
+            "source_system",
+            "source_record_id",
+            "source_file",
+            "source_row_number"
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/100k/seed-7/manifest.json",
+      "case": "TC8",
+      "target_records": 100000,
+      "generated_records": 100000,
+      "realism_level": "L0",
+      "generation_mode": "independent_scale",
+      "entities": 67300,
+      "positive_pairs": 22700,
+      "file_counts": {
+        "crm-1.csv": 12500,
+        "erp-1.csv": 12500,
+        "bill-1.csv": 12500,
+        "csv-1.csv": 12500,
+        "crm-2.csv": 12500,
+        "erp-2.csv": 12500,
+        "bill-2.csv": 12500,
+        "csv-2.csv": 12500
+      },
+      "manifest_file_entries": 19,
+      "hash_matched": 19,
+      "missing": [],
+      "hash_mismatches": [],
+      "csv_files": 8,
+      "row_quality_profile_complete": true,
+      "input_csv_profiles": [
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/100k/seed-7/input_p119/bill-1.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "address": 1253,
+            "phone": 26,
+            "email": 26
+          },
+          "sources": {
+            "BILL": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/100k/seed-7/input_p119/bill-2.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "phone": 24,
+            "email": 24,
+            "address": 1247
+          },
+          "sources": {
+            "BILL": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/100k/seed-7/input_p119/crm-1.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "address": 1248,
+            "phone": 24,
+            "email": 24
+          },
+          "sources": {
+            "CRM": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/100k/seed-7/input_p119/crm-2.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "address": 1252,
+            "phone": 26,
+            "email": 26
+          },
+          "sources": {
+            "CRM": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/100k/seed-7/input_p119/csv-1.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "address": 1252
+          },
+          "sources": {
+            "CSV": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/100k/seed-7/input_p119/csv-2.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "address": 1248
+          },
+          "sources": {
+            "CSV": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/100k/seed-7/input_p119/erp-1.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "address": 1249
+          },
+          "sources": {
+            "ERP": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/100k/seed-7/input_p119/erp-2.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "address": 1251
+          },
+          "sources": {
+            "ERP": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        }
+      ],
+      "observed_input_rows": 100000,
+      "duplicate_source_keys": 0,
+      "parquet_inventory": [
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/100k/seed-7/evaluation/forbidden_pairs.parquet",
+          "rows": 200,
+          "columns": [
+            "record_key_a",
+            "record_key_b",
+            "stratum"
+          ]
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/100k/seed-7/evaluation/positive_pairs.parquet",
+          "rows": 22700,
+          "columns": [
+            "record_key_a",
+            "record_key_b",
+            "stratum"
+          ]
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC8_JUNK_PLACEHOLDER/100k/seed-7/truth/records.parquet",
+          "rows": 100000,
+          "columns": [
+            "record_key",
+            "entity_id",
+            "label_status",
+            "component_id",
+            "stratum",
+            "source_system",
+            "source_record_id",
+            "source_file",
+            "source_row_number"
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "artifacts/cluster-improvements-20261013/datasets/TC6_CLUSTER_BRIDGE/100k/seed-7/manifest.json",
+      "case": "TC6",
+      "target_records": 100000,
+      "generated_records": 100000,
+      "realism_level": "L0",
+      "generation_mode": "independent_scale",
+      "entities": 67900,
+      "positive_pairs": 84000,
+      "file_counts": {
+        "crm-1.csv": 12500,
+        "erp-1.csv": 12500,
+        "bill-1.csv": 12500,
+        "csv-1.csv": 12500,
+        "crm-2.csv": 12500,
+        "erp-2.csv": 12500,
+        "bill-2.csv": 12500,
+        "csv-2.csv": 12500
+      },
+      "manifest_file_entries": 19,
+      "hash_matched": 19,
+      "missing": [],
+      "hash_mismatches": [],
+      "csv_files": 8,
+      "row_quality_profile_complete": true,
+      "input_csv_profiles": [
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC6_CLUSTER_BRIDGE/100k/seed-7/input_p119/bill-1.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "email": 110,
+            "phone": 36
+          },
+          "sources": {
+            "BILL": 12474,
+            "CRM": 26
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC6_CLUSTER_BRIDGE/100k/seed-7/input_p119/bill-2.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "email": 115,
+            "phone": 39
+          },
+          "sources": {
+            "BILL": 12476,
+            "CRM": 24
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC6_CLUSTER_BRIDGE/100k/seed-7/input_p119/crm-1.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "email": 117,
+            "phone": 38
+          },
+          "sources": {
+            "CRM": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC6_CLUSTER_BRIDGE/100k/seed-7/input_p119/crm-2.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "phone": 37,
+            "email": 108
+          },
+          "sources": {
+            "CRM": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC6_CLUSTER_BRIDGE/100k/seed-7/input_p119/csv-1.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "email": 138,
+            "phone": 38
+          },
+          "sources": {
+            "CSV": 12475,
+            "CRM": 25
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC6_CLUSTER_BRIDGE/100k/seed-7/input_p119/csv-2.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "email": 137,
+            "phone": 37
+          },
+          "sources": {
+            "CSV": 12475,
+            "CRM": 25
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC6_CLUSTER_BRIDGE/100k/seed-7/input_p119/erp-1.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "email": 138,
+            "phone": 37
+          },
+          "sources": {
+            "ERP": 12476,
+            "CRM": 24
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC6_CLUSTER_BRIDGE/100k/seed-7/input_p119/erp-2.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "email": 137,
+            "phone": 38
+          },
+          "sources": {
+            "ERP": 12474,
+            "CRM": 26
+          },
+          "exact_duplicate_rows_sha256": 0
+        }
+      ],
+      "observed_input_rows": 100000,
+      "duplicate_source_keys": 0,
+      "parquet_inventory": [
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC6_CLUSTER_BRIDGE/100k/seed-7/evaluation/forbidden_pairs.parquet",
+          "rows": 2400,
+          "columns": [
+            "record_key_a",
+            "record_key_b",
+            "stratum"
+          ]
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC6_CLUSTER_BRIDGE/100k/seed-7/evaluation/positive_pairs.parquet",
+          "rows": 84000,
+          "columns": [
+            "record_key_a",
+            "record_key_b",
+            "stratum"
+          ]
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC6_CLUSTER_BRIDGE/100k/seed-7/truth/records.parquet",
+          "rows": 100000,
+          "columns": [
+            "record_key",
+            "entity_id",
+            "label_status",
+            "component_id",
+            "stratum",
+            "source_system",
+            "source_record_id",
+            "source_file",
+            "source_row_number"
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/1m/seed-7/manifest.json",
+      "case": "TC13",
+      "target_records": 1000000,
+      "generated_records": 1000000,
+      "realism_level": "L0",
+      "generation_mode": "independent_scale",
+      "entities": 834650,
+      "positive_pairs": 165350,
+      "file_counts": {
+        "crm-1.csv": 125000,
+        "erp-1.csv": 125000,
+        "bill-1.csv": 125000,
+        "csv-1.csv": 125000,
+        "crm-2.csv": 125000,
+        "erp-2.csv": 125000,
+        "bill-2.csv": 125000,
+        "csv-2.csv": 125000
+      },
+      "manifest_file_entries": 19,
+      "hash_matched": 19,
+      "missing": [],
+      "hash_mismatches": [],
+      "csv_files": 8,
+      "row_quality_profile_complete": true,
+      "input_csv_profiles": [
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/1m/seed-7/input_p119/bill-1.csv",
+          "rows": 125000,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "phone": 40746,
+            "email": 40746,
+            "government_id": 125000,
+            "government_id_type": 125000,
+            "dob": 7620,
+            "address": 7620
+          },
+          "sources": {
+            "BILL": 125000
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/1m/seed-7/input_p119/bill-2.csv",
+          "rows": 125000,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 125000,
+            "government_id_type": 125000,
+            "phone": 40754,
+            "email": 40754,
+            "dob": 7630,
+            "address": 7630
+          },
+          "sources": {
+            "BILL": 125000
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/1m/seed-7/input_p119/crm-1.csv",
+          "rows": 125000,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 125000,
+            "government_id_type": 125000,
+            "phone": 40755,
+            "email": 40755,
+            "dob": 7627,
+            "address": 7627
+          },
+          "sources": {
+            "CRM": 125000
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/1m/seed-7/input_p119/crm-2.csv",
+          "rows": 125000,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 125000,
+            "government_id_type": 125000,
+            "phone": 40745,
+            "email": 40745,
+            "dob": 7623,
+            "address": 7623
+          },
+          "sources": {
+            "CRM": 125000
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/1m/seed-7/input_p119/csv-1.csv",
+          "rows": 125000,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 125000,
+            "government_id_type": 125000,
+            "phone": 40750,
+            "email": 40750,
+            "dob": 7873,
+            "address": 7622
+          },
+          "sources": {
+            "CSV": 125000
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/1m/seed-7/input_p119/csv-2.csv",
+          "rows": 125000,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "phone": 40750,
+            "email": 40750,
+            "government_id": 125000,
+            "government_id_type": 125000,
+            "dob": 7877,
+            "address": 7628
+          },
+          "sources": {
+            "CSV": 125000
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/1m/seed-7/input_p119/erp-1.csv",
+          "rows": 125000,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 125000,
+            "government_id_type": 125000,
+            "phone": 40746,
+            "email": 40746,
+            "dob": 7878,
+            "address": 7625
+          },
+          "sources": {
+            "ERP": 125000
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/1m/seed-7/input_p119/erp-2.csv",
+          "rows": 125000,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 125000,
+            "government_id_type": 125000,
+            "phone": 40754,
+            "email": 40754,
+            "dob": 7872,
+            "address": 7625
+          },
+          "sources": {
+            "ERP": 125000
+          },
+          "exact_duplicate_rows_sha256": 0
+        }
+      ],
+      "observed_input_rows": 1000000,
+      "duplicate_source_keys": 0,
+      "parquet_inventory": [
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/1m/seed-7/evaluation/forbidden_pairs.parquet",
+          "rows": 386900,
+          "columns": [
+            "record_key_a",
+            "record_key_b",
+            "stratum"
+          ]
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/1m/seed-7/evaluation/positive_pairs.parquet",
+          "rows": 165350,
+          "columns": [
+            "record_key_a",
+            "record_key_b",
+            "stratum"
+          ]
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/1m/seed-7/truth/records.parquet",
+          "rows": 1000000,
+          "columns": [
+            "record_key",
+            "entity_id",
+            "label_status",
+            "component_id",
+            "stratum",
+            "source_system",
+            "source_record_id",
+            "source_file",
+            "source_row_number"
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/100k/seed-7/manifest.json",
+      "case": "TC13",
+      "target_records": 100000,
+      "generated_records": 100000,
+      "realism_level": "L0",
+      "generation_mode": "independent_scale",
+      "entities": 83465,
+      "positive_pairs": 16535,
+      "file_counts": {
+        "crm-1.csv": 12500,
+        "erp-1.csv": 12500,
+        "bill-1.csv": 12500,
+        "csv-1.csv": 12500,
+        "crm-2.csv": 12500,
+        "erp-2.csv": 12500,
+        "bill-2.csv": 12500,
+        "csv-2.csv": 12500
+      },
+      "manifest_file_entries": 19,
+      "hash_matched": 19,
+      "missing": [],
+      "hash_mismatches": [],
+      "csv_files": 8,
+      "row_quality_profile_complete": true,
+      "input_csv_profiles": [
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/100k/seed-7/input_p119/bill-1.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "phone": 4076,
+            "email": 4076,
+            "dob": 790,
+            "address": 765
+          },
+          "sources": {
+            "BILL": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/100k/seed-7/input_p119/bill-2.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "phone": 4074,
+            "email": 4074,
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "dob": 785,
+            "address": 760
+          },
+          "sources": {
+            "BILL": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/100k/seed-7/input_p119/crm-1.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "phone": 4075,
+            "email": 4075,
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "dob": 789,
+            "address": 764
+          },
+          "sources": {
+            "CRM": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/100k/seed-7/input_p119/crm-2.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "phone": 4075,
+            "email": 4075,
+            "dob": 786,
+            "address": 761
+          },
+          "sources": {
+            "CRM": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/100k/seed-7/input_p119/csv-1.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "phone": 4075,
+            "email": 4075,
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "dob": 762,
+            "address": 762
+          },
+          "sources": {
+            "CSV": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/100k/seed-7/input_p119/csv-2.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "phone": 4075,
+            "email": 4075,
+            "dob": 763,
+            "address": 763
+          },
+          "sources": {
+            "CSV": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/100k/seed-7/input_p119/erp-1.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "phone": 4074,
+            "email": 4074,
+            "dob": 762,
+            "address": 762
+          },
+          "sources": {
+            "ERP": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/100k/seed-7/input_p119/erp-2.csv",
+          "rows": 12500,
+          "columns": [
+            "source_record_id",
+            "source_system",
+            "name",
+            "phone",
+            "email",
+            "dob",
+            "address",
+            "government_id",
+            "government_id_type",
+            "entity_type"
+          ],
+          "missing": {
+            "government_id": 12500,
+            "government_id_type": 12500,
+            "phone": 4076,
+            "email": 4076,
+            "dob": 763,
+            "address": 763
+          },
+          "sources": {
+            "ERP": 12500
+          },
+          "exact_duplicate_rows_sha256": 0
+        }
+      ],
+      "observed_input_rows": 100000,
+      "duplicate_source_keys": 0,
+      "parquet_inventory": [
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/100k/seed-7/evaluation/forbidden_pairs.parquet",
+          "rows": 38690,
+          "columns": [
+            "record_key_a",
+            "record_key_b",
+            "stratum"
+          ]
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/100k/seed-7/evaluation/positive_pairs.parquet",
+          "rows": 16535,
+          "columns": [
+            "record_key_a",
+            "record_key_b",
+            "stratum"
+          ]
+        },
+        {
+          "path": "artifacts/cluster-improvements-20261013/datasets/TC13_HOT_BLOCK_RETRIEVAL/100k/seed-7/truth/records.parquet",
+          "rows": 100000,
+          "columns": [
+            "record_key",
+            "entity_id",
+            "label_status",
+            "component_id",
+            "stratum",
+            "source_system",
+            "source_record_id",
+            "source_file",
+            "source_row_number"
+          ]
+        }
+      ]
+    }
+  ],
+  "review_model_load": "LOAD_OK"
+}

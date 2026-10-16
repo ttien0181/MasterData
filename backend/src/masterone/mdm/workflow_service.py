@@ -2,7 +2,7 @@
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_, select
+from sqlalchemy import String, column, func, or_, select, true
 from sqlalchemy.orm import aliased
 
 from masterone.config import get_settings
@@ -59,12 +59,12 @@ def review_blocking_operation(db, run_id):
 def retryable_operation(db, run, latest=_UNSET):
     if latest is _UNSET:
         latest = db.query(WorkflowOperation).filter(WorkflowOperation.run_id == run.id,
-        WorkflowOperation.operation_type.in_(('PREPARE', 'DECIDE', 'BULK_DECISIONS', 'CLUSTER', 'CLUSTER_PREVIEW', 'GOLDEN_RESOLVE', 'ASSESS_PAIRS', 'PAIR_ADVICE', 'GROUP_ANNOTATIONS', 'AUTOMATION_SHADOW', 'AUTOMATION_APPLY', 'FINALIZE_GOLDEN'))
+        WorkflowOperation.operation_type.in_(('PREPARE', 'DECIDE', 'BULK_DECISIONS', 'CLUSTER', 'CLUSTER_PREVIEW', 'GOLDEN_RESOLVE', 'ASSESS_PAIRS', 'REBUILD_CANDIDATES', 'PAIR_ADVICE', 'GROUP_ANNOTATIONS', 'AUTOMATION_SHADOW', 'AUTOMATION_APPLY', 'FINALIZE_GOLDEN'))
         ).order_by(WorkflowOperation.created_at.desc(), WorkflowOperation.id.desc()).first()
     states = {'PREPARE': ('DATA_PREPARING',), 'DECIDE': ('DECIDE_RUNNING',),
               'BULK_DECISIONS': ('DECIDE_REVIEW',), 'CLUSTER': ('CLUSTER_QUEUED', 'CLUSTER_RUNNING'),
               'GOLDEN_RESOLVE': ('DECIDE_REVIEW', 'GOLDEN_REVIEW'),
-              'ASSESS_PAIRS': ('DECIDE_REVIEW',), 'PAIR_ADVICE': ('DECIDE_REVIEW',), 'CLUSTER_PREVIEW': ('DECIDE_REVIEW',)}
+              'ASSESS_PAIRS': ('DECIDE_REVIEW',), 'REBUILD_CANDIDATES': ('DECIDE_REVIEW',), 'PAIR_ADVICE': ('DECIDE_REVIEW',), 'CLUSTER_PREVIEW': ('DECIDE_REVIEW',)}
     states.update(AUTOMATION_SHADOW=('DECIDE_REVIEW',),AUTOMATION_APPLY=('DECIDE_REVIEW',))
     states['GROUP_ANNOTATIONS'] = ('DECIDE_REVIEW', 'GOLDEN_REVIEW')
     states['FINALIZE_GOLDEN'] = ('GOLDEN_REVIEW',)
@@ -78,12 +78,14 @@ def replay(db, run_id, kind, request_id, payload):
     row = db.query(WorkflowOperation).filter_by(run_id=run_id, request_id=request_id).one_or_none()
     if row is not None:
         matches = row.payload_hash == digest(payload)
-        if not matches and kind in ('PAIR_DECISION', 'BULK_DECISIONS') and row.payload_hash == digest(row.payload):
+        historical_payload = {k: v for k, v in row.payload.items() if k not in
+            ('matching_binding_id', 'matching_binding_revision', 'matching_profile_digest')}
+        if not matches and kind in ('PAIR_DECISION', 'BULK_DECISIONS') and row.payload_hash == digest(historical_payload):
             # An omitted optional reason and an explicit null have identical semantics.
             def normalize(p):
                 return {k: v for k, v in p.items() if k not in
                         ('reason', 'review_group_token', 'review_group_record_ids') or v is not None}
-            matches = normalize(row.payload) == normalize(payload)
+            matches = normalize(historical_payload) == normalize(payload)
         if row.operation_type != kind or not matches:
             conflict('REQUEST_ID_PAYLOAD_MISMATCH')
     return row
@@ -97,12 +99,12 @@ def check_revision(run, payload):
         current = active_assessment(object_session(run), run.id)
         if current is None or current.id != payload['expected_assessment_id']:
             conflict('STALE_ASSESSMENT')
-    for key, column in (('expected_workflow_revision', 'workflow_revision'),
+    for key, revision_column in (('expected_workflow_revision', 'workflow_revision'),
                         ('expected_decision_revision', 'decision_revision'),
                         ('expected_cluster_revision', 'cluster_revision'),
                         ('expected_golden_revision', 'golden_revision')):
-        if key in payload and payload[key] != getattr(run, column):
-            conflict('STALE_REVISION', revision=column, current=getattr(run, column))
+        if key in payload and payload[key] != getattr(run, revision_column):
+            conflict('STALE_REVISION', revision=revision_column, current=getattr(run, revision_column))
 
 
 def audit(db, run, actor, action, details):
@@ -110,8 +112,10 @@ def audit(db, run, actor, action, details):
 
 
 def new_operation(db, run, kind, request_id, payload, actor):
+    from masterone.mdm.matching_foundation_service import pin_operation_binding
+    pinned_payload = pin_operation_binding(db, run, payload)
     op = WorkflowOperation(id=str(uuid4()), run_id=run.id, request_id=request_id,
-        operation_type=kind, payload_hash=digest(payload), payload=payload, actor_user_id=actor)
+        operation_type=kind, payload_hash=digest(payload), payload=pinned_payload, actor_user_id=actor)
     db.add(op)
     db.flush()
     return op
@@ -137,6 +141,8 @@ def begin_operation(db, run_id, operation_type, request_id, payload, expected_wo
     prior = replay(db, run_id, operation_type, request_id, payload)
     if prior:
         return operation_read(prior)
+    if get_settings().ai_api_only and payload.get('model_scope') is not None:
+        conflict('API_ONLY_LOCAL_MODEL_DENIED')
     check_revision(run, {**payload, 'expected_workflow_revision': expected_workflow_revision})
     if active_operation(db, run_id):
         conflict('ACTIVE_OPERATION')
@@ -167,6 +173,8 @@ def initialize_workflow(db, run):
     if run.workflow_version == 2:
         run.workflow_state = 'DATA_PREPARING'
         op = new_operation(db, run, 'PREPARE', 'prepare:' + run.id, {}, run.owner_user_id)
+        from masterone.mdm.matching_foundation_service import bind_new_run
+        bind_new_run(db, run, op)
         enqueue(db, run, op)
 
 
@@ -193,18 +201,25 @@ def completion_blockers(db, run_id, *, run=None, operation=_UNSET, pending=None,
     return blockers
 
 
-def get_workflow(db, run_id, actor):
+def get_workflow(db, run_id, actor, *, cache_reads=False):
     from masterone.mdm.workflow_assessment_reads import effective_column
     run = owned_run(db, run_id, actor)
-    conflict_count = select(func.count(WorkflowConflict.id)).where(WorkflowConflict.run_id == run_id,
-                        WorkflowConflict.resolved.is_(False)).scalar_subquery()
-    pair_count, pending, insufficient, conflicts = db.query(func.count(WorkflowPair.id),
-        func.count(WorkflowPair.id).filter(pending_predicate()),
-        func.count(WorkflowPair.id).filter(effective_column()['decision'].as_string() == 'INSUFFICIENT_EVIDENCE'),
-        conflict_count).filter(WorkflowPair.run_id == run_id).one()
+    pair_query = db.query(WorkflowPair).filter(WorkflowPair.run_id == run_id)
+    baseline, triage = effective_column()['decision'].as_string(), effective_column()['triage_status'].as_string()
+    if db.bind.dialect.name == 'postgresql':
+        fields = func.json_to_record(effective_column()).table_valued(
+            column('decision', String), column('triage_status', String)
+        ).render_derived(with_types=True).lateral('status_evaluation')
+        pair_query = pair_query.join(fields, true())
+        baseline, triage = fields.c.decision, fields.c.triage_status
+    def read_counts():
+        return list(pair_query.with_entities(func.count(WorkflowPair.id),
+            func.count(WorkflowPair.id).filter(pending_predicate(baseline=baseline, triage=triage)),
+            func.count(WorkflowPair.id).filter(baseline == 'INSUFFICIENT_EVIDENCE')).one())
+    conflicts = db.query(func.count(WorkflowConflict.id)).filter_by(run_id=run_id, resolved=False).scalar()
     latest_row = aliased(WorkflowOperation)
     latest_id = select(latest_row.id).where(latest_row.run_id == run_id,
-        latest_row.operation_type.in_(('PREPARE', 'DECIDE', 'BULK_DECISIONS', 'CLUSTER', 'CLUSTER_PREVIEW', 'GOLDEN_RESOLVE', 'ASSESS_PAIRS', 'PAIR_ADVICE', 'GROUP_ANNOTATIONS', 'AUTOMATION_SHADOW', 'AUTOMATION_APPLY', 'FINALIZE_GOLDEN'))
+        latest_row.operation_type.in_(('PREPARE', 'DECIDE', 'BULK_DECISIONS', 'CLUSTER', 'CLUSTER_PREVIEW', 'GOLDEN_RESOLVE', 'ASSESS_PAIRS', 'REBUILD_CANDIDATES', 'PAIR_ADVICE', 'GROUP_ANNOTATIONS', 'AUTOMATION_SHADOW', 'AUTOMATION_APPLY', 'FINALIZE_GOLDEN'))
         ).order_by(latest_row.created_at.desc(), latest_row.id.desc()).limit(1).scalar_subquery()
     cluster_id = select(latest_row.id).where(latest_row.run_id == run_id, latest_row.operation_type == 'CLUSTER'
         ).order_by(latest_row.created_at.desc(), latest_row.id.desc()).limit(1).scalar_subquery()
@@ -217,12 +232,22 @@ def get_workflow(db, run_id, actor):
         latest_row.created_at.desc(),latest_row.id.desc()).limit(1).scalar_subquery()
     stop_id = select(latest_row.id).where(latest_row.run_id==run_id,latest_row.operation_type=='AUTOMATION_STOP',
         latest_row.status=='COMPLETED').limit(1).scalar_subquery()
+    agents_id = select(latest_row.id).where(latest_row.run_id == run_id,
+        latest_row.operation_type.in_(('DECIDE', 'ASSESS_PAIRS', 'REBUILD_CANDIDATES')),
+        latest_row.status.in_(('COMPLETED', 'DEGRADED'))).order_by(
+            latest_row.created_at.desc(), latest_row.id.desc()).limit(1).scalar_subquery()
     operations = db.query(WorkflowOperation).filter(WorkflowOperation.run_id == run_id,
         or_(WorkflowOperation.status.in_(ACTIVE), WorkflowOperation.id == latest_id,
             WorkflowOperation.id == cluster_id, WorkflowOperation.id == advice_id, WorkflowOperation.id == annotation_id,
-            WorkflowOperation.id == automation_id, WorkflowOperation.id == stop_id)
+            WorkflowOperation.id == automation_id, WorkflowOperation.id == stop_id, WorkflowOperation.id == agents_id)
         ).order_by(WorkflowOperation.created_at.desc(), WorkflowOperation.id.desc()).all()
     op = next((o for o in operations if o.status in ACTIVE), None)
+    if cache_reads:
+        from masterone.mdm.pair_read_cache import cached_read
+        pair_count, pending, insufficient = cached_read(db, run, 'status-counts', {}, read_counts,
+                                                      operation_active=op is not None)
+    else:
+        pair_count, pending, insufficient = read_counts()
     latest = next((o for o in operations if o is not op), None)
     retryable = retryable_operation(db, run, latest) if not op else None
     blockers = []
@@ -255,11 +280,13 @@ def get_workflow(db, run_id, actor):
             if cluster_result and not cluster_result['read_only']:
                 actions += ['save-golden', 'auto-select', 'confirm-golden', 'resolve-golden']
         elif run.workflow_state == 'GOLDEN_REVIEW':
-            actions = ['reopen-decisions']
+            actions = ['reopen-decisions','decide-pair','bulk-decisions','amend-pair']
             if cluster_result and not cluster_result['stale']:
                 actions += ['save-golden', 'auto-select', 'confirm-golden', 'resolve-golden'] + ([] if blockers else ['finalize-golden'])
         elif run.workflow_state == 'FINALIZED':
             actions = ['export', 'reopen-decisions']
+        if run.workflow_state in ('DECIDE_REVIEW','GOLDEN_REVIEW'):
+            actions.append('build-cluster-queue')
         if retryable:
             actions.append('retry-operation')
     if (actions and not op and cluster_result and not cluster_result['stale'] and
@@ -276,7 +303,10 @@ def get_workflow(db, run_id, actor):
     from masterone.mdm.workflow_assessment_reads import active_assessment
     assessment = active_assessment(db, run_id)
     automation_stopped=any(o.operation_type=='AUTOMATION_STOP' for o in operations)
-    if ('decide-pair' in actions and assessment):
+    agents_op = next((o for o in operations if o.operation_type in ('DECIDE', 'ASSESS_PAIRS', 'REBUILD_CANDIDATES')
+                      and o.status in ('COMPLETED', 'DEGRADED')), None)
+    matching_agents = agents_op.result.get('matching_agents') if agents_op else None
+    if ('decide-pair' in actions and assessment and not matching_agents):
         actions.append('automation-shadow')
         if not automation_stopped:
             actions.append('automation-stop')
@@ -287,8 +317,12 @@ def get_workflow(db, run_id, actor):
     latest_advice = next((o for o in operations if o.operation_type == 'PAIR_ADVICE' and o.status == 'COMPLETED'), None)
     latest_annotations = next((o for o in operations if o.operation_type == 'GROUP_ANNOTATIONS' and o.status == 'COMPLETED'), None)
     latest_cluster = next((o for o in operations if o.operation_type == 'CLUSTER'), None)
+    active_read = operation_read(op, summary=True) if op else None
+    if active_read and op.operation_type == 'DECIDE':
+        from masterone.mdm.decision_progress import operation_progress
+        active_read['progress'] = operation_progress(db, op)
     return dict(run_id=run_id, workflow_version=run.workflow_version, assessment_id=assessment.id if assessment else None,
-        automation_stopped=automation_stopped,
+        automation_stopped=automation_stopped, matching_agents=matching_agents,
         latest_automation_operation=operation_read(next((o for o in operations if o.operation_type in {'AUTOMATION_SHADOW','AUTOMATION_APPLY'}),None)) if any(o.operation_type in {'AUTOMATION_SHADOW','AUTOMATION_APPLY'} for o in operations) else None,
         advice_revision=latest_advice.id if latest_advice else None,
         annotation_revision=latest_annotations.id if latest_annotations else None,
@@ -300,7 +334,7 @@ def get_workflow(db, run_id, actor):
                 'review_required': {'value': pending, 'unit': 'pairs'},
                 'insufficient': {'value': insufficient if run.workflow_version == 2 else run.insufficient_count, 'unit': 'pairs'}},
         cluster_result=cluster_result, latest_cluster_operation=operation_read(latest_cluster, summary=True) if latest_cluster else None,
-        allowed_actions=actions, blockers=blockers, active_operation=operation_read(op, summary=True) if op else None,
+        allowed_actions=actions, blockers=blockers, active_operation=active_read,
         retryable_operation=operation_read(retryable) if retryable else None)
 
 

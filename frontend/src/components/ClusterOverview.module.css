@@ -1,0 +1,13 @@
+.overview { display: grid; gap: 18px; }
+.heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.heading h2 { margin: 0; }
+.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.metrics section { display: grid; gap: 12px; margin: 0; }
+.metrics strong { font-size: 30px; line-height: 1.15; }
+.coverage { display: grid; gap: 16px; }
+.coverage h3 { margin: 0; }
+.coverage progress { width: 100%; height: 12px; accent-color: #0891b2; }
+.distribution { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.distribution > div { display: grid; gap: 10px; }
+.distribution progress { accent-color: #2563eb; }
+@media (max-width: 800px) { .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

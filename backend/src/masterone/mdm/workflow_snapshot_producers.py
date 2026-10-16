@@ -26,7 +26,8 @@ def negative_stream(db, run_id):
     current = ordered(ResolutionNegativeEdge, active=True)
     legacy = ordered(ResolutionPair, user_decision='NON_MATCH')
     prior = None
-    for pair in merge((tuple(p) for p in current), (tuple(p) for p in legacy)):
+    from masterone.mdm.workflow_structure import structure_links
+    for pair in merge((tuple(p) for p in current), (tuple(p) for p in legacy), sorted(structure_links(db, run_id))):
         canonical = tuple(sorted(pair))
         if canonical != prior:
             yield {'left_id': canonical[0], 'right_id': canonical[1]}
@@ -74,8 +75,12 @@ def snapshot_streams(db, run, *, allow_partial=False):
                 'allow_partial': allow_partial}
     streams = {'records': record_stream(db, run.id, assessed=assessment is not None),
         'pairs': (effective_result(row) for row in pairs()),
-        'overlays': ({'id': row.id, 'value': row.decision} for row in pairs()),
-        'review_reasons': ({'id': row.id, 'value': row.review_reason} for row in pairs() if row.review_reason),
+        'overlays': ({'id': row.id, 'value': row.decision} for row in db.query(
+            WorkflowPair.id, WorkflowPair.decision).filter_by(run_id=run.id).order_by(WorkflowPair.id).yield_per(512)),
+        'review_reasons': ({'id': row.id, 'value': row.review_reason} for row in db.query(
+            WorkflowPair.id, WorkflowPair.review_reason).filter(WorkflowPair.run_id == run.id,
+                WorkflowPair.review_reason.is_not(None), WorkflowPair.review_reason != '').order_by(
+                    WorkflowPair.id).yield_per(512)),
         'negative_pairs': negative_stream(db, run.id),
         'group_approvals': ({'id': op.id, **op.result} for op in db.query(WorkflowOperation).filter_by(
             run_id=run.id, operation_type='GROUP_APPROVAL', status='COMPLETED').order_by(WorkflowOperation.created_at).yield_per(512))}

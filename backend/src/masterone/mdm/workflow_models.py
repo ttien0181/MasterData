@@ -10,7 +10,8 @@ from masterone.db.base import Base, now_utc
 
 class WorkflowOperation(Base):
     __tablename__ = 'mdm_workflow_operations'
-    __table_args__ = (UniqueConstraint('run_id', 'request_id', name='uq_workflow_request'),)
+    __table_args__ = (UniqueConstraint('run_id', 'request_id', name='uq_workflow_request'),
+                     Index('uq_m1_operation_run', 'id', 'run_id', unique=True))
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     run_id: Mapped[str] = mapped_column(ForeignKey('mdm_resolution_runs.id', ondelete='CASCADE'), index=True)
     request_id: Mapped[str] = mapped_column(String(128))
@@ -29,6 +30,7 @@ class WorkflowOperation(Base):
 
 class WorkflowArtifact(Base):
     __tablename__ = 'mdm_workflow_artifacts'
+    __table_args__ = (Index('uq_m1_artifact_run', 'id', 'run_id', unique=True),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     run_id: Mapped[str] = mapped_column(ForeignKey('mdm_resolution_runs.id', ondelete='CASCADE'), index=True)
     phase: Mapped[str] = mapped_column(String(24))
@@ -44,6 +46,7 @@ def immutable_artifact(*_):
 
 class WorkflowPair(Base):
     __tablename__ = 'mdm_workflow_pairs'
+    __table_args__ = (Index('uq_m1_pair_run', 'id', 'run_id', unique=True),)
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     run_id: Mapped[str] = mapped_column(ForeignKey('mdm_resolution_runs.id', ondelete='CASCADE'), index=True)
     baseline: Mapped[dict] = mapped_column(JSON)
@@ -56,10 +59,17 @@ class WorkflowPair(Base):
     revision: Mapped[int] = mapped_column(Integer, default=0)
 
 
+# JSON endpoint lookups serve bounded exact-member group review on PostgreSQL.
+Index('ix_m1_pair_run_endpoints', WorkflowPair.run_id,
+      WorkflowPair.baseline['left_id'].as_string(),
+      WorkflowPair.baseline['right_id'].as_string()).ddl_if(dialect='postgresql')
+
+
 class WorkflowAssessment(Base):
     __tablename__ = 'mdm_workflow_assessments'
     __table_args__ = (Index('uq_workflow_active_assessment', 'run_id', unique=True,
-                           postgresql_where=text('active'), sqlite_where=text('active = 1')),)
+                           postgresql_where=text('active'), sqlite_where=text('active = 1')),
+                     Index('uq_m1_assessment_run', 'id', 'run_id', unique=True))
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     run_id: Mapped[str] = mapped_column(ForeignKey('mdm_resolution_runs.id', ondelete='CASCADE'), index=True)
     artifact_id: Mapped[str] = mapped_column(ForeignKey('mdm_workflow_artifacts.id'))

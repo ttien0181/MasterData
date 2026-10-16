@@ -1,11 +1,12 @@
 export type Capability = "read" | "read_audit" | "create_run" | "start_run" | "approve_pair"
   | "reject_pair" | "edit_golden" | "explain" | "export_data" | "approve_d_subgroup"
-  | "selective_unmerge" | "edit_policy" | "simulate_policy" | "manage_run";
+  | "selective_unmerge" | "edit_policy" | "simulate_policy" | "manage_run"
+  | "learn_match_profile" | "apply_match_profile" | "manage_entity_structure";
 export type AuthUser = {
   id: string; email: string; csrf_token: string; role: string; capabilities: Capability[];
 };
 export type UploadState = "empty" | "selected" | "uploading" | "validating" | "uploaded" | "error";
-export type RunStatus = "UPLOADED" | "IMPORTING" | "QUEUED" | "RUNNING" | "COMPLETED" | "RETRYABLE_FAILED" | "FAILED";
+export type RunStatus = "UPLOADED" | "IMPORTING" | "QUEUED" | "RUNNING" | "COMPLETED" | "DEGRADED" | "RETRYABLE_FAILED" | "FAILED";
 export type ResolutionTask = {
   task_id: string; run_id: string; status: string; phase: string; processed_count: number;
   total_count: number; error_code: string | null; updated_at: string;

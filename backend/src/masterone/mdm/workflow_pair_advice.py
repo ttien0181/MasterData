@@ -94,7 +94,9 @@ def run_pair_advice(operation_id, factory, progress):
                   'prompt_version': PROMPT_VERSION['PAIR_ASSESSMENT'], 'schema_version': SCHEMA_VERSION['PAIR_ASSESSMENT'],
                   'input_hash': digest(payload), 'status': 'UNAVAILABLE'}
         try:
-            response = generate('PAIR_ASSESSMENT', payload, settings, context=context, factory=factory)
+            from masterone.mdm.workflow_telemetry import timed_stage
+            with timed_stage('gemini-pair-advice'):
+                response = generate('PAIR_ASSESSMENT', payload, settings, context=context, factory=factory)
             from masterone.llm.pair_advice_contract import grounded_output
             output = grounded_output(response['output'])
             advice.update(status='COMPLETED', **output, provider=response['provider'],

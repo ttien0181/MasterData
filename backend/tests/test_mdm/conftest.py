@@ -14,6 +14,8 @@ from sqlalchemy.pool import StaticPool
 @pytest.fixture
 def client(monkeypatch):
     # API tests use local snapshots, never the developer's live R2/LLM settings.
+    for key in ('ENDPOINT_URL', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY', 'BUCKET'):
+        monkeypatch.delenv('PAIR_CACHE_R2_' + key, raising=False)
     for field in ("r2_endpoint_url", "r2_access_key_id", "r2_secret_access_key", "r2_bucket", "gemini_api_key"):
         monkeypatch.setattr(get_settings(), field, "")
     monkeypatch.setattr(get_settings(), "semantic_address_enabled", False)

@@ -68,6 +68,12 @@ def run_bulk_decisions(operation_id, factory, progress):
             else:
                 links = negative_links(db, run.id, rows)
                 applied = []
+                from masterone.mdm.steward_feedback import (
+                    capture_review_snapshot,
+                    persist_feedback,
+                    prepare_feedback_batch,
+                )
+                feedback_batch = prepare_feedback_batch(db, run, rows, op, op.actor_user_id)
                 with db.no_autoflush:
                     for pair in rows:
                         if pair.decision not in ('UNDECIDED', 'DEFERRED'):
@@ -79,8 +85,10 @@ def run_bulk_decisions(operation_id, factory, progress):
                         elif op.payload['decision'] == 'merge' and eligibility(pair).get('reason_required') and not (op.payload.get('reason') or '').strip():
                             counts['blocked'] += 1
                         else:
+                            snapshot = capture_review_snapshot(db, run, pair, batch=feedback_batch)
                             apply_decision(db, run, pair, op.payload['decision'], op.actor_user_id,
                                            links=links, resolve_conflicts=False, reason=op.payload.get('reason'))
+                            persist_feedback(db, run, pair, op, op.actor_user_id, snapshot, 'HUMAN_BULK_DIRECT', batch=feedback_batch)
                             counts['applied'] += 1
                             counts['accepted'] += 1  # Keep the old progress contract as an alias.
                             applied.append(pair.id)

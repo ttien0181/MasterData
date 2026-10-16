@@ -2,7 +2,11 @@ name: p119-session-qa
 
 services:
   database:
+    profiles: [local-db]
     image: postgres:16-alpine
+    cpus: 1.5
+    mem_limit: 3g
+    memswap_limit: 3g
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-masterone}
       POSTGRES_USER: ${POSTGRES_USER:-masterone}
@@ -20,35 +24,46 @@ services:
 
   backend:
     init: true
+    image: ${BACKEND_IMAGE:-p119-backend:openrouter-mvp}
     build:
       context: .
       dockerfile: Dockerfile
     working_dir: /app
+    scale: 1
+    cpus: 1.0
+    mem_limit: 1g
+    memswap_limit: 1g
     ports:
       - "${BACKEND_PORT:-8001}:8001"
     env_file:
       - .env.qa
+      - path: .env.runtime.local
+        required: false
     volumes:
       - ./data:/app/data
-    environment:
-      APP_ENV: ${APP_ENV:-development}
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-masterone}:${POSTGRES_PASSWORD:-masterone}@database:5432/${POSTGRES_DB:-masterone}
-      MDM_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-masterone}:${POSTGRES_PASSWORD:-masterone}@database:5432/${POSTGRES_DB:-masterone}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
-      SESSION_WORKFLOW_ENABLED: "true"
-      PAIR_ASSESSMENT_AUTO_ENABLED: "true"
-      PAIR_REVIEW_MODEL_PATH: /app/data/models/pair-review-v2/manifest.json
-      LLM_PAIR_ASSESSMENT_ENABLED: "false"
-      LLM_SEMANTIC_ENABLED: "false"
-      SEMANTIC_ADDRESS_ENABLED: "false"
-      R2_ENDPOINT_URL: ""
-      R2_ACCESS_KEY_ID: ""
-      R2_SECRET_ACCESS_KEY: ""
-      R2_BUCKET: ""
+    environment: &app_environment
       WORK_DIR: /app/data/work
-    depends_on:
-      database:
-        condition: service_healthy
+      HEAVY_JOBS_SERIALIZED: "true"
+      AI_API_ONLY: "true"
+      HEAVY_JOB_LOCK_PATH: /app/data/work/heavy-job.lock
+      SAMPLE_CHAT_ENABLED: "false"
+      PAIR_AUTOMATION_ENABLED: "false"
+      LLM_ALLOW_AUTO_MERGE_EVIDENCE: "false"
+      ADVANCED_MATCHING_RULE_WORKERS: "1"
+      MDM_SCORE_WORKERS: "1"
+      IMPORT_JOBS_CONCURRENCY: "1"
+      UPLOAD_DOWNLOAD_WORKERS: "1"
+      STREAM_CONSUMER_WORKERS: "1"
+      STREAM_UPLOAD_WORKERS: "1"
+      LLM_MAX_CONCURRENCY: "1"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+      VECLIB_MAXIMUM_THREADS: "1"
+      TOKENIZERS_PARALLELISM: "false"
+      EMBEDDING_PROVIDER: openrouter
+      EMBEDDING_BATCH_SIZE: "32"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
@@ -58,30 +73,23 @@ services:
 
   worker:
     init: true
+    image: ${BACKEND_IMAGE:-p119-backend:openrouter-mvp}
     build:
       context: .
       dockerfile: Dockerfile
     working_dir: /app
+    scale: 1
+    cpus: 1.0
+    mem_limit: 8g
+    memswap_limit: 9g
     command: ["python", "-m", "masterone.mdm.resolution_worker"]
     env_file:
       - .env.qa
+      - path: .env.runtime.local
+        required: false
     volumes:
       - ./data:/app/data
-    environment:
-      APP_ENV: ${APP_ENV:-development}
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-masterone}:${POSTGRES_PASSWORD:-masterone}@database:5432/${POSTGRES_DB:-masterone}
-      MDM_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-masterone}:${POSTGRES_PASSWORD:-masterone}@database:5432/${POSTGRES_DB:-masterone}
-      SESSION_WORKFLOW_ENABLED: "true"
-      PAIR_ASSESSMENT_AUTO_ENABLED: "true"
-      PAIR_REVIEW_MODEL_PATH: /app/data/models/pair-review-v2/manifest.json
-      LLM_PAIR_ASSESSMENT_ENABLED: "false"
-      LLM_SEMANTIC_ENABLED: "false"
-      SEMANTIC_ADDRESS_ENABLED: "false"
-      R2_ENDPOINT_URL: ""
-      R2_ACCESS_KEY_ID: ""
-      R2_SECRET_ACCESS_KEY: ""
-      R2_BUCKET: ""
-      WORK_DIR: /app/data/work
+    environment: *app_environment
     depends_on:
       backend:
         condition: service_healthy
@@ -92,6 +100,10 @@ services:
 
   frontend:
     init: true
+    cpus: 0.5
+    mem_limit: 512m
+    memswap_limit: 512m
+    image: ${FRONTEND_IMAGE:-p119-frontend:mvp}
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -103,6 +115,7 @@ services:
       - NODE_ENV=production
     depends_on:
       - backend
+      - worker
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]

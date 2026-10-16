@@ -22,15 +22,15 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     cors_origins: str = "http://localhost:3000"
-    auth_csrf_secret: str = ""
+    auth_csrf_secret: str = Field(default="", repr=False)
 
     # LLM (see masterone/llm/policy.py: every outbound call is gated there)
-    openai_api_key: str = ""
+    openai_api_key: str = Field(default="", repr=False)
     model_name: str = "gpt-4o-mini"
-    gemini_api_key: str = ""
-    gemini_api_key_1: str = ""
-    gemini_api_key_2: str = ""
-    gemini_api_key_3: str = ""
+    gemini_api_key: str = Field(default="", repr=False)
+    gemini_api_key_1: str = Field(default="", repr=False)
+    gemini_api_key_2: str = Field(default="", repr=False)
+    gemini_api_key_3: str = Field(default="", repr=False)
     gemini_model: str = "gemini-3.5-flash-lite"
     gemini_max_output_tokens: int = Field(default=512, ge=1, le=8192)
     gemini_max_retries: int = Field(default=1, ge=0, le=3)
@@ -39,6 +39,35 @@ class Settings(BaseSettings):
     gemini_thinking_budget: int | None = Field(default=0, ge=0, le=32768)
     semantic_address_enabled: bool = False
     session_workflow_enabled: bool = False
+    matching_profile_registry_enabled: bool = False
+    steward_feedback_capture_enabled: bool = False
+    advanced_evaluation_registry_enabled: bool = False
+    advanced_matching_agents_enabled: bool = False
+    # Compose enables this; historical local-model benchmarks may opt out.
+    ai_api_only: bool = False
+    advanced_matching_integration_enabled: bool = False
+    advanced_matching_candidate_cap: int = Field(default=200000, ge=1, le=1000000)
+    advanced_matching_rule_workers: int = Field(default=1, ge=1, le=4)
+    entity_structure_enabled: bool = False
+    embedding_runtime_root: str = ''
+    # Independent from the Gemini/chat provider and credentials.
+    embedding_provider: Literal['openrouter', 'e5_local'] = 'openrouter'
+    embedding_openrouter_api_key: str = Field(default='', repr=False)
+    embedding_openrouter_base_url: str = 'https://openrouter.ai/api/v1'
+    embedding_model: Literal['openai/text-embedding-3-small'] = 'openai/text-embedding-3-small'
+    embedding_dimensions: int = Field(default=1536, ge=1, le=1536)
+    embedding_batch_size: int = Field(default=32, ge=1, le=32)
+    embedding_timeout_seconds: int = Field(default=30, ge=1, le=120)
+    embedding_max_retries: int = Field(default=1, ge=0, le=3)
+    embedding_max_requests_per_run: int = Field(default=512, ge=1)
+    embedding_max_tokens_per_run: int = Field(default=2000000, ge=1)
+    embedding_budget_usd: float = Field(default=.20, gt=0, allow_inf_nan=False)
+    # Configured estimate; receipts distinguish it from provider-reported cost.
+    embedding_usd_per_million_tokens: float = Field(default=.02, gt=0, allow_inf_nan=False)
+    embedding_worker_rss_bytes: int = Field(default=1536 * 1024**2, ge=256 * 1024**2)
+    heavy_jobs_serialized: bool = False
+    heavy_job_lock_path: str = './data/work/heavy-job.lock'
+    sample_chat_enabled: bool = False
     workflow_parquet_enabled: bool = False
     decision_semantics_v2_enabled: bool = False
     cluster_safety_v2_enabled: bool = False
@@ -96,7 +125,7 @@ class Settings(BaseSettings):
     gemini_retention_contract: str = ""
     gemini_token_price_microusd: int = Field(default=0, ge=0)  # 0 = unverified price, denied
     gemini_quota_cooldown_seconds: int = Field(default=900, ge=0)
-    openrouter_api_key: str = ""
+    openrouter_api_key: str = Field(default="", repr=False)
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_model: str = "google/gemini-2.5-flash"
     openrouter_retention_verified: bool = False
@@ -105,9 +134,9 @@ class Settings(BaseSettings):
 
     # Database
     mdm_database_profile: Literal["neon", "local"] = "neon"
-    database_url: str = "postgresql+psycopg://masterone:masterone@localhost:5432/masterone"
-    mdm_database_url: str = "postgresql+psycopg://masterone:masterone@localhost:5432/masterone"
-    mdm_database_url_local: str = "postgresql+psycopg://masterone:masterone@localhost:5432/masterone"
+    database_url: str = Field(default="postgresql+psycopg://masterone:masterone@localhost:5432/masterone", repr=False)
+    mdm_database_url: str = Field(default="postgresql+psycopg://masterone:masterone@localhost:5432/masterone", repr=False)
+    mdm_database_url_local: str = Field(default="postgresql+psycopg://masterone:masterone@localhost:5432/masterone", repr=False)
 
     @property
     def active_mdm_database_url(self) -> str:
@@ -124,8 +153,8 @@ class Settings(BaseSettings):
     # Optional S3 API endpoint reachable by the browser, for presigned URLs.
     # Leave empty for Cloudflare R2 (same endpoint as the server).
     r2_presign_endpoint_url: str = ""
-    r2_access_key_id: str = ""
-    r2_secret_access_key: str = ""
+    r2_access_key_id: str = Field(default="", repr=False)
+    r2_secret_access_key: str = Field(default="", repr=False)
     r2_bucket: str = ""
 
     export_batch_rows: int = Field(default=512, ge=1, le=2048)
@@ -149,6 +178,12 @@ class Settings(BaseSettings):
     def r2_enabled(self) -> bool:
         return bool(self.r2_endpoint_url and self.r2_access_key_id
                     and self.r2_secret_access_key and self.r2_bucket)
+
+    @model_validator(mode="after")
+    def _validate_ai_execution(self) -> "Settings":
+        if self.ai_api_only and self.embedding_provider != 'openrouter':
+            raise ValueError('API_ONLY_LOCAL_ENCODER_DENIED')
+        return self
 
     @model_validator(mode="after")
     def _select_gemini_key(self) -> "Settings":

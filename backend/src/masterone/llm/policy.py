@@ -232,7 +232,7 @@ def validate_output(purpose, output, payload):
     if not isinstance(output, dict):
         raise PolicyDenied("SCHEMA_INVALID")
     if purpose == 'PAIR_ASSESSMENT':
-        from masterone.llm.pair_advice_contract import REASONS, LIMITATIONS
+        from masterone.llm.pair_advice_contract import LIMITATIONS, REASONS
         if (set(output) != {'pair_token', 'recommendation', 'evidence', 'reason_codes', 'limitation_codes'}
                 or output['pair_token'] != payload['pair_token']
                 or output['recommendation'] not in {'LIKELY_SAME_PERSON', 'LIKELY_DIFFERENT_PERSON', 'INSUFFICIENT_BASIS'}):
@@ -429,6 +429,11 @@ class PolicyEnforcer:
                     if created + timedelta(seconds=s.llm_cache_ttl_seconds) < now_utc():
                         raise PolicyDenied("CACHE_EXPIRED")
                     return request_id, existing.response
+                if (existing.state == "RESERVED" and existing.calls == 0
+                        and existing.reserved_tokens == 0 and existing.reserved_cost_microusd == 0):
+                    # A pre-dispatch policy denial has not sent anything to a provider.
+                    # attempt() rechecks policy and atomically fences concurrent dispatches.
+                    return request_id, None
                 raise PolicyDenied("REQUEST_" + existing.state)
             db.add(LLMReservation(id=request_id, run_id=context["run_id"], user_id=context["user_id"],
                                   purpose=purpose, context_hash=digest(context), context=context,
@@ -457,7 +462,7 @@ class PolicyEnforcer:
             scopes = [
                 ([], s.llm_global_call_cap),
                 ([LLMReservation.user_id == row.user_id], s.llm_user_call_cap),
-                ([LLMReservation.run_id == row.run_id], s.llm_max_explanation_calls_per_run
+                ([LLMReservation.run_id == row.run_id, LLMReservation.purpose == purpose], s.llm_max_explanation_calls_per_run
                  if purpose == "EXPLANATION" else s.llm_max_pair_assessment_calls_per_run
                  if purpose == 'PAIR_ASSESSMENT' else s.llm_max_semantic_calls_per_run),
             ]

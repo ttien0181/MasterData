@@ -12,7 +12,9 @@ def test_automation_provenance_is_added_on_real_migrated_schema(tmp_path):
     with engine.begin() as db:
         db.execute(text("INSERT INTO mdm_workflow_pairs (id,run_id,baseline,decision,review_reason,revision) VALUES ('p','r','{}','ACCEPTED','source verified',4)"))
     command.upgrade(cfg,'head')
-    assert HEAD=='0032_generation_coverage'
+    assert HEAD=='0034_pair_endpoint_index'
+    with engine.connect() as db:
+        assert db.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == HEAD
     assert 'automation' in {c['name'] for c in inspect(engine).get_columns('mdm_workflow_pairs')}
     with engine.connect() as db:
         row=db.execute(text('SELECT decision,review_reason,revision,automation FROM mdm_workflow_pairs')).one()

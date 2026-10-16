@@ -194,6 +194,17 @@ def test_group_approval_api_accepts_internal_pending_pairs_with_audit(client, wo
         db.flush()
         assessed.artifact_id = artifact.id
         assessed.configuration = {k: v for k, v in payload.items() if k not in ('pairs', 'records')}
+        from masterone.mdm.workflow_models import WorkflowConflict, WorkflowOperation
+        operation = db.query(WorkflowOperation).filter_by(run_id=workflow_run).first()
+        matching_conflict = WorkflowConflict(run_id=workflow_run, operation_id=operation.id,
+            pair_id='historical-component-reference', payload={
+                'reason': 'CLUSTER_BRIDGE_MISSING_EVIDENCE', 'record_ids': ids})
+        foreign_conflict = WorkflowConflict(run_id=workflow_run, operation_id=operation.id,
+            pair_id='another-component', payload={
+                'reason': 'CLUSTER_BRIDGE_MISSING_EVIDENCE', 'record_ids': [ids[0], 'outside-record']})
+        db.add_all([matching_conflict, foreign_conflict])
+        db.flush()
+        matching_conflict_id, foreign_conflict_id = matching_conflict.id, foreign_conflict.id
     state = read(client, workflow_run)
     body = request(state['workflow_revision'], expected_decision_revision=state['decision_revision'],
                    expected_assessment_id=state['assessment_id'], record_ids=ids, reason='Verified contact history')
@@ -205,6 +216,11 @@ def test_group_approval_api_accepts_internal_pending_pairs_with_audit(client, wo
         assert pending.decision == 'ACCEPTED'
         assert pending.review_reason == body['reason']
         assert db.query(ResolutionAuditEvent).filter_by(run_id=workflow_run, action='WORKFLOW_GROUP_APPROVAL').count() == 1
+        assert db.get(WorkflowConflict, matching_conflict_id).resolved
+        assert not db.get(WorkflowConflict, foreign_conflict_id).resolved
+    with client.session_factory.begin() as db:
+        # The unrelated conflict is outside this test's publication fixture.
+        db.get(WorkflowConflict, foreign_conflict_id).resolved = True
     state = read(client, workflow_run)
     assert state['decision_revision'] == body['expected_decision_revision'] + 1
     assert not state['blockers']

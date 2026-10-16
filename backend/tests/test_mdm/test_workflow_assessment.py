@@ -12,6 +12,32 @@ def baseline():
                 primary_group=None, subgroup=None, score=0, comparisons={}, field_evidence=[])
 
 
+def test_assessed_decision_snapshot_does_not_load_unused_decide_payload(client, workflow_run, monkeypatch):
+    from masterone.config import get_settings
+    from masterone.mdm.workflow_finalize import decision_snapshot
+    from sqlalchemy import event
+
+    from tests.test_mdm.test_workflow_stages import ready_decisions
+
+    monkeypatch.setattr(get_settings(), 'pair_assessment_auto_enabled', True)
+    ready_decisions(client, workflow_run)
+    with client.session_factory() as db:
+        expected = {p.id: deepcopy(p.assessment) for p in db.query(WorkflowPair).filter_by(run_id=workflow_run)}
+        engine = db.get_bind()
+
+        def reject_unused_payload(_conn, _cursor, statement, parameters, _context, _many):
+            if 'FROM mdm_workflow_artifacts' in statement and 'DECIDE' in parameters:
+                raise AssertionError('Unused DECIDE payload must not be hydrated for an assessed snapshot')
+
+        event.listen(engine, 'before_cursor_execute', reject_unused_payload)
+        try:
+            result = decision_snapshot(db, db.get(ResolutionRun, workflow_run), allow_partial=True)
+        finally:
+            event.remove(engine, 'before_cursor_execute', reject_unused_payload)
+        assert {p['id']: p for p in result['pairs']} == expected
+        assert result['assessment_id'] and result['allow_partial']
+
+
 def test_assessment_reads_filters_counts_and_permissions_share_effective_result(client, workflow_run):
     original = baseline()
     assessed = {**original, 'decision': 'REVIEW', 'reason': 'UNVERIFIED_ID_CONFLICT',

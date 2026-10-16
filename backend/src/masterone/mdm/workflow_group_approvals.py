@@ -1,5 +1,6 @@
 """Exact-member, evidence-bound exceptions for missing direct bridge evidence."""
 from contextlib import closing
+from time import perf_counter
 
 from masterone.mdm.generation_staging import digest
 
@@ -102,15 +103,20 @@ def group_snapshot(db, run, record_ids):
     from masterone.mdm.engine_adapter import engine_context
     with engine_context(profile):
         execution_identity = digest(config_identity(policy_version))
+    from masterone.mdm.workflow_structure import structure_links
+    scoped_structure_links = {p for p in structure_links(db, run.id) if set(p) <= set(record_ids)}
     return {'records': records, 'pairs': [effective_result(p) for p in pairs],
             'overlays': {p.id: p.decision for p in pairs},
             'review_reasons': {p.id: p.review_reason for p in pairs if p.review_reason},
-            'negative_pairs': sorted({tuple(sorted((p.left_record_id, p.right_record_id))) for p in [*links, *legacy_links]}),
+            'negative_pairs': sorted({tuple(sorted((p.left_record_id, p.right_record_id))) for p in [*links, *legacy_links]}
+                                     | scoped_structure_links),
             'assessment_id': assessment.id if assessment else None, 'profile': profile,
             'execution_identity': execution_identity, 'policy_version': policy_version}
 
 
 def approve_group(db, run_id, request, actor):
+    started = perf_counter()
+    performance = {}
     from masterone.mdm.engine_adapter import engine_context
     from masterone.mdm.workflow_service import (
         audit,
@@ -138,6 +144,7 @@ def approve_group(db, run_id, request, actor):
         conflict('DECISIONS_LOCKED')
     ids = sorted(request.record_ids)
     snapshot = group_snapshot(db, run, ids)
+    performance['snapshot_seconds'] = perf_counter() - started
     if bool(request.fingerprint) != bool(request.preview_operation_id):
         conflict('GROUP_REVIEW_RECEIPT_REQUIRED')
     if request.fingerprint:
@@ -161,6 +168,7 @@ def approve_group(db, run_id, request, actor):
             conflict('GROUP_REVIEW_CHANGED')
     with engine_context(snapshot['profile']):
         reason = validate_group(snapshot, ids, review_reason=request.reason.strip())
+    performance['validated_at_seconds'] = perf_counter() - started
     if reason:
         conflict('GROUP_APPROVAL_BLOCKED', reason=reason)
     from masterone.mdm.workflow_assessment_reads import effective_result
@@ -174,13 +182,23 @@ def approve_group(db, run_id, request, actor):
             apply_decision(db, run, pair, 'merge', actor, reason=request.reason)
             snapshot['overlays'][pair.id] = 'ACCEPTED'
             snapshot.setdefault('review_reasons', {})[pair.id] = request.reason.strip()
-    for row in db.query(WorkflowConflict).filter_by(run_id=run_id, resolved=False):
+    conflicts = db.query(WorkflowConflict).filter_by(run_id=run_id, resolved=False)
+    if db.bind.dialect.name == 'postgresql':
+        from sqlalchemy import cast
+        from sqlalchemy.dialects.postgresql import JSONB
+        # Same member-subset test as below, executed before ORM hydration. Large
+        # runs can contain thousands of unrelated bridge conflicts.
+        conflicts = conflicts.filter(
+            WorkflowConflict.payload['reason'].as_string() == 'CLUSTER_BRIDGE_MISSING_EVIDENCE',
+            cast(WorkflowConflict.payload['record_ids'], JSONB).contained_by(ids))
+    for row in conflicts:
         if row.payload.get('reason') == 'CLUSTER_BRIDGE_MISSING_EVIDENCE' and set(row.payload.get('record_ids', [])) <= members:
             row.resolved = True
     op = new_operation(db, run, 'GROUP_APPROVAL', request.request_id, payload, actor)
     op.status, op.stage = 'COMPLETED', 'completed'
     op.result = {'record_ids': ids, 'reason': request.reason.strip(),
-                 'fingerprint': approval_fingerprint(snapshot, ids), 'operation_id': op.id}
+                 'fingerprint': approval_fingerprint(snapshot, ids), 'operation_id': op.id,
+                 'performance': {**performance, 'before_commit_seconds': perf_counter() - started}}
     # Approval affects the effective grouping decisions and invalidates a preview.
     run.decision_revision += 1
     run.workflow_revision += 1

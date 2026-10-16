@@ -1,0 +1,5 @@
+# These frozen benchmark fixtures are byte-hashed against their committed LF form.
+# Keep their checkout bytes stable even when core.autocrlf=true on Windows.
+/benchmark/datasets/masterone_test/records.csv text eol=lf
+/benchmark/datasets/masterone_test/pairs.csv text eol=lf
+backend/encoder/requirements-linux.txt text eol=lf

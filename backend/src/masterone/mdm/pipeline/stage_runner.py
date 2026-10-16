@@ -176,12 +176,13 @@ class StageRunner:
         return result
 
     def run_decide(self, records_raw, policy_version='person-v3', negative_pairs=None, candidate_config=None,
-                   scoring_config=None, store=None, factory=None):
+                   scoring_config=None, store=None, factory=None, integration_candidates=None):
         from masterone.mdm.resolution_service import _compute
         return _compute(records_raw, self.run_id, policy_version, negative_pairs=negative_pairs,
                         candidate_config=candidate_config, scoring_config=scoring_config,
                         scoring_output_dir=self.output_dir, _stream_store=store,
-                        _checkpoint_factory=factory, _attempt_id=self.attempt_id, _stop_after_decide=True)
+                        _checkpoint_factory=factory, _attempt_id=self.attempt_id, _stop_after_decide=True,
+                        integration_candidates=integration_candidates)
 
     def _run_with_profile(self, records_raw, policy_version, negative_pairs, return_data, candidate_config, scoring_config, execution_blocked_pairs):
         if return_data or not self.db_url:

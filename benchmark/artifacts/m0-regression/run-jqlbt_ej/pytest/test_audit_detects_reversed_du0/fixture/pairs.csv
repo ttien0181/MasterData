@@ -1,0 +1,6 @@
+id_a,id_b,is_match,case_type,difficulty,split,hard_negative_type,entity_a,entity_b
+a,b,1,,,test,,,
+b,a,0,,,test,,,
+a,a,0,,,test,,,
+a,missing,1,,,test,,,
+a,b,2,,,test,,,

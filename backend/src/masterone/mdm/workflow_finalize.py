@@ -32,11 +32,17 @@ from masterone.mdm.workflow_service import (
 def decision_snapshot(db, run, *, allow_partial=False):
     run_id = run.id
     revision = run.workflow_revision
-    source = db.query(WorkflowArtifact).filter_by(run_id=run_id, phase='DECIDE').order_by(WorkflowArtifact.created_at.desc()).first()
     records = [record_payload(r) for r in db.query(ResolutionRecord).filter_by(run_id=run_id).order_by(ResolutionRecord.id)]
     from masterone.mdm.workflow_assessment import assessment_snapshot
     assessed = assessment_snapshot(db, run, records)
-    baseline = assessed if assessed else load(db, source.id if source else None, run_id, 'DECIDE')
+    if assessed:
+        # Effective pairs are read below with their current steward overlays.
+        # Release the verified artifact's unused pair list before that heavy read.
+        assessed.pop('pairs', None)
+        baseline = assessed
+    else:
+        source = db.query(WorkflowArtifact).filter_by(run_id=run_id, phase='DECIDE').order_by(WorkflowArtifact.created_at.desc()).first()
+        baseline = load(db, source.id if source else None, run_id, 'DECIDE')
     profile = db.get(ResolutionEngineSelection, run_id)
     if profile is None or (not assessed and (baseline['input_hash'] != digest(records) or baseline['profile_identity'] != digest(profile.configuration))):
         conflict('WORKFLOW_INPUT_CHANGED')
@@ -63,10 +69,16 @@ def decision_snapshot(db, run, *, allow_partial=False):
         snapshot.update(assessment_id=assessed['assessment_id'], source_profile_identity=assessed['source_profile_identity'],
                         source_input_hash=assessed['source_input_hash'])
     snapshot['group_approvals'] = [o.result for o in db.query(WorkflowOperation).filter_by(run_id=run_id, operation_type='GROUP_APPROVAL', status='COMPLETED').order_by(WorkflowOperation.created_at)]
+    for published in db.query(WorkflowOperation).filter_by(run_id=run_id, operation_type='CLUSTER', status='COMPLETED').order_by(WorkflowOperation.created_at):
+        snapshot['group_approvals'].extend(published.result.get('structure_group_approvals', []))
     return snapshot
 
 
 def validate_snapshot_current(db, run, snapshot):
+    if snapshot.get('queue_mode'):
+        from masterone.mdm.workflow_cluster_queue import code_identity
+        if snapshot.get('queue_code_identity')!=code_identity():
+            raise ValueError('QUEUE_CODE_CHANGED')
     from masterone.mdm.pipeline.decision_semantics import load_cannot_links
     from masterone.mdm.workflow_assessment import validate_assessed_snapshot
     if not validate_assessed_snapshot(db, run.id, snapshot):
@@ -85,6 +97,8 @@ def validate_snapshot_current(db, run, snapshot):
 
 def finalize_decisions(db, run_id, request, actor):
     excluded = {'allow_partial'} if not request.allow_partial else set()
+    if request.queue_mode is None:
+        excluded.add('queue_mode')
     excluded |= {key for key in ('preview_operation_id', 'preview_token') if getattr(request, key) is None}
     payload = request.model_dump(exclude=excluded)
     run = enabled_run(db, run_id, actor)
@@ -93,6 +107,19 @@ def finalize_decisions(db, run_id, request, actor):
         return operation_read(prior)
     check_revision(run, payload)
     blockers = completion_blockers(db, run_id)
+    if request.queue_mode:
+        from masterone.config import get_settings
+        if get_settings().workflow_parquet_enabled:
+            conflict('UNSUPPORTED_STORAGE_VERSION')
+        if run.workflow_state not in ('DECIDE_REVIEW','GOLDEN_REVIEW'):
+            conflict('DECISIONS_LOCKED')
+        blockers=[b for b in blockers if b['code'] not in ('PENDING_DECISIONS','CLUSTER_CONFLICT','DECIDE_NOT_READY')]
+        from masterone.mdm.workflow_cluster_queue import queue_summary
+        queue=queue_summary(db,run)
+        if request.queue_mode=='pending' and not queue['pending_count']:
+            conflict('CLUSTER_QUEUE_EMPTY')
+        if request.preview_operation_id or request.preview_token or request.allow_partial:
+            conflict('QUEUE_SCOPE_INVALID')
     if request.allow_partial:
         blockers = [b for b in blockers if b['code'] not in ('PENDING_DECISIONS', 'CLUSTER_CONFLICT')]
     if blockers:
@@ -126,12 +153,12 @@ def partial_cluster_snapshot(snapshot, run_id, *, frequencies=None, index=None):
     return partial_snapshot(snapshot, run_id, compute, index=index)
 
 
-def compute_publication(snapshot, run_id, revision, *, previous_plan=None, virtual_singletons=False):
+def compute_publication(snapshot, run_id, revision, *, previous_plan=None, virtual_singletons=False, frequencies=None):
     from masterone.mdm.cluster_publication import with_singletons
     from masterone.mdm.workflow_cluster_index import SnapshotIndex
     from masterone.mdm.workflow_partial import publication_summary
     from masterone.mdm.workflow_plan_cache import reuse_regions
-    index = SnapshotIndex(snapshot)
+    index = SnapshotIndex(snapshot, frequencies=frequencies)
     frequencies = index.frequencies
     def compute(part, rid):
         part_index = index if part is snapshot else SnapshotIndex(part, frequencies=frequencies)
@@ -197,7 +224,11 @@ def run_cluster(operation_id, factory, progress):
         progress('cluster', 0, len(snapshot['records']))
         started = perf_counter()
         if result is None:
-            result = compute_publication(snapshot, run_id, next_cluster, virtual_singletons=True)
+            if snapshot.get('queue_mode'):
+                from masterone.mdm.workflow_cluster_queue import compute_queue_publication
+                result = compute_queue_publication(snapshot, run_id, next_cluster)
+            else:
+                result = compute_publication(snapshot, run_id, next_cluster, virtual_singletons=True)
             enrich_groups(result, snapshot)
         performance['compute_seconds'] = perf_counter() - started
         # Optional annotations are requested in their own durable worker job
@@ -217,6 +248,9 @@ def run_cluster(operation_id, factory, progress):
         with factory() as db:
             run, _, _ = job_identity(db, operation_id)
             source_payload = prepare_virtual_publication(db, run, result, snapshot, generation_id, repair_metadata)
+            if op.payload.get('structure_intent'):
+                from masterone.mdm.workflow_structure import validate_publication
+                validate_publication(result, op.payload['structure_intent'])
             planned_generation = SimpleNamespace(revision=next_cluster)
             result['clusters'] = plan_entity_ids(db, run, planned_generation, result['clusters'])
         source_id = seal(factory, run_id, 'SINGLETON_SOURCE', source_payload)
@@ -275,6 +309,11 @@ def run_cluster(operation_id, factory, progress):
                 from masterone.mdm.golden_service import unresolved_extra_fields, validate_selections
                 validate_selections(db, run, row, row.selections)
                 row.confirmed = not unresolved_extra_fields(db, row)
+            if snapshot.get('queue_mode') and len(ancestors)==1:
+                previous=next(iter(ancestors.values()))
+                if (previous.confirmed and set(previous.payload['member_record_ids'])==set(cluster['member_record_ids'])
+                        and previous.selections==row.selections and not row.payload.get('pending_selections')):
+                    row.confirmed=True
             from masterone.mdm.models import ResolutionEntity
             from masterone.mdm.workflow_entities import selected_entity_version
             selected_entity_version(db, db.get(ResolutionEntity, row.payload['entity_id']), generation, row, actor=op.actor_user_id)

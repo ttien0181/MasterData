@@ -2,7 +2,6 @@
 from copy import deepcopy
 
 import pytest
-
 from masterone.mdm.pipeline.pair_assessment import assess_pair
 from masterone.mdm.workflow_cluster_preview import pending_regions
 from masterone.mdm.workflow_models import WorkflowPair
@@ -69,6 +68,9 @@ def test_api_summary_filter_and_workflow_blockers_use_effective_review_routing(c
                         'primary_group': 'C', 'subgroup': 'C_NO_VALID_IDENTITY_ANCHOR'}
             assessed = {**baseline, 'decision': assessment, 'triage_status': assessment} if assessment else None
             db.add(WorkflowPair(id=pid, run_id=workflow_run, baseline=baseline, assessment=assessed, decision=saved))
+        from masterone.mdm.models import ResolutionRun
+        # Keep the fixture's direct writes consistent with revision-addressed reads.
+        db.get(ResolutionRun, workflow_run).decision_revision += 1
     required = client.get(url + '/pairs?resolution=REQUIRED').json()
     assert {p['pair_id'] for p in required['items']} == {'explicit-wait', 'review', 'assessed-review'}
     summary = client.get(url + '/pairs/summary').json()
@@ -85,6 +87,7 @@ def test_api_summary_filter_and_workflow_blockers_use_effective_review_routing(c
     with client.session_factory.begin() as db:
         db.query(WorkflowPair).filter(WorkflowPair.run_id == workflow_run,
             WorkflowPair.id.in_(['explicit-wait', 'review', 'assessed-review'])).update({'decision': 'REJECTED'})
+        db.get(ResolutionRun, workflow_run).decision_revision += 1
     state = client.get(url).json()
     assert not any(b['code'] == 'PENDING_DECISIONS' for b in state['blockers'])
     assert 'finalize-decisions' in state['allowed_actions']

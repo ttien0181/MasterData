@@ -27,3 +27,10 @@ eval/
 .dockerignore
 Dockerfile
 docker-compose.yml
+
+# Development-only encoder assets and experiment scripts
+backend/encoder/
+scripts/
+.tmp*/
+test_algorithm/
+*.mp4

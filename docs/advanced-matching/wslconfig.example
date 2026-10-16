@@ -1,0 +1,9 @@
+# Global WSL2 limits for the measured 32 GB / 16 logical CPU development machine.
+# Merge with %UserProfile%\.wslconfig. Applies after a WSL restart.
+[wsl2]
+memory=14GB
+processors=6
+swap=2GB
+
+[experimental]
+autoMemoryReclaim=gradual

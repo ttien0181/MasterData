@@ -225,6 +225,7 @@ backend/data/export-artifacts/
 !docs/benchmark/pair-automation-stage4-20261013.md
 
 # Local patch exports and SQLite scratch databases
+/backend/encoder/wheels/*.whl
 *.patch
 *.diff
 *.sqlite
@@ -244,4 +245,15 @@ backend/data/export-artifacts/
 /docs/superpowers/specs/2026-10-13-*.md
 /docs/benchmark/*-20261013*.md
 /docs/benchmark/*.json
+!docs/advanced-matching/FULL10K_TC1_TC3_20261016.vi.md
+!docs/artifact-retention.md
 /docs/benchmark/cluster-quality-scale-20261013-baseline.md
+
+# Disposable local pytest/review workspaces; never track machine-specific pointers.
+/.pytest-tmp*/
+/.tmp-review*/
+
+# Preserve documentation for the workspace cleanup and the original template.
+!docs/project-cleanup.md
+!docs/archive/README_boilerplate.md
+!docs/ONEMASTER_OPTIMIZATION_REPORT.md

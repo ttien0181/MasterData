@@ -19,6 +19,7 @@ def build_profile(rows):
         sources.update([row['source_system']])
         raw = row.get('raw_fields') or {}
         schema.update(raw)
+        schema.update(row.get('extra_fields') or {})
         present.update(field for field in PROFILE_FIELDS
                        if raw.get(field) is not None and str(raw[field]).strip())
         quality.update(f'{field}:{value}' for field, value in
@@ -36,13 +37,15 @@ def record_read(row):
             'quality_flags': row.quality_flags, 'extra_fields': row.extra_fields}
 
 
-def data_read(db, run_id, limit, cursor, offset=None):
+def data_read(db, run_id, limit, cursor, offset=None, *, include_profile=True, include_records=True):
     from masterone.mdm.workflow_artifacts import load
     from masterone.mdm.workflow_models import WorkflowArtifact
     from masterone.mdm.workflow_review import paginate
 
     query = db.query(ResolutionRecord).filter_by(run_id=run_id)
-    if cursor and offset is None:
+    if not include_records:
+        page = {'items': [], 'total': query.count(), 'offset': 0, 'next_cursor': None}
+    elif cursor and offset is None:
         page = paginate(query, ResolutionRecord.id, limit, cursor, record_read)
         page['offset'] = query.filter(ResolutionRecord.id <= cursor).count()
     else:
@@ -53,8 +56,10 @@ def data_read(db, run_id, limit, cursor, offset=None):
                 'next_cursor': rows[limit - 1].id if len(rows) > limit else None}
     files = db.query(ResolutionFile).filter_by(run_id=run_id).order_by(ResolutionFile.filename).all()
     # Avoid transferring the full input snapshot to render ten rows.
-    artifact = db.query(WorkflowArtifact.id, WorkflowArtifact.content_hash).filter_by(
-        run_id=run_id, phase='PREPARE').order_by(WorkflowArtifact.created_at.desc()).first()
+    artifact = None
+    if include_profile:
+        artifact = db.query(WorkflowArtifact.id, WorkflowArtifact.content_hash).filter_by(
+            run_id=run_id, phase='PREPARE').order_by(WorkflowArtifact.created_at.desc()).first()
     profile = None
     if artifact:
         try:
@@ -76,5 +81,12 @@ def data_read(db, run_id, limit, cursor, offset=None):
             if records is None:
                 records = (record_read(row) for row in query.yield_per(512))
             profile = {**profile, **build_profile(records)}
+    elif include_profile:
+        # Uploaded records are already normalized during ingestion. The analysis
+        # must work before PREPARE finishes, without materializing the input in RAM.
+        columns = query.with_entities(ResolutionRecord.source_system, ResolutionRecord.raw_fields,
+                                      ResolutionRecord.normalized_fields, ResolutionRecord.quality_flags,
+                                      ResolutionRecord.extra_fields)
+        profile = build_profile(dict(row._mapping) for row in columns.yield_per(512))
     return {'files': [{'filename': f.filename, 'row_count': f.row_count, 'sha256': f.sha256} for f in files],
             'schema': profile['schema'] if profile else [], 'profile': profile, 'samples': page}

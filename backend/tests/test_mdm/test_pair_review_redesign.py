@@ -82,6 +82,32 @@ def test_summary_counts_review_veto_as_blocked_accept(client, workflow_run):
     assert summary['manual_available'] == 11
 
 
+def test_summary_deduplicates_negative_edges_without_per_pair_subqueries(client, workflow_run):
+    from sqlalchemy import event
+    url = seed_pairs(client, workflow_run)
+    with client.session_factory.begin() as db:
+        pair = db.get(WorkflowPair, 'pair-0000')
+        left, right = pair.baseline['left_id'], pair.baseline['right_id']
+        for a, b, active in [(left, right, True), (right, left, True), (left, right, False)]:
+            db.add(ResolutionNegativeEdge(run_id=workflow_run, left_record_id=a,
+                right_record_id=b, active=active, created_by='SYSTEM', reason='TEST'))
+    statements = []
+    engine = client.session_factory.kw['bind']
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        if 'GROUP BY' in statement:
+            statements.append(statement)
+    event.listen(engine, 'before_cursor_execute', capture)
+    try:
+        summary = client.get(url + '/pairs/summary').json()
+    finally:
+        event.remove(engine, 'before_cursor_execute', capture)
+    assert summary['total'] == 13
+    assert summary['blocked'] == 13
+    assert summary['manual_available'] == 0
+    # A correlated edge lookup for every candidate caused the large-run stall.
+    assert statements and all('EXISTS' not in sql.upper() for sql in statements)
+
+
 def test_bulk_accept_uses_manual_permission_and_preserves_resolved_pairs(client, workflow_run):
     url = seed_pairs(client, workflow_run)
     with client.session_factory.begin() as db:

@@ -1,11 +1,15 @@
 """Optional address enrichment after publication, under the existing durable queue."""
 from masterone.mdm.engine_adapter import engine_context
 from masterone.mdm.job_queue import OwnershipLostError
-from masterone.mdm.workflow_artifacts import load, seal
+from masterone.mdm.workflow_artifacts import iter_list, logical_artifact_id, read_value, seal
 from masterone.mdm.workflow_cluster_reads import current_generation
 from masterone.mdm.workflow_finalize import validate_snapshot_current
 from masterone.mdm.workflow_jobs import finish, job_identity
 from masterone.mdm.workflow_models import WorkflowCluster
+
+
+class _ArtifactReadError(ValueError):
+    """Integrity/storage failures must not become optional provider failures."""
 
 
 def run_group_annotations(operation_id, factory, progress):
@@ -18,17 +22,31 @@ def run_group_annotations(operation_id, factory, progress):
             raise ValueError('WORKFLOW_CLUSTER_REVISION_CHANGED')
         run_id, generation_id, revision, state = run.id, generation.id, run.workflow_revision, run.workflow_state
         # Locate the publication's actual decision receipt, not an arbitrary latest attempt.
-        context = load(db, generation.artifact_id, run_id, 'CLUSTER')
-        from masterone.mdm.workflow_resolution import resolution_snapshot
-        snapshot = resolution_snapshot(db, run_id, context)
+        cluster_artifact_id = generation.artifact_id
+        context = read_value(db, cluster_artifact_id, run_id, 'CLUSTER', [])
+        snapshot_id = logical_artifact_id(db, run_id, 'DECISION_SNAPSHOT', context['workflow_context']['snapshot_hash'])
+        snapshot = dict(read_value(db, snapshot_id, run_id, 'DECISION_SNAPSHOT', []))
+        # Freshness checks need metadata, records and negative links, not a second pair universe.
+        snapshot['records'] = list(iter_list(db, snapshot_id, run_id, 'DECISION_SNAPSHOT', ['records']))
+        snapshot['negative_pairs'] = list(iter_list(db, snapshot_id, run_id, 'DECISION_SNAPSHOT', ['negative_pairs']))
+        for key in ('pairs', 'overlays', 'review_reasons', 'known_conflicts', 'group_approvals'):
+            snapshot.pop(key, None)
         validate_snapshot_current(db, run, snapshot)
-    progress('annotate-groups', 0, len(context['pairs']))
+    pair_count = next((part['count'] for part in context.get('__workflow_parts__', [])
+                       if part['path'] == ['pairs']), len(context['pairs']))
+    progress('annotate-groups', 0, pair_count)
     records = {r['id']: r for r in snapshot['records']}
-    with engine_context(snapshot['profile']):
+    with factory() as pair_db, engine_context(snapshot['profile']):
+        def verified_pairs():
+            try:
+                yield from iter_list(pair_db, cluster_artifact_id, run_id, 'CLUSTER', ['pairs'])
+            except Exception as error:
+                raise _ArtifactReadError('WORKFLOW_ARTIFACT_READ_FAILED') from error
+
         try:
-            semantic = run_annotations(context['pairs'], lambda ids: {rid: records[rid] for rid in ids if rid in records},
+            semantic = run_annotations(verified_pairs(), lambda ids: {rid: records[rid] for rid in ids if rid in records},
                 run_id=run_id, factory=factory, parallel=factory.kw['bind'].dialect.name == 'postgresql')
-        except OwnershipLostError:
+        except (OwnershipLostError, _ArtifactReadError):
             raise
         except Exception as error:
             # Optional failure is reported without provider text or customer data.

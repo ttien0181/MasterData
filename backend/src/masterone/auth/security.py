@@ -81,6 +81,7 @@ _AUDIT_CAPABILITIES = _READ_CAPABILITIES | frozenset({"read_audit"})
 _STEWARD_CAPABILITIES = _AUDIT_CAPABILITIES | frozenset({
     "create_run", "start_run", "approve_pair", "reject_pair", "edit_golden",
     "explain", "export_data", "manage_run",
+    "learn_match_profile", "apply_match_profile", "manage_entity_structure",
 })
 ROLE_CAPABILITIES: dict[str, frozenset[str]] = {
     "VIEWER": _READ_CAPABILITIES,

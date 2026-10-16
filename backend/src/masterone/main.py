@@ -11,6 +11,7 @@ from masterone.api.auth import router as auth_router
 from masterone.api.mdm_resolution import router as mdm_resolution_router
 from masterone.api.mdm_resolution import ws_router as mdm_resolution_ws_router
 from masterone.api.mdm_runs import router as mdm_runs_router
+from masterone.api.mdm_matching_foundation import router as matching_foundation_router
 from masterone.api.mdm_uploads import router as mdm_uploads_router
 from masterone.api.mdm_workflow import router as workflow_router
 from masterone.api.routes import router
@@ -52,7 +53,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="AI20K Agent",
-    description="AI Agent built with LangGraph",
+    description="MasterOne record matching and human review",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -77,6 +78,7 @@ app.add_middleware(
 
 app.include_router(router, prefix="/api/v1")
 app.include_router(mdm_runs_router, prefix="/api/v1")
+app.include_router(matching_foundation_router, prefix="/api/v1")
 app.include_router(workflow_router, prefix="/api/v1")
 app.include_router(mdm_uploads_router, prefix="/api/v1")
 app.include_router(mdm_resolution_router, prefix="/api/v1")

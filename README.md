@@ -11,6 +11,9 @@ Xem [sơ đồ components và luồng dữ liệu](docs/architecture_diagram.md)
 
 ## Chạy local
 
+Quản lý dung lượng benchmark và dọn file tạm: [hướng dẫn artifacts](docs/artifact-retention.md).
+Các file lịch sử đã được sắp xếp lại: [nhật ký dọn workspace](docs/project-cleanup.md).
+
 Cần [uv](https://docs.astral.sh/uv/) (quản lý Python 3.11+, không cần cài Python toàn hệ thống), Node.js 22+ và npm. Mở PowerShell ở **thư mục gốc repo**:
 
 ```powershell

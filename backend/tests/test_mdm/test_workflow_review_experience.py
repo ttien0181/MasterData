@@ -58,6 +58,9 @@ def test_required_review_counts_groups_and_filter_agree(client, workflow_run):
             db.add(WorkflowPair(id=identifier, run_id=workflow_run, decision=decision,
                 baseline={**base, 'id': identifier, 'decision': baseline, 'triage_status': triage,
                           'primary_group': 'A', 'subgroup': 'A1_NAME_PHONE'}))
+        from masterone.mdm.models import ResolutionRun
+        # The production publisher advances this revision when replacing the universe.
+        db.get(ResolutionRun, workflow_run).decision_revision += 1
     summary = client.get(url + '/pairs/summary').json()
     assert summary['needs_review'] == 3
     assert sum(group['pending'] for group in summary['groups']) == 3

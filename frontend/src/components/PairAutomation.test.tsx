@@ -40,11 +40,11 @@ it('can stop an active automation worker without claiming saved decisions are un
 });
 it('distinguishes automatic acceptance from a human review',()=>{
  const p={pair_id:'auto-p',decision:'ACCEPTED',revision:1,score_unit:'rule',baseline:{id:'auto-p',left_id:'a',right_id:'b',decision:'MERGEABLE',score:12,field_evidence:[]},eligibility:{manual_allowed:true,auto_allowed:false,blocked_reasons:[]},automation:{source:'AUTOMATIC',operation_id:'auto-op',certificate_hash:'a',component_fingerprint:'b',cohort:'c'}};
- render(<table><tbody><PairReviewRow pair={p} selected={false} toggle={vi.fn()} canWrite={true} busy={false} decide={vi.fn()} compare={vi.fn()} explain={vi.fn()}/></tbody></table>);
+ render(<table><tbody><PairReviewRow pair={p} selected={false} toggle={vi.fn()} canWrite={true} busy={false} decide={vi.fn()} compare={vi.fn()}/></tbody></table>);
  expect(screen.getByText('Đã chấp nhận tự động')).toBeInTheDocument();
 });
 it('does not describe a repaired rejection as currently accepted automatically',()=>{
  const p={pair_id:'repaired-p',decision:'REJECTED',revision:2,score_unit:'rule',baseline:{id:'repaired-p',left_id:'a',right_id:'b',decision:'MERGEABLE',score:12,field_evidence:[]},eligibility:{manual_allowed:true,auto_allowed:false,blocked_reasons:[]},automation:{source:'AUTOMATIC',operation_id:'old-auto',certificate_hash:'a',component_fingerprint:'b',cohort:'c'}};
- render(<table><tbody><PairReviewRow pair={p} selected={false} toggle={vi.fn()} canWrite={true} busy={false} decide={vi.fn()} compare={vi.fn()} explain={vi.fn()}/></tbody></table>);
+ render(<table><tbody><PairReviewRow pair={p} selected={false} toggle={vi.fn()} canWrite={true} busy={false} decide={vi.fn()} compare={vi.fn()}/></tbody></table>);
  expect(screen.queryByText('Đã chấp nhận tự động')).not.toBeInTheDocument();
 });

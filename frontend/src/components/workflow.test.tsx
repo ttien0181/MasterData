@@ -16,6 +16,24 @@ vi.mock('@/lib/workflowApi', async importOriginal => ({ ...await importOriginal<
 vi.mock('@/lib/api', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/api')>(), getResolutionRuns: vi.fn().mockResolvedValue({ items: [], total: 0 }), getUploadSessions: vi.fn().mockResolvedValue({ items: [] }) }));
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 const w: WorkflowRead = { run_id: 'r', workflow_version: 2, workflow_state: 'DECIDE_REVIEW', workflow_revision: 3, decision_revision: 2, cluster_revision: 0, golden_revision: 0, counts: { records: { value: 3, unit: 'records' } }, allowed_actions: ['decide-pair', 'bulk-decisions', 'finalize-decisions'], blockers: [], active_operation: null, retryable_operation: null };
+
+it('shows queued work without inventing progress when the total is unknown', async () => {
+  vi.mocked(api.getWorkflow).mockResolvedValue({ ...w, workflow_state: 'DATA_PREPARING', active_operation: {
+    operation_id: 'queued-prepare', run_id: 'r', operation_type: 'PREPARE', status: 'QUEUED',
+    stage: 'queued', progress: {}, error_code: null, result: {},
+  } });
+  render(<SessionCacheProvider userId="test"><SessionWorkspace runId="r"><span>Workspace</span></SessionWorkspace></SessionCacheProvider>);
+  await screen.findByText('0% · Đang chờ xử lý');
+  expect(screen.getByRole('status')).not.toHaveTextContent('0 / 0');
+  expect(screen.getByRole('progressbar', { name: 'Đang tải dữ liệu' })).toHaveAttribute('value', '0');
+});
+
+it('shows incomplete embedding coverage and automation disabled in degraded runs', async () => {
+  vi.mocked(api.getWorkflow).mockResolvedValue({...w, matching_agents:{status:'DEGRADED',warning:'Coverage incomplete',coverage:{expected_pairs:2,embedding_pairs:0},artifact_id:'evidence',automation_allowed:false}});
+  render(<SessionCacheProvider userId="test"><SessionWorkspace runId="r"><span>Workspace</span></SessionWorkspace></SessionCacheProvider>);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Đối chiếu tên và địa chỉ chưa đầy đủ');
+  expect(screen.getByRole('alert')).toHaveTextContent('tự động gộp đã bị tắt');
+});
 const golden: GoldenRead = { cluster_id: 'c', cluster_revision: 1, golden_revision: 2, revision: 0, status: 'DRAFT', fields: { name: { value: 'Server', provenance: 'SURVIVORSHIP' }, phone: { value: '090', values: [{ value: '090' }, { value: '091' }] } }, alternatives: { name: [{ source_record_id: 'member', source_system: 'CRM', value: 'Source', auto_rule_available: true }] }, selections: {} };
 function workspace(ui: React.ReactNode, workflow = w) { return render(<SessionCacheProvider userId="test"><WorkflowContext.Provider value={{ workflow, refresh: vi.fn().mockResolvedValue(undefined) }}>{ui}</WorkflowContext.Provider></SessionCacheProvider>); }
 
@@ -60,16 +78,18 @@ it('hub starts at overview and performs no workflow computation', async () => { 
 it('shows insufficient evidence and server permissions, only explicit finalize creates groups', async () => {
   vi.mocked(api.previewClusters).mockResolvedValue({operation_id:'preview',run_id:'r',operation_type:'CLUSTER_PREVIEW',status:'COMPLETED',stage:'complete',progress:{},error_code:null,result:{preview_token:'token',publication:{publication_status:'COMPLETE',covered_records:3,total_records:3,multi_record_groups:0,singletons:3,unresolved_records:0,clusters:3},groups:[{member_record_ids:['a'],singleton:true,status:'DRAFT'}],conflicts:[],conflict_count:0,pending_regions:[],source_decision_revision:2,source_assessment_id:null,allow_partial:false}});
   workspace(<DecisionWorkspace />);
-  expect(await screen.findByText('Giữ riêng tạm thời; không cần duyệt để hoàn tất.')).toBeInTheDocument();
+  expect(await screen.findByText('Giữ riêng tạm thời')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Accept cặp p' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Deny cặp p' })).toHaveTextContent(/^Deny$/);
+  expect(screen.queryByRole('button', { name: 'Hoãn cặp p' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Không gộp cặp p' })).not.toBeInTheDocument();
   expect(api.finalizeDecisions).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Hoàn tất phân loại và tạo nhóm' }));
-  await screen.findByRole('table',{name:'Nhóm dự kiến'});expect(api.finalizeDecisions).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Xác nhận tạo nhóm'}));
-  await waitFor(() => expect(api.finalizeDecisions).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole('link',{name:'Sang Bước 3'})).toHaveAttribute('href','/app/sessions/r/clusters');
+  expect(api.finalizeDecisions).not.toHaveBeenCalled();
 });
-it('pending/defer blockers disable finalize, queued cluster never reads membership', () => {
+it('pending/defer does not block navigation, queued cluster never reads unpublished membership', () => {
   const view = workspace(<DecisionWorkspace />, { ...w, allowed_actions: ['decide-pair'], blockers: [{ code: 'PENDING_DECISIONS', count: 1 }] });
-  expect(screen.getByRole('button', { name: 'Hoàn tất phân loại và tạo nhóm' })).toBeDisabled(); view.unmount();
+  expect(screen.getByRole('link', { name: 'Sang Bước 3' })).toHaveAttribute('href','/app/sessions/r/clusters'); view.unmount();
   workspace(<ClusterWorkspace />, { ...w, workflow_state: 'CLUSTER_RUNNING' });
   expect(api.getClusters).not.toHaveBeenCalled();
 });
@@ -119,7 +139,7 @@ it('zero candidate still exposes explicit finalize without guessing an empty res
   vi.mocked(api.getPairs).mockResolvedValue({ items: [], total: 0, next_cursor: null });
   workspace(<DecisionWorkspace />);
   expect(await screen.findByText(/Phiên không có candidate vẫn cần/)).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Hoàn tất phân loại và tạo nhóm' })).toBeEnabled();
+  expect(screen.getByRole('link', { name: 'Sang Bước 3' })).toHaveAttribute('href','/app/sessions/r/clusters');
   expect(api.finalizeDecisions).not.toHaveBeenCalled();
 });
 it('extra fields expose source choices and no manual/auto ranking invented in FE', () => {

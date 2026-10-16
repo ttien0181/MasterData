@@ -1,13 +1,17 @@
 export const number = (value: number) => value.toLocaleString('vi-VN');
 export const fieldLabels: Record<string,string> = { name:'Họ tên', phone:'Điện thoại', email:'Email', address:'Địa chỉ', dob:'Ngày sinh', government_id:'Giấy tờ định danh' };
 export const groups: Record<string,{title:string;description:string;tone:string}> = {
-  A:{title:'Có điểm neo nhận dạng',description:'Có tên phù hợp cùng thông tin liên hệ hoặc giấy tờ khớp. Cần đối chiếu trước khi Accept.',tone:'green'},
-  C:{title:'Cần bổ sung bằng chứng',description:'Có tín hiệu liên hệ hoặc định danh nhưng thiếu thông tin đối chiếu cần thiết.',tone:'amber'},
+  B:{title:'Cần đối chiếu',description:'Có bằng chứng cần xác minh hoặc mâu thuẫn mềm.',tone:'amber'},
+  A:{title:'Đề xuất khớp',description:'Có tên phù hợp cùng thông tin liên hệ hoặc giấy tờ khớp. Cần đối chiếu trước khi Accept.',tone:'green'},
+  C:{title:'Chưa đủ căn cứ',description:'Có tín hiệu liên hệ hoặc định danh nhưng thiếu thông tin đối chiếu cần thiết.',tone:'amber'},
   D:{title:'Có thông tin mâu thuẫn',description:'Có trường mâu thuẫn. Duyệt thủ công và các ràng buộc vẫn được kiểm tra.',tone:'red'},
   BLOCKED:{title:'Bị ràng buộc chặn',description:'Cannot-link hoặc mâu thuẫn đã xác minh. Mô hình và LLM không thể cấp quyền Accept.',tone:'red'},
   UNCLASSIFIED:{title:'Chưa phân nhóm',description:'Chưa đến bước phân nhóm vì thiếu bằng chứng hoặc bị ràng buộc chặn. Xem lý do từng cặp.',tone:'neutral'},
 };
 export const subgroups: Record<string,string> = {
+  A_MULTI_SIGNAL:'Nhiều tín hiệu hỗ trợ',A_CONTACT:'Liên hệ phù hợp',A_IDENTIFIER:'Định danh phù hợp',A_PROPOSED_MATCH:'Đề xuất khớp',
+  B_AGENT_DISAGREEMENT:'Agent bất đồng',B_SOFT_CONFLICT:'Mâu thuẫn cần đối chiếu',B_RECOVERED_SUPPORT:'Bằng chứng bổ sung',B_PARTIAL_EVIDENCE:'Cần xác minh thêm',
+  C_MISSING_DATA:'Dữ liệu thiếu hoặc không hợp lệ',C_NO_ANCHOR:'Chưa có điểm neo',
   C_REVIEW_NAME_FULL_DOB:'Tên và ngày sinh đầy đủ',C_REVIEW_FULL_DOB_DETAIL_ADDRESS:'Ngày sinh và địa chỉ cụ thể',
   C_REVIEW_NAME_UNVERIFIED_ID:'Tên và giấy tờ chưa xác minh',C_REVIEW_NAME_NEAR_CONTACT_DOB:'Tên, liên hệ gần khớp và ngày sinh',C_REVIEW_NAME_NEAR_CONTACT_ADDRESS:'Tên, liên hệ gần khớp và địa chỉ',
   A1_NAME_PHONE:'Tên và điện thoại',A2_NAME_EMAIL:'Tên và email',A3_NAME_PHONE_DOB:'Tên, điện thoại và ngày sinh',A3_NAME_GOV_ID:'Tên và giấy tờ định danh',

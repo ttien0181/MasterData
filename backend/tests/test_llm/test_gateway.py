@@ -77,8 +77,85 @@ def openrouter_ok(output):
     }).encode()
 
 
+def test_gemini_parse_skips_thought_and_joins_output_parts():
+    from masterone.llm.gateway import _parse
+    raw = json.dumps(EXPLANATION_OUTPUT, ensure_ascii=False)
+    body = {'candidates': [{'finishReason': 'STOP', 'content': {'parts': [
+        {'thought': True, 'text': 'internal reasoning is not the answer'},
+        {'text': raw[:30]}, {'text': raw[30:]},
+    ]}}], 'usageMetadata': {'promptTokenCount': 4, 'candidatesTokenCount': 8, 'thoughtsTokenCount': 3}}
+    output, usage, _ = _parse('gemini', body, 'test-model')
+    assert output == EXPLANATION_OUTPUT
+    assert usage == {'input': 4, 'output': 11}
+
+
+def test_predispatch_denial_can_resume_without_replaying_a_dispatched_request(llm_factory, llm_settings, monkeypatch):
+    from masterone.llm.policy import PolicyEnforcer
+
+    transport = ScriptedTransport(monkeypatch, [gemini_ok(EXPLANATION_OUTPUT)])
+    context = run_context(llm_factory)
+    original = PolicyEnforcer.attempt
+
+    def blocked(*args, **kwargs):
+        raise PolicyDenied('CIRCUIT_OPEN')
+
+    monkeypatch.setattr(PolicyEnforcer, 'attempt', blocked)
+    with pytest.raises(PolicyDenied, match='CIRCUIT_OPEN'):
+        generate('EXPLANATION', EXPLANATION_PAYLOAD, llm_settings, context=context, factory=llm_factory)
+    assert not transport.requests
+    with llm_factory() as db:
+        row = db.query(LLMReservation).one()
+        assert row.state == 'RESERVED' and row.calls == 0
+        assert db.query(LLMRequest).count() == 0
+
+    monkeypatch.setattr(PolicyEnforcer, 'attempt', original)
+    result = generate('EXPLANATION', EXPLANATION_PAYLOAD, llm_settings, context=context, factory=llm_factory)
+    assert result['output'] == EXPLANATION_OUTPUT
+    assert len(transport.requests) == 1
+    with llm_factory() as db:
+        row = db.query(LLMReservation).one()
+        row.state = 'DISPATCHING'  # Simulate an interrupted, already dispatched request.
+        db.commit()
+    with pytest.raises(PolicyDenied, match='REQUEST_DISPATCHING'):
+        generate('EXPLANATION', EXPLANATION_PAYLOAD, llm_settings, context=context, factory=llm_factory)
+    assert len(transport.requests) == 1
+
+
+def test_two_reservers_of_an_undispatched_request_cannot_dispatch_twice(llm_factory, llm_settings):
+    from masterone.llm.policy import PolicyEnforcer
+
+    context = run_context(llm_factory)
+    gate = PolicyEnforcer(llm_settings, llm_factory)
+    args = ('EXPLANATION', EXPLANATION_PAYLOAD, context, 'test-prompt', 'test-schema')
+    first, _ = gate.reserve(*args)
+    second, _ = gate.reserve(*args)
+    assert first == second
+    dispatch = (first, 'EXPLANATION', 'gemini', EXPLANATION_PAYLOAD, context, 'test-prompt', 'test-schema')
+    gate.attempt(*dispatch)
+    with pytest.raises(PolicyDenied, match='REQUEST_DISPATCHING'):
+        gate.attempt(*dispatch)
+    with llm_factory() as db:
+        assert db.query(LLMRequest).count() == 1
+        assert db.query(LLMReservation).one().calls == 1
+
+
 def quota():
     return HTTPError(GEMINI_URL, 429, "RESOURCE_EXHAUSTED", {}, None)
+
+
+def test_per_purpose_run_caps_do_not_consume_other_purposes_allowance(llm_factory, llm_settings, monkeypatch):
+    settings = llm_settings.model_copy(update={
+        'llm_max_explanation_calls_per_run': 1, 'llm_max_semantic_calls_per_run': 1})
+    transport = ScriptedTransport(monkeypatch, [gemini_ok(EXPLANATION_OUTPUT), gemini_ok(ADDRESS_OUTPUT)])
+    context = run_context(llm_factory)
+    generate('EXPLANATION', EXPLANATION_PAYLOAD, settings, context=context, factory=llm_factory)
+    generate('ADDRESS_COMPARE', ADDRESS_PAYLOAD, settings, context=context, factory=llm_factory)
+    another = [{**ADDRESS_PAYLOAD[0], 'pair_id': 'p2'}]
+    with pytest.raises(PolicyDenied, match='CALL_CAP'):
+        generate('ADDRESS_COMPARE', another, settings, context=context, factory=llm_factory)
+    assert len(transport.requests) == 2
+    with llm_factory() as db:
+        assert db.query(LLMRequest).count() == 2
 
 
 def test_gemini_request_uses_documented_json_output_fields(llm_factory, llm_settings, monkeypatch):
@@ -285,6 +362,7 @@ def test_rate_limit_that_persists_through_all_retries_becomes_quota_and_falls_ba
 
 def test_daily_quota_is_not_retried_and_falls_back_at_once(llm_factory, llm_settings, monkeypatch):
     import io
+
     from masterone.mdm.models import LLMPolicyControl
     sleeps = []
     monkeypatch.setattr("masterone.llm.gateway.time.sleep", lambda seconds: sleeps.append(seconds))

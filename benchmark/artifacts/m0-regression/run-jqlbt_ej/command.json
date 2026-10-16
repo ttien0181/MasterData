@@ -1,0 +1,16 @@
+[
+  "C:\\VinUni\\Du an nhom\\P-119\\.venv\\Scripts\\python.exe",
+  "-B",
+  "-X",
+  "utf8",
+  "-m",
+  "pytest",
+  "benchmark/tests",
+  "-p",
+  "pytest_asyncio.plugin",
+  "-p",
+  "no:cacheprovider",
+  "-q",
+  "--tb=short",
+  "--basetemp=C:\\VinUni\\Du an nhom\\P-119\\benchmark\\artifacts\\m0-regression\\run-jqlbt_ej\\pytest"
+]

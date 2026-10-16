@@ -25,6 +25,8 @@ def runtime_gate(db,run_id,snapshot):
     _,gate=load_certificate(settings,snapshot['profile'],{r['source_system'] for r in snapshot['records']},
         db.get(ResolutionRun,run_id).owner_user_id)
     gate['reasons']=list(gate['reasons'])
+    from masterone.mdm.matching_agents.workflow_agents import latest_result
+    if latest_result(db, run_id):gate['reasons'].append('MATCHING_AGENTS_AUTOMATION_DISABLED_M2A')
     if not settings.pair_automation_enabled:gate['reasons'].append('AUTOMATION_DISABLED')
     if stopped(db,run_id):gate['reasons'].append('AUTOMATION_STOPPED')
     gate['eligible']=not gate['reasons']

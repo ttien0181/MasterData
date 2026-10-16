@@ -10,6 +10,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from masterone.llm.pair_advice_contract import SCHEMA as PAIR_SCHEMA
 from masterone.llm.policy import (
     PROVIDER_SKIP_CODES,
     PROVIDERS,
@@ -22,7 +23,7 @@ from masterone.llm.policy import (
 )
 
 PURPOSES = ("ADDRESS_COMPARE", "EXPLANATION", "PAIR_ASSESSMENT")
-PROMPT_VERSION = {"ADDRESS_COMPARE": "address-v3", "EXPLANATION": "explanation-v3", 'PAIR_ASSESSMENT': 'pair-advice-v1'}
+PROMPT_VERSION = {"ADDRESS_COMPARE": "address-v3", "EXPLANATION": "explanation-v4", 'PAIR_ASSESSMENT': 'pair-advice-v2'}
 SCHEMA_VERSION = {"ADDRESS_COMPARE": "address-response-v3", "EXPLANATION": "explanation-response-v3", 'PAIR_ASSESSMENT': 'pair-advice-response-v1'}
 MAX_RESPONSE_BYTES = 64 * 1024
 RETRYABLE_HTTP = frozenset({500, 502, 503, 504})
@@ -51,19 +52,26 @@ EXPLANATION_SCHEMA = {
     "required": ["summary_vi", "attention_fields", "limitations"],
     "additionalProperties": False,
 }
-from masterone.llm.pair_advice_contract import SCHEMA as PAIR_SCHEMA
 SCHEMAS = {"ADDRESS_COMPARE": ADDRESS_SCHEMA, "EXPLANATION": EXPLANATION_SCHEMA, 'PAIR_ASSESSMENT': PAIR_SCHEMA}
 INSTRUCTIONS = {
     'PAIR_ASSESSMENT': (
         'Đánh giá khả năng hai bản ghi thuộc cùng người, chỉ dựa trên bằng chứng được cung cấp. '
-        'Trả LIKELY_SAME_PERSON / LIKELY_DIFFERENT_PERSON / INSUFFICIENT_BASIS và lý do tiếng Việt. '
+        'Trả LIKELY_SAME_PERSON / LIKELY_DIFFERENT_PERSON / INSUFFICIENT_BASIS với các mã lý do. '
         'Không quyết định Accept/Deny, không khuyên gộp hoặc từ chối, không suy đoán dữ liệu thiếu. '
         'Tên phổ biến, liên hệ dùng chung và cùng địa chỉ không chứng minh cùng người. '
         'Giấy tờ đúng định dạng chưa được xác minh; DIFFERENT_VALUE chỉ là mâu thuẫn mềm. '
         'EX/NX=khớp, NA=tương đương sau bỏ dấu, HS/MS/WS=tương tự, CL=gần nhau, DF/CF=khác, MI=thiếu, IV=không hợp lệ, SH=dùng chung, NC=không thể đối chiếu. '
         'evidence chỉ trích field/state đúng tín hiệu đã nhận, không thay state; MI/IV không phải bằng chứng. '
         'Không lặp lại giá trị dữ liệu cá nhân, không bịa bằng chứng hay xác suất. '
-        'Chỉ trả reason_codes theo bằng chứng, không viết văn bản tự do. Luôn có limitation_codes SOURCE_NOT_VERIFIED và HUMAN_REVIEW_REQUIRED. Khi thiếu căn cứ trả INSUFFICIENT_BASIS.'
+        'Chỉ trả reason_codes theo bằng chứng, không viết văn bản tự do. '
+        'CORROBORATING_SIGNALS cần ít nhất 2 evidence có state EX/NX/NA/HS/MS/CL; '
+        'CONFLICTING_SIGNALS cần evidence DF/CF hoặc government_id với DIFFERENT_VALUE; '
+        'NORMALIZATION_VARIANT cần evidence NX/NA; '
+        'SPARSE_SIGNALS chỉ khi signals có dưới 3 state khác MI/IV/NC/SH; '
+        'UNVERIFIED_IDENTIFIER cần evidence government_id với SAME_VALUE/DIFFERENT_VALUE; '
+        'NO_VERIFIED_ANCHOR chỉ khi unverified_identifier_relation khác VERIFIED_METADATA. '
+        'LIKELY_SAME_PERSON cần evidence EX/NX/NA/HS/MS/CL; LIKELY_DIFFERENT_PERSON cần CONFLICTING_SIGNALS đủ căn cứ. '
+        'Luôn có limitation_codes SOURCE_NOT_VERIFIED và HUMAN_REVIEW_REQUIRED. Khi thiếu căn cứ trả INSUFFICIENT_BASIS.'
     ),
     "ADDRESS_COMPARE": (
         "So sánh hai cách viết địa chỉ cho từng pair_id. Trả EQUIVALENT khi cùng địa chỉ rõ ràng, "
@@ -71,7 +79,7 @@ INSTRUCTIONS = {
         "hoặc cùng số nhà. Không quyết định gộp khách hàng."
     ),
     "EXPLANATION": (
-        "Giải thích ngắn gọn bằng tiếng Việt các tín hiệu tổng hợp để người dùng xem xét. Không đề xuất gộp "
+        "Viết 2–3 câu tiếng Việt có dấu, tự nhiên, giải thích tín hiệu nổi bật và trường cần đối chiếu từ bằng chứng tổng hợp. Không chỉ đọc lại số đếm. Giới hạn chỉ nêu điều bằng chứng chưa xác nhận; không chép lại chỉ dẫn hệ thống. Không đề xuất gộp "
         "hoặc từ chối, không kết luận thực thể, không bịa số liệu. Score là điểm rule, không phải xác suất."
     ),
 }
@@ -209,29 +217,38 @@ def _transport(provider, settings, purpose, model, prompt, schema):
         raise _InvalidError("RESPONSE_NOT_JSON") from None
 
 
+def provider_usage(provider, body):
+    """Keep unknown usage unknown; Gemini thinking is billable output."""
+    if provider == 'gemini':
+        meta = body.get('usageMetadata', {})
+        output = meta.get('candidatesTokenCount')
+        thoughts = meta.get('thoughtsTokenCount', 0)
+        return {'input': meta.get('promptTokenCount'),
+                'output': output + thoughts if type(output) is int and type(thoughts) is int else None}
+    meta = body.get('usage', {})
+    return {'input': meta.get('prompt_tokens'), 'output': meta.get('completion_tokens')}
+
+
 def _parse(provider, body, model):
     """Return (output, usage, model_version). Anything unexpected is invalid, never guessed."""
     if provider == "gemini":
         candidate = body["candidates"][0]
         if candidate.get("finishReason", "STOP") != "STOP":
             raise _InvalidError("FINISH_REASON")
-        text = candidate["content"]["parts"][0]["text"]
-        meta = body.get("usageMetadata", {})
-        usage = {"input": meta.get("promptTokenCount"), "output": meta.get("candidatesTokenCount")}
+        text = ''.join(part['text'] for part in candidate['content']['parts']
+                       if not part.get('thought', False) and isinstance(part.get('text'), str))
         model_version = body.get("modelVersion", model)
     else:
         choice = body["choices"][0]
         if choice.get("finish_reason", "stop") != "stop":
             raise _InvalidError("FINISH_REASON")
         text = choice["message"]["content"]
-        meta = body.get("usage", {})
-        usage = {"input": meta.get("prompt_tokens"), "output": meta.get("completion_tokens")}
         model_version = body.get("model", model)
     try:
         output = json.loads(text)
     except (TypeError, ValueError):
         raise _InvalidError("OUTPUT_NOT_JSON") from None
-    return output, usage, model_version
+    return output, provider_usage(provider, body), model_version
 
 
 def _elapsed(started):
@@ -244,10 +261,12 @@ def _call(gate, provider, settings, purpose, payload, prompt, request_id, contex
     prompt_version, schema_version = PROMPT_VERSION[purpose], SCHEMA_VERSION[purpose]
     for retry in range(settings.gemini_max_retries + 1):
         attempt_id = gate.attempt(request_id, purpose, provider, payload, context, prompt_version, schema_version)
+        usage = None
         started = time.monotonic()
 
         try:
             body = _transport(provider, settings, purpose, model, prompt, schema)
+            usage = provider_usage(provider, body)
             output, usage, model_version = _parse(provider, body, model)
             validate_output(purpose, output, payload)
         except _RateLimitedError as exc:
@@ -287,7 +306,7 @@ def _call(gate, provider, settings, purpose, payload, prompt, request_id, contex
             gate.finish(request_id, attempt_id, "HTTP_ERROR", context, latency_ms=_elapsed(started), error_code=str(exc))
             raise PolicyDenied("PROVIDER_HTTP_ERROR", attempts=retry + 1) from None
         except (_InvalidError, PolicyDenied, KeyError, IndexError, TypeError, ValueError):
-            gate.finish(request_id, attempt_id, "SCHEMA_INVALID", context, latency_ms=_elapsed(started),
+            gate.finish(request_id, attempt_id, "SCHEMA_INVALID", context, usage=usage, latency_ms=_elapsed(started),
                         error_code="SCHEMA_INVALID")
             raise PolicyDenied("SCHEMA_INVALID", attempts=retry + 1) from None
         response = {"output": output, "provider": provider, "model_version": model_version}

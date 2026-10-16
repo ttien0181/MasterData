@@ -152,7 +152,9 @@ def load_cannot_links(db, run_id):
     edges = db.query(ResolutionNegativeEdge).filter_by(run_id=run_id, active=True).all()
     # These legacy rows explicitly say NON_MATCH. REJECTED is deliberately absent.
     legacy = db.query(ResolutionPair).filter_by(run_id=run_id, user_decision="NON_MATCH").all()
-    return frozenset(tuple(sorted((p.left_record_id, p.right_record_id))) for p in [*edges, *legacy])
+    from masterone.mdm.workflow_structure import structure_links
+    return frozenset({tuple(sorted((p.left_record_id, p.right_record_id))) for p in [*edges, *legacy]}
+                     | structure_links(db, run_id))
 
 
 def require_manual_merge(db, run_id, members):

@@ -60,6 +60,52 @@ def test_optional_job_never_swallows_worker_ownership_loss(client, workflow_run,
         run_one(client)
 
 
+def test_annotation_reads_verified_partitions_without_loading_full_reports(client, workflow_run, monkeypatch):
+    from masterone.mdm import workflow_group_annotations, workflow_resolution
+    from masterone.mdm.pipeline.semantic_address import SemanticResult
+
+    root, _, queued = ready(client, workflow_run, monkeypatch)
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError('Address annotations must not hydrate full CLUSTER/DECISION_SNAPSHOT pair lists')
+
+    monkeypatch.setattr(workflow_group_annotations, 'load', forbidden, raising=False)
+    monkeypatch.setattr(workflow_resolution, 'load', forbidden)
+    observed = []
+
+    def annotate(pairs, lookup, **_kwargs):
+        observed.extend(pairs)
+        assert observed and lookup([observed[0]['left_id']])
+        return SemanticResult(stats={'checked': len(observed)})
+
+    monkeypatch.setattr('masterone.mdm.pipeline.semantic_address.run_annotations', annotate)
+    run_one(client)
+    receipt = client.get(root + '/operations/' + queued['operation_id']).json()
+    assert receipt['status'] == 'COMPLETED'
+    assert receipt['result']['stats']['checked'] == len(observed) > 0
+
+
+def test_annotation_partition_integrity_failure_is_not_an_optional_provider_failure(client, workflow_run, monkeypatch):
+    from masterone.mdm import workflow_group_annotations
+
+    ready(client, workflow_run, monkeypatch)
+    original = workflow_group_annotations.iter_list
+
+    def corrupt(db, artifact_id, run_id, phase, path, **kwargs):
+        if phase == 'CLUSTER' and path == ['pairs']:
+            raise ValueError('WORKFLOW_ARTIFACT_INVALID')
+        yield from original(db, artifact_id, run_id, phase, path, **kwargs)
+
+    def consume(pairs, *_args, **_kwargs):
+        list(pairs)
+        raise AssertionError('Corrupt input must fail before a provider request')
+
+    monkeypatch.setattr(workflow_group_annotations, 'iter_list', corrupt)
+    monkeypatch.setattr('masterone.mdm.pipeline.semantic_address.run_annotations', consume)
+    with pytest.raises(ValueError, match='WORKFLOW_ARTIFACT_READ_FAILED'):
+        run_one(client)
+
+
 def test_annotation_sidecar_is_visible_locally_without_altering_plan(client, workflow_run, monkeypatch):
     from masterone.mdm.pipeline.semantic_address import SemanticResult
     root, _, queued = ready(client, workflow_run, monkeypatch)

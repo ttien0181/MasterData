@@ -85,6 +85,8 @@ def amend_decision(db, run_id, pair_id, request, actor):
             'pair_revision': pair.revision})
         db.commit()
         return op.result
+    from masterone.mdm.steward_feedback import capture_review_snapshot, persist_feedback
+    snapshot = capture_review_snapshot(db, run, pair)
     released = release_originating_edges(db, run, pair) if before == 'NON_MATCH' and request.decision != 'deny' else []
     if released:
         refresh_negative_assessment(db, run, pair)
@@ -98,6 +100,7 @@ def amend_decision(db, run_id, pair_id, request, actor):
     run.workflow_revision += 1
     run.decision_revision += 1
     op = new_operation(db, run, 'AMEND_PAIR', request.request_id, payload, actor)
+    persist_feedback(db, run, pair, op, actor, snapshot, 'HUMAN_DIRECT')
     op.status, op.stage = 'COMPLETED', 'completed'
     op.result = {**pair_read(pair), 'workflow_revision': run.workflow_revision, 'decision_revision': run.decision_revision}
     audit(db, run, actor, 'WORKFLOW_AMEND_PAIR', {'pair_id': pair.id, 'before': before,

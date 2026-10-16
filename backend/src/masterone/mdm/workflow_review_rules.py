@@ -15,9 +15,12 @@ def review_required(decision, baseline):
         baseline.get('decision') == 'MERGEABLE' and baseline.get('triage_status') == 'REVIEW'))
 
 
-def pending_predicate():
+def pending_predicate(*, baseline=None, triage=None):
     effective = effective_column()
-    baseline, triage = effective['decision'].as_string(), effective['triage_status'].as_string()
+    if baseline is None:
+        baseline = effective['decision'].as_string()
+    if triage is None:
+        triage = effective['triage_status'].as_string()
     return or_(WorkflowPair.decision == 'DEFERRED', and_(WorkflowPair.decision == 'UNDECIDED',
         or_(baseline.is_(None), baseline.notin_(TERMINAL_BASELINES),
             and_(baseline == 'MERGEABLE', triage == 'REVIEW'))))

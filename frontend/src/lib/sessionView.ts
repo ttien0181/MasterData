@@ -3,7 +3,7 @@ import { can } from "./permissions";
 
 const STATUS_LABELS: Record<RunStatus, string> = {
   UPLOADED: "Đã nạp, chưa xử lý", IMPORTING: "Đang nạp dữ liệu", QUEUED: "Đang chờ xử lý", RUNNING: "Đang phân giải",
-  COMPLETED: "Đã xử lý", RETRYABLE_FAILED: "Xử lý bị gián đoạn", FAILED: "Xử lý thất bại",
+  COMPLETED: "Đã xử lý", DEGRADED: "Đối chiếu nâng cao chưa đầy đủ", RETRYABLE_FAILED: "Xử lý bị gián đoạn", FAILED: "Xử lý thất bại",
 };
 export function runStatusLabel(status: string) {
   return STATUS_LABELS[status as RunStatus] ?? "Trạng thái chưa được hỗ trợ";
@@ -40,6 +40,8 @@ export type SessionViewModel = {
 export function toSessionViewModel(overview: ResolutionOverview, user: AuthUser,
   history?: ResolutionRunHistory["items"][number]): SessionViewModel {
   const completed = overview.status === "COMPLETED";
+  const degraded = overview.status === "DEGRADED";
+  const reviewable = completed || degraded;
   const processing = overview.status === "RUNNING" || overview.status === "QUEUED" || overview.status === "IMPORTING";
   const failed = overview.status === "FAILED" || overview.status === "RETRYABLE_FAILED";
   // Counters currently mark coarse phases (persisting may already be N/N).
@@ -48,16 +50,16 @@ export function toSessionViewModel(overview: ResolutionOverview, user: AuthUser,
     runId: overview.run_id,
     title: (history?.run_id === overview.run_id ? history.files.join(", ") : "") || `Phiên ${overview.run_id.slice(0, 8)}`,
     status: overview.status, statusLabel: runStatusLabel(overview.status), phase: overview.phase,
-    processing, resultsAvailable: completed,
-    reviewState: completed ? overview.counts.review > 0 ? "pending" : "clear" : "unavailable",
+    processing, resultsAvailable: reviewable,
+    reviewState: reviewable ? overview.counts.review > 0 ? "pending" : "clear" : "unavailable",
     exportState: completed ? overview.history_count > 0 ? "has_snapshots" : "not_exported" : "unavailable",
-    progress: { mode: completed ? "complete" : failed ? "error" : processing ? "indeterminate" : "idle",
+    progress: { mode: completed ? "complete" : failed || degraded ? "error" : processing ? "indeterminate" : "idle",
       percent: completed ? 100 : null },
     errorCode: overview.task?.error_code ?? null,
     actions: {
       start: overview.status === "UPLOADED" && can(user, "start_run"),
       retry: failed && can(user, "start_run"),
-      review: completed && (can(user, "approve_pair") || can(user, "reject_pair")),
+      review: reviewable && (can(user, "approve_pair") || can(user, "reject_pair")),
       // This is permission to request readiness/preview, NOT a replacement for backend blockers.
       prepareExport: completed && can(user, "export_data"),
     },

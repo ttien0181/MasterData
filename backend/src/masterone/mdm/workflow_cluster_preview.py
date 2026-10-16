@@ -207,10 +207,15 @@ def operation_snapshot(operation_id, factory, progress):
         if op.artifact_id:
             return load(db, op.artifact_id, run_id, 'DECISION_SNAPSHOT')
         partial = op.payload.get('allow_partial', False)
+        queue_mode = op.payload.get('queue_mode')
     progress('snapshot', 0, 1)
     # Heavy reads and hashes are outside the run-lock transaction and HTTP handler.
     with factory() as db:
-        snapshot = decision_snapshot(db, db.get(ResolutionRun, run_id), allow_partial=partial)
+        if queue_mode:
+            from masterone.mdm.workflow_cluster_queue import accepted_snapshot
+            snapshot = accepted_snapshot(db, db.get(ResolutionRun, run_id), queue_mode)
+        else:
+            snapshot = decision_snapshot(db, db.get(ResolutionRun, run_id), allow_partial=partial)
     artifact_id = seal(factory, run_id, 'DECISION_SNAPSHOT', snapshot)
     with factory.begin() as db:
         run, op, _ = job_identity(db, operation_id)

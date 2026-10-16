@@ -24,6 +24,60 @@ def read(client, run_id):
     return client.get(f'/api/v1/mdm/runs/{run_id}/workflow').json()
 
 
+def test_prepare_reports_monotonic_progress_and_unlocks_decide_only_after_publication(client, workflow_run):
+    from masterone.mdm.workflow_jobs import execute_workflow
+    from masterone.mdm.workflow_models import WorkflowOperation
+    from masterone.mdm.job_queue import progress
+
+    assert 'start-decide' not in read(client, workflow_run)['allowed_actions']
+    claim = claim_next(client.session_factory, 'progress-test', lease_seconds=300)
+    with client.session_factory() as db:
+        op_id = db.get(ResolutionTask, claim.task_id).operation_id
+    updates = []
+
+    def report(phase, done, total):
+        assert done < total  # 100% is reserved for the committed DATA_READY state.
+        updates.append((phase, done, total))
+        progress(client.session_factory, claim, phase, done, total)
+
+    with ownership(claim):
+        execute_workflow(op_id, client.session_factory, report)
+    assert updates[0][1] == 0
+    assert [item[1] for item in updates] == sorted(item[1] for item in updates)
+    assert {'prepare-read', 'prepare-normalize', 'prepare-publish'} <= {item[0] for item in updates}
+    result = read(client, workflow_run)
+    assert result['workflow_state'] == 'DATA_READY'
+    assert 'start-decide' in result['allowed_actions']
+    with client.session_factory() as db:
+        op = db.get(WorkflowOperation, op_id)
+        assert op.status == 'COMPLETED'
+        assert op.progress['processed'] == op.progress['total']
+
+
+def test_decide_persists_pair_counters_through_assessment(client, workflow_run):
+    from masterone.mdm.workflow_jobs import execute_workflow
+    from masterone.mdm.workflow_models import WorkflowOperation
+    from masterone.mdm.job_queue import progress
+    run_one(client)
+    state = read(client, workflow_run)
+    started = client.post(f'/api/v1/mdm/runs/{workflow_run}/workflow/start-decide', json=request(state['workflow_revision']))
+    assert started.status_code == 202
+    # Reading progress before the first candidate exists must remain valid.
+    assert read(client, workflow_run)['workflow_state'] == 'DECIDE_RUNNING'
+    claim = claim_next(client.session_factory, 'decision-progress-test', lease_seconds=300)
+    with ownership(claim):
+        execute_workflow(started.json()['operation_id'], client.session_factory,
+                         lambda phase, done, total: progress(client.session_factory, claim, phase, done, total))
+    final = read(client, workflow_run)
+    with client.session_factory() as db:
+        operation = db.get(WorkflowOperation, started.json()['operation_id'])
+        assert operation.status == 'COMPLETED'
+        assert operation.progress['candidate_count'] == final['counts']['pairs']['value']
+        assert operation.progress['classified_count'] == final['counts']['pairs']['value']
+        assert operation.progress['classification_started'] is True
+        assert operation.progress['processed'] == operation.progress['total'] == final['counts']['pairs']['value']
+
+
 def ready_decisions(client, run_id):
     run_one(client)
     state = read(client, run_id)

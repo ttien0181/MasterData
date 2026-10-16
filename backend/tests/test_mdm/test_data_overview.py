@@ -13,7 +13,7 @@ def test_profile_counts_present_raw_values_and_unique_flagged_records():
         {'source_system': 'ERP', 'raw_fields': {'name': None, 'email': '', 'phone': '090'},
          'normalized_fields': {}, 'quality_flags': []},
         {'source_system': 'CRM', 'raw_fields': {'name': 'Binh'},
-         'normalized_fields': {}, 'quality_flags': None},
+         'normalized_fields': {}, 'quality_flags': None, 'extra_fields': {'custom_column': 'value'}},
     ]
     profile = build_profile(iter(rows))
     assert profile['record_count'] == 3
@@ -23,6 +23,7 @@ def test_profile_counts_present_raw_values_and_unique_flagged_records():
     assert profile['field_completeness']['phone'] == {'present': 1, 'missing': 2}
     assert profile['field_completeness']['dob'] == {'present': 0, 'missing': 3}
     assert profile['source_counts'] == {'CRM': 2, 'ERP': 1}
+    assert 'custom_column' in profile['schema']
 
 
 @pytest.fixture
@@ -170,3 +171,36 @@ def test_legacy_warming_verifies_full_parent_before_first_summary(client, profil
         warm_profile(client.session_factory, run)
     with client.session_factory() as db:
         assert db.query(WorkflowArtifact).filter_by(run_id=run, phase='PROFILE').count() == 0
+
+
+def test_analysis_is_available_before_prepare_and_covers_the_entire_upload(client, profiled_run):
+    run, _ = profiled_run
+    with client.session_factory.begin() as db:
+        db.query(WorkflowArtifact).filter_by(run_id=run).delete()
+    response = client.get(f'/api/v1/mdm/runs/{run}/workflow/data?include_records=false')
+    assert response.status_code == 200
+    data = response.json()
+    assert data['samples'] == {'items': [], 'total': 125, 'offset': 0, 'next_cursor': None}
+    assert data['profile']['record_count'] == 125
+    assert data['profile']['source_counts'] == {'CRM': 125}
+    assert data['profile']['records_with_quality_flags'] == 25
+    assert data['profile']['field_completeness']['email'] == {'present': 63, 'missing': 62}
+    assert 'late_column' in data['schema']
+
+
+def test_record_pagination_never_loads_or_scans_profile(client, profiled_run, monkeypatch):
+    from masterone.mdm import data_profile, workflow_artifacts
+    run, _ = profiled_run
+
+    def forbidden(*args, **kwargs):
+        pytest.fail('record pagination must not load artifacts or scan the complete input')
+
+    monkeypatch.setattr(data_profile, 'build_profile', forbidden)
+    monkeypatch.setattr(workflow_artifacts, 'load', forbidden)
+    response = client.get(f'/api/v1/mdm/runs/{run}/workflow/data?offset=10&include_profile=false')
+    assert response.status_code == 200
+    data = response.json()
+    assert data['profile'] is None
+    assert len(data['samples']['items']) == 10
+    assert data['samples']['total'] == 125
+    assert data['samples']['items'][0]['external_id'] == '10'

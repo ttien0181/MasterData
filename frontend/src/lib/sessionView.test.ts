@@ -14,6 +14,13 @@ const overview: ResolutionOverview = {
 };
 
 describe("run to session contract", () => {
+  it("keeps degraded rule results reviewable without reporting normal completion", () => {
+    const session = toSessionViewModel({...overview, status:"DEGRADED",phase:"degraded"}, user);
+    expect(session.resultsAvailable).toBe(true);
+    expect(session.actions.review).toBe(true);
+    expect(session.progress).toEqual({mode:"error",percent:null});
+    expect(session.statusLabel).toBe("Đối chiếu nâng cao chưa đầy đủ");
+  });
   it("keeps completed processing separate from pending review and no export", () => {
     const session = toSessionViewModel(overview, user);
     expect(session.resultsAvailable).toBe(true);

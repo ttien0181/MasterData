@@ -14,7 +14,7 @@ test('shows a mergeable conclusion while leaving acceptance to an explicit revie
   };
   const noop = () => undefined;
   render(<table><tbody><PairReviewRow pair={pair} selected={false} toggle={noop}
-    canWrite busy={false} decide={decide} compare={noop} explain={noop}/></tbody></table>);
+    canWrite busy={false} decide={decide} compare={noop}/></tbody></table>);
   expect(screen.getByText('Đủ bằng chứng gộp')).toBeInTheDocument();
   expect(screen.queryByText('Đủ điều kiện tự động')).not.toBeInTheDocument();
   expect(decide).not.toHaveBeenCalled();

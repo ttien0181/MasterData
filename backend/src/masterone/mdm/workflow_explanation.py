@@ -27,7 +27,7 @@ def explain_pair(db, run_id, pair_id, request, actor):
     for item in result.get('field_evidence', []):
         if item.get('field') in ('name', 'phone', 'email', 'address'):
             state = item.get('state', 'MI')
-            band = 'missing' if state in ('MI', 'NA', 'IV') else 'exact' if state == 'EX' else 'different' if state in ('DF', 'CF') else 'ambiguous' if state in ('SH', 'NC') else 'similar'
+            band = 'missing' if state in ('MI', 'IV') else 'exact' if state == 'EX' else 'different' if state in ('DF', 'CF') else 'ambiguous' if state in ('SH', 'NC') else 'similar'
             fields[item['field']] = dict(Counter([band]))
     payload = {'pair_count': 1, 'unique_record_count': 2, 'field_signal_counts': fields,
                'group': result.get('primary_group') or 'UNKNOWN',

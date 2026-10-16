@@ -1025,17 +1025,6 @@ export default function ResolutionIntake({
         >
           {actionLabel}
         </button>
-        <small>
-          {activity === "uploading"
-            ? "Có thể tiếp tục tải nếu mất kết nối"
-            : validating
-              ? "Chờ kiểm tra xong để tiếp tục"
-              : activity === "committing"
-                ? "Phiên đang được tạo, có thể đợi hoặc quay lại sau"
-              : session?.status === "ERROR"
-                ? "Sửa lỗi hoặc đổi file để tiếp tục"
-                : "Phiên được tạo khi bạn bấm bắt đầu phân giải"}
-        </small>
       </footer>
     </section>
   );

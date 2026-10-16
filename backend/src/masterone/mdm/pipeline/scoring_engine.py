@@ -463,21 +463,32 @@ def _decide_rule_batch(results, records, policies):
 
 
 _WORKER_READER = None
+_WORKER_PROFILE_CONTEXT = None
 
 
-def _init_pool_worker(index_path, cache_records):
-    """Pool initializer: each worker opens the snapshot index read-only, once."""
-    global _WORKER_READER
-    _WORKER_READER = IndexReader(index_path, cache_records=cache_records)
+def _init_pool_worker(index_path, cache_records, profile):
+    """Pin the caller's policy in spawned workers; optionally open a read-only index."""
+    from masterone.mdm.engine_adapter import engine_context
+    global _WORKER_READER, _WORKER_PROFILE_CONTEXT
+    # Keep the context alive for this process' lifetime. Spawn does not inherit
+    # ContextVars, and fork must not substitute machine defaults for pinned flags.
+    _WORKER_PROFILE_CONTEXT = engine_context(profile)
+    _WORKER_PROFILE_CONTEXT.__enter__()
+    if index_path is not None:
+        _WORKER_READER = IndexReader(index_path, cache_records=cache_records)
 
 
 def _snapshot_pool(snapshot, workers):
     """Process pool; when the snapshot is indexed, each worker opens the index itself."""
     from concurrent.futures import ProcessPoolExecutor
+
+    from masterone.mdm.engine_adapter import FEATURES, feature
+    profile = {name: feature(name) for name in FEATURES}
     if isinstance(snapshot, IndexReader):
         return ProcessPoolExecutor(max_workers=workers, initializer=_init_pool_worker,
-                                   initargs=(str(snapshot.index_path), snapshot.cache_records))
-    return ProcessPoolExecutor(max_workers=workers)
+                                   initargs=(str(snapshot.index_path), snapshot.cache_records, profile))
+    return ProcessPoolExecutor(max_workers=workers, initializer=_init_pool_worker,
+                               initargs=(None, 0, profile))
 
 
 def _score_rule_batch_indexed(candidates, frequencies, negative_pairs, identity):

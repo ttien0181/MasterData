@@ -124,7 +124,7 @@ def claim_next(factory, worker_id, *, lease_seconds=30, timeout_seconds=3600):
         if task.operation_id:
             from masterone.mdm.workflow_models import WorkflowOperation
             op = db.get(WorkflowOperation, task.operation_id)
-            if op is None or op.run_id != run.id or op.status not in ('QUEUED', 'RETRYABLE_FAILED') or op.operation_type not in ('PREPARE', 'DECIDE', 'BULK_DECISIONS', 'CLUSTER', 'CLUSTER_PREVIEW', 'GOLDEN_RESOLVE', 'ASSESS_PAIRS', 'PAIR_ADVICE', 'GROUP_ANNOTATIONS', 'AUTOMATION_SHADOW', 'AUTOMATION_APPLY', 'FINALIZE_GOLDEN'):
+            if op is None or op.run_id != run.id or op.status not in ('QUEUED', 'RETRYABLE_FAILED') or op.operation_type not in ('PREPARE', 'DECIDE', 'BULK_DECISIONS', 'CLUSTER', 'CLUSTER_PREVIEW', 'GOLDEN_RESOLVE', 'ASSESS_PAIRS', 'REBUILD_CANDIDATES', 'PAIR_ADVICE', 'GROUP_ANNOTATIONS', 'AUTOMATION_SHADOW', 'AUTOMATION_APPLY', 'FINALIZE_GOLDEN'):
                 raise OwnershipLostError('WORKFLOW_OPERATION_IDENTITY')
             op.status, op.stage = 'RUNNING', op.operation_type.lower()
             if op.operation_type == 'CLUSTER':
@@ -168,7 +168,15 @@ def progress(factory, claim, phase, processed, total):
         if task.operation_id:
             from masterone.mdm.workflow_models import WorkflowOperation
             op = db.get(WorkflowOperation, task.operation_id)
-            op.stage, op.progress = phase, {**(op.progress if op.operation_type == 'BULK_DECISIONS' else {}),
+            previous = op.progress if op.operation_type in ('BULK_DECISIONS', 'DECIDE') else {}
+            if op.operation_type == 'DECIDE':
+                if phase == 'candidate-generation':
+                    previous = {**previous, 'candidate_count': processed}
+                    if processed == 0:
+                        previous = {**previous, 'classified_count': 0, 'classification_started': False}
+                elif phase == 'pair-classification':
+                    previous = {**previous, 'candidate_count': total, 'classified_count': processed, 'classification_started': True}
+            op.stage, op.progress = phase, {**previous,
                                            'processed': processed, 'total': total}
         task.updated_at = now_utc()
         db.get(ResolutionRun, claim.run_id).phase = phase

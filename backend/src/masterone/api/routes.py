@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from masterone.agents.graph import agent
+from masterone.config import get_settings
 from masterone.models.schemas import ChatRequest, ChatResponse
 
 router = APIRouter()
@@ -9,6 +9,9 @@ router = APIRouter()
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     """Chat với AI agent."""
+    if not get_settings().sample_chat_enabled:
+        raise HTTPException(status_code=404, detail='Sample chat is disabled')
+    from masterone.agents.graph import agent
     try:
         result = await agent.ainvoke({"query": request.message})
         return ChatResponse(
@@ -22,4 +25,4 @@ async def chat(request: ChatRequest) -> ChatResponse:
 @router.get("/status")
 async def agent_status():
     """Kiểm tra trạng thái agent."""
-    return {"status": "ready", "agent": "LangGraph Agent v1.0"}
+    return {"status": "ready", "agent": "MasterOne MVP"}

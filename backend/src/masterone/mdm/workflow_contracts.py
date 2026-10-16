@@ -9,6 +9,8 @@ TRANSITIONS = {('DATA_PREPARING', 'PREPARE'): 'DATA_PREPARING',
                ('DECIDE_REVIEW', 'ASSESS_PAIRS'): 'DECIDE_REVIEW',
                ('DECIDE_REVIEW', 'PAIR_ADVICE'): 'DECIDE_REVIEW'}
 TRANSITIONS[('DECIDE_REVIEW', 'CLUSTER_PREVIEW')] = 'DECIDE_REVIEW'
+TRANSITIONS[('GOLDEN_REVIEW','BULK_DECISIONS')] = 'DECIDE_REVIEW'
+TRANSITIONS[('DECIDE_REVIEW', 'REBUILD_CANDIDATES')] = 'DECIDE_REVIEW'
 TRANSITIONS[('DECIDE_REVIEW', 'AUTOMATION_SHADOW')] = 'DECIDE_REVIEW'
 TRANSITIONS[('DECIDE_REVIEW', 'AUTOMATION_APPLY')] = 'DECIDE_REVIEW'
 for _state in ('DECIDE_REVIEW', 'GOLDEN_REVIEW'):
@@ -43,6 +45,11 @@ class AssessmentRequest(Mutation):
     model_scope: Literal['synthetic-benchmark'] | None = None
 
 
+class ProcessRequest(AssessmentRequest):
+    include_advice: bool = True
+    advice_limit: int = Field(default=20, ge=1, le=100)
+
+
 class PairAdviceRequest(Mutation):
     pair_ids: list[str] | None = Field(default=None, min_length=1, max_length=100)
     limit: int = Field(default=100, ge=1, le=100)
@@ -54,6 +61,8 @@ class GroupAnnotationRequest(Mutation):
 
 class PairFilter(BaseModel):
     model_config = ConfigDict(extra='forbid')
+    taxonomy: Literal['actions_v1'] | None = None
+    visibility: Literal['review'] | None = None
     group: str | None = None
     subgroup: str | None = None
     resolution: str | None = None
@@ -79,6 +88,7 @@ class BulkRequest(Mutation):
 
 class FinalizeRequest(Mutation):
     expected_decision_revision: int = Field(ge=0)
+    queue_mode: Literal['pending','all'] | None = None
     allow_partial: bool = False
     preview_operation_id: str | None = Field(default=None, min_length=1, max_length=36)
     preview_token: str | None = Field(default=None, min_length=64, max_length=64)
@@ -175,3 +185,4 @@ class WorkflowRead(BaseModel):
     latest_cluster_operation: OperationRead | None = None
     latest_automation_operation: OperationRead | None = None
     automation_stopped: bool = False
+    matching_agents: dict | None = None

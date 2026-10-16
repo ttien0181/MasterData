@@ -42,8 +42,9 @@ def start(kind: str, session_id: str, owner_user_id: str, url: str, *, before_st
 
 
 def _supervise(kind: str, session_id: str, owner_user_id: str, url: str) -> None:
+    from masterone.mdm.heavy_jobs import heavy_job_slot
     try:
-        with _slots:
+        with _slots, heavy_job_slot():
             child = get_context("spawn").Process(target=run_import_job,
                                                  args=(kind, session_id, owner_user_id, url),
                                                  name=f"import-{kind}")

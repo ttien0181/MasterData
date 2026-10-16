@@ -1,0 +1,1639 @@
+{
+  "source_only": true,
+  "production_db_accessed": false,
+  "tables": {
+    "users": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": true,
+          "foreign_keys": []
+        },
+        {
+          "name": "email",
+          "type": "VARCHAR(320)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "email_normalized",
+          "type": "VARCHAR(320)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "password_hash",
+          "type": "VARCHAR(512)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "is_active",
+          "type": "BOOLEAN",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "role",
+          "type": "VARCHAR(32)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        }
+      ],
+      "constraints": [
+        {
+          "type": "UniqueConstraint",
+          "name": null,
+          "columns": [
+            "email_normalized"
+          ],
+          "expression": null
+        }
+      ],
+      "indexes": []
+    },
+    "mdm_resolution_runs": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": true,
+          "foreign_keys": []
+        },
+        {
+          "name": "owner_user_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "users.id",
+              "ondelete": null
+            }
+          ]
+        },
+        {
+          "name": "upload_session_id",
+          "type": "VARCHAR(36)",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_upload_sessions.id",
+              "ondelete": "SET NULL"
+            }
+          ]
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR(255)",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "archived_at",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR(24)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "workflow_version",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "workflow_state",
+          "type": "VARCHAR(32)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "workflow_revision",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "decision_revision",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "cluster_revision",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "golden_revision",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "phase",
+          "type": "VARCHAR(40)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "policy_version",
+          "type": "VARCHAR(40)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "record_count",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "file_count",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "candidate_count",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "insufficient_count",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "completed_at",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        }
+      ],
+      "constraints": [
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "upload_session_id"
+          ],
+          "expression": null
+        },
+        {
+          "type": "UniqueConstraint",
+          "name": "uq_mdm_run_upload_session",
+          "columns": [
+            "upload_session_id"
+          ],
+          "expression": null
+        },
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "owner_user_id"
+          ],
+          "expression": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ix_mdm_resolution_runs_owner_user_id",
+          "unique": false,
+          "columns": [
+            "owner_user_id"
+          ]
+        }
+      ]
+    },
+    "mdm_resolution_records": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": true,
+          "foreign_keys": []
+        },
+        {
+          "name": "run_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_runs.id",
+              "ondelete": "CASCADE"
+            }
+          ]
+        },
+        {
+          "name": "file_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_files.id",
+              "ondelete": "CASCADE"
+            }
+          ]
+        },
+        {
+          "name": "external_id",
+          "type": "VARCHAR(200)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "source_system",
+          "type": "VARCHAR(32)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "entity_type",
+          "type": "VARCHAR(16)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "benchmark_entity_id",
+          "type": "VARCHAR(200)",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "original_fields",
+          "type": "JSON",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "mapping_provenance",
+          "type": "JSON",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "lineage",
+          "type": "JSON",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "raw_fields",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "normalized_fields",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "quality_flags",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "extra_fields",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        }
+      ],
+      "constraints": [
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "run_id"
+          ],
+          "expression": null
+        },
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "file_id"
+          ],
+          "expression": null
+        },
+        {
+          "type": "UniqueConstraint",
+          "name": "uq_mdm_resolution_record_source_external",
+          "columns": [
+            "run_id",
+            "source_system",
+            "external_id"
+          ],
+          "expression": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ix_mdm_resolution_records_file_id",
+          "unique": false,
+          "columns": [
+            "file_id"
+          ]
+        },
+        {
+          "name": "ix_mdm_resolution_records_run_entity_type",
+          "unique": false,
+          "columns": [
+            "run_id",
+            "entity_type"
+          ]
+        },
+        {
+          "name": "ix_mdm_resolution_records_run_source",
+          "unique": false,
+          "columns": [
+            "run_id",
+            "source_system"
+          ]
+        },
+        {
+          "name": "ix_mdm_resolution_records_run_id",
+          "unique": false,
+          "columns": [
+            "run_id"
+          ]
+        }
+      ]
+    },
+    "mdm_resolution_engine_selections": {
+      "columns": [
+        {
+          "name": "run_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": true,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_runs.id",
+              "ondelete": "CASCADE"
+            }
+          ]
+        },
+        {
+          "name": "engine_version",
+          "type": "VARCHAR(32)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "configuration",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        }
+      ],
+      "constraints": [
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "run_id"
+          ],
+          "expression": null
+        }
+      ],
+      "indexes": []
+    },
+    "mdm_resolution_tasks": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": true,
+          "foreign_keys": []
+        },
+        {
+          "name": "run_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_runs.id",
+              "ondelete": "CASCADE"
+            }
+          ]
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR(24)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "operation_id",
+          "type": "VARCHAR(36)",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "phase",
+          "type": "VARCHAR(40)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "processed_count",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "total_count",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "error_code",
+          "type": "VARCHAR(80)",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "updated_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "attempt_id",
+          "type": "VARCHAR(36)",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "attempt_count",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "max_attempts",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "cancel_requested",
+          "type": "BOOLEAN",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        }
+      ],
+      "constraints": [
+        {
+          "type": "UniqueConstraint",
+          "name": null,
+          "columns": [
+            "run_id"
+          ],
+          "expression": null
+        },
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "run_id"
+          ],
+          "expression": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ix_mdm_resolution_tasks_queue",
+          "unique": false,
+          "columns": [
+            "status",
+            "created_at",
+            "id"
+          ]
+        },
+        {
+          "name": "ix_mdm_resolution_tasks_status_created",
+          "unique": false,
+          "columns": [
+            "status",
+            "created_at"
+          ]
+        }
+      ]
+    },
+    "mdm_resolution_audit_events": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": true,
+          "foreign_keys": []
+        },
+        {
+          "name": "run_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_runs.id",
+              "ondelete": "CASCADE"
+            }
+          ]
+        },
+        {
+          "name": "actor_user_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "users.id",
+              "ondelete": null
+            }
+          ]
+        },
+        {
+          "name": "pair_id",
+          "type": "VARCHAR(64)",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_pairs.id",
+              "ondelete": null
+            }
+          ]
+        },
+        {
+          "name": "proposal_id",
+          "type": "VARCHAR(64)",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_proposals.id",
+              "ondelete": null
+            }
+          ]
+        },
+        {
+          "name": "action",
+          "type": "VARCHAR(40)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "details",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        }
+      ],
+      "constraints": [
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "pair_id"
+          ],
+          "expression": null
+        },
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "run_id"
+          ],
+          "expression": null
+        },
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "proposal_id"
+          ],
+          "expression": null
+        },
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "actor_user_id"
+          ],
+          "expression": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ix_mdm_resolution_audit_run_created",
+          "unique": false,
+          "columns": [
+            "run_id",
+            "created_at"
+          ]
+        },
+        {
+          "name": "ix_mdm_resolution_audit_events_run_id",
+          "unique": false,
+          "columns": [
+            "run_id"
+          ]
+        }
+      ]
+    },
+    "mdm_resolution_negative_edges": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": true,
+          "foreign_keys": []
+        },
+        {
+          "name": "run_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_runs.id",
+              "ondelete": "CASCADE"
+            }
+          ]
+        },
+        {
+          "name": "left_record_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_records.id",
+              "ondelete": null
+            }
+          ]
+        },
+        {
+          "name": "right_record_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_records.id",
+              "ondelete": null
+            }
+          ]
+        },
+        {
+          "name": "created_by",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "reason",
+          "type": "VARCHAR(32)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "active",
+          "type": "BOOLEAN",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        }
+      ],
+      "constraints": [
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "left_record_id"
+          ],
+          "expression": null
+        },
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "run_id"
+          ],
+          "expression": null
+        },
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "right_record_id"
+          ],
+          "expression": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ix_mdm_resolution_negative_edges_run_id",
+          "unique": false,
+          "columns": [
+            "run_id"
+          ]
+        },
+        {
+          "name": "ix_mdm_negative_edges_run",
+          "unique": false,
+          "columns": [
+            "run_id"
+          ]
+        },
+        {
+          "name": "ix_mdm_negative_edges_pair",
+          "unique": false,
+          "columns": [
+            "run_id",
+            "left_record_id",
+            "right_record_id"
+          ]
+        }
+      ]
+    },
+    "mdm_workflow_operations": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": true,
+          "foreign_keys": []
+        },
+        {
+          "name": "run_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_runs.id",
+              "ondelete": "CASCADE"
+            }
+          ]
+        },
+        {
+          "name": "request_id",
+          "type": "VARCHAR(128)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "operation_type",
+          "type": "VARCHAR(32)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "payload_hash",
+          "type": "VARCHAR(64)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "payload",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR(24)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "stage",
+          "type": "VARCHAR(40)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "progress",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "error_code",
+          "type": "VARCHAR(80)",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "result",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "artifact_id",
+          "type": "VARCHAR(36)",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "actor_user_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "users.id",
+              "ondelete": null
+            }
+          ]
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        }
+      ],
+      "constraints": [
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "run_id"
+          ],
+          "expression": null
+        },
+        {
+          "type": "UniqueConstraint",
+          "name": "uq_workflow_request",
+          "columns": [
+            "run_id",
+            "request_id"
+          ],
+          "expression": null
+        },
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "actor_user_id"
+          ],
+          "expression": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ix_mdm_workflow_operations_run_id",
+          "unique": false,
+          "columns": [
+            "run_id"
+          ]
+        }
+      ]
+    },
+    "mdm_workflow_artifacts": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": true,
+          "foreign_keys": []
+        },
+        {
+          "name": "run_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_runs.id",
+              "ondelete": "CASCADE"
+            }
+          ]
+        },
+        {
+          "name": "phase",
+          "type": "VARCHAR(24)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "content_hash",
+          "type": "VARCHAR(64)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "payload",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        }
+      ],
+      "constraints": [
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "run_id"
+          ],
+          "expression": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ix_mdm_workflow_artifacts_run_id",
+          "unique": false,
+          "columns": [
+            "run_id"
+          ]
+        }
+      ]
+    },
+    "mdm_workflow_pairs": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "VARCHAR(64)",
+          "nullable": false,
+          "primary_key": true,
+          "foreign_keys": []
+        },
+        {
+          "name": "run_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_runs.id",
+              "ondelete": "CASCADE"
+            }
+          ]
+        },
+        {
+          "name": "baseline",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "assessment",
+          "type": "JSON",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "assessment_id",
+          "type": "VARCHAR(36)",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "advice",
+          "type": "JSON",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "decision",
+          "type": "VARCHAR(24)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "review_reason",
+          "type": "VARCHAR(500)",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "automation",
+          "type": "JSON",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "revision",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        }
+      ],
+      "constraints": [
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "run_id"
+          ],
+          "expression": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ix_mdm_workflow_pairs_run_id",
+          "unique": false,
+          "columns": [
+            "run_id"
+          ]
+        },
+        {
+          "name": "ix_mdm_workflow_pairs_assessment_id",
+          "unique": false,
+          "columns": [
+            "assessment_id"
+          ]
+        }
+      ]
+    },
+    "mdm_workflow_assessments": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": true,
+          "foreign_keys": []
+        },
+        {
+          "name": "run_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_runs.id",
+              "ondelete": "CASCADE"
+            }
+          ]
+        },
+        {
+          "name": "artifact_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_workflow_artifacts.id",
+              "ondelete": null
+            }
+          ]
+        },
+        {
+          "name": "active",
+          "type": "BOOLEAN",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "configuration",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        }
+      ],
+      "constraints": [
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "artifact_id"
+          ],
+          "expression": null
+        },
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "run_id"
+          ],
+          "expression": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "uq_workflow_active_assessment",
+          "unique": true,
+          "columns": [
+            "run_id"
+          ]
+        },
+        {
+          "name": "ix_mdm_workflow_assessments_run_id",
+          "unique": false,
+          "columns": [
+            "run_id"
+          ]
+        }
+      ]
+    },
+    "mdm_workflow_generations": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": true,
+          "foreign_keys": []
+        },
+        {
+          "name": "run_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_runs.id",
+              "ondelete": "CASCADE"
+            }
+          ]
+        },
+        {
+          "name": "revision",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "artifact_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_workflow_artifacts.id",
+              "ondelete": null
+            }
+          ]
+        },
+        {
+          "name": "result_hash",
+          "type": "VARCHAR(64)",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "finalized_result",
+          "type": "JSON",
+          "nullable": true,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "coverage",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "singleton_confirmation",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "storage_version",
+          "type": "VARCHAR(32)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        }
+      ],
+      "constraints": [
+        {
+          "type": "UniqueConstraint",
+          "name": "uq_workflow_generation",
+          "columns": [
+            "run_id",
+            "revision"
+          ],
+          "expression": null
+        },
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "artifact_id"
+          ],
+          "expression": null
+        },
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "run_id"
+          ],
+          "expression": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ix_mdm_workflow_generations_run_id",
+          "unique": false,
+          "columns": [
+            "run_id"
+          ]
+        }
+      ]
+    },
+    "mdm_resolution_entities": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": true,
+          "foreign_keys": []
+        },
+        {
+          "name": "run_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_runs.id",
+              "ondelete": "CASCADE"
+            }
+          ]
+        },
+        {
+          "name": "version",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR(16)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "entity_type",
+          "type": "VARCHAR(16)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "updated_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        }
+      ],
+      "constraints": [
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "run_id"
+          ],
+          "expression": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ix_mdm_resolution_entities_run",
+          "unique": false,
+          "columns": [
+            "run_id"
+          ]
+        },
+        {
+          "name": "ix_mdm_resolution_entities_status",
+          "unique": false,
+          "columns": [
+            "run_id",
+            "status"
+          ]
+        },
+        {
+          "name": "ix_mdm_resolution_entities_run_id",
+          "unique": false,
+          "columns": [
+            "run_id"
+          ]
+        }
+      ]
+    },
+    "mdm_resolution_entity_versions": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": true,
+          "foreign_keys": []
+        },
+        {
+          "name": "entity_id",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": [
+            {
+              "target": "mdm_resolution_entities.id",
+              "ondelete": "CASCADE"
+            }
+          ]
+        },
+        {
+          "name": "version",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "golden_fields",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "changed_by",
+          "type": "VARCHAR(36)",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "foreign_keys": []
+        }
+      ],
+      "constraints": [
+        {
+          "type": "UniqueConstraint",
+          "name": "uq_mdm_entity_version",
+          "columns": [
+            "entity_id",
+            "version"
+          ],
+          "expression": null
+        },
+        {
+          "type": "ForeignKeyConstraint",
+          "name": null,
+          "columns": [
+            "entity_id"
+          ],
+          "expression": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ix_mdm_entity_versions_entity",
+          "unique": false,
+          "columns": [
+            "entity_id"
+          ]
+        },
+        {
+          "name": "ix_mdm_resolution_entity_versions_entity_id",
+          "unique": false,
+          "columns": [
+            "entity_id"
+          ]
+        }
+      ]
+    }
+  },
+  "role_capabilities": {
+    "VIEWER": [
+      "read"
+    ],
+    "STEWARD": [
+      "approve_pair",
+      "create_run",
+      "edit_golden",
+      "explain",
+      "export_data",
+      "manage_run",
+      "read",
+      "read_audit",
+      "reject_pair",
+      "start_run"
+    ],
+    "SENIOR_STEWARD": [
+      "approve_d_subgroup",
+      "approve_pair",
+      "create_run",
+      "edit_golden",
+      "explain",
+      "export_data",
+      "manage_run",
+      "read",
+      "read_audit",
+      "reject_pair",
+      "selective_unmerge",
+      "start_run"
+    ],
+    "POLICY_ADMIN": [
+      "edit_policy",
+      "read",
+      "read_audit",
+      "simulate_policy"
+    ],
+    "AUDITOR": [
+      "read",
+      "read_audit"
+    ]
+  },
+  "source_sha256": {
+    "backend/src/masterone/mdm/models.py": "b2401bfcedfd3d91e5ca9040785d6b35ca5d819ab3da7798327214d3f9f60a8d",
+    "backend/src/masterone/mdm/workflow_models.py": "421ec5a959313a9b6ad9b3adaa8ac991f24eda46b4054844d19299999cd270f9",
+    "backend/src/masterone/mdm/workflow_review.py": "c9d19c38523236e23876c530c0aadab9815a3e00de2a3f1a467fde08bd2fdbd9",
+    "backend/src/masterone/mdm/workflow_bulk.py": "24744edee3ea2e9fc4b1852c05a4865a5cc1f596e451daf55252a851eb7b64b1",
+    "backend/src/masterone/mdm/workflow_amendments.py": "397ac5b5f8ca0cc0b466e6f8481937ce026ee5ac38ea7c1adcf715dd5c632cc4",
+    "backend/src/masterone/mdm/workflow_group_approvals.py": "b0ae61a5c581d8acc704cc9c6c20aef50571933f40682651fcd79a589e786be0",
+    "backend/src/masterone/mdm/workflow_automation.py": "0287cc8a1174290a68b9839b55235cea17ab3033eb429f1599d662a15753a333",
+    "backend/src/masterone/auth/security.py": "64ed6bdb586c84d8a1a98a0cb26c49a5af6fc7cd42a9e755c0b4db76ea851941",
+    "backend/src/masterone/mdm/generation_staging.py": "fec04fdda15cc728fc070d0118672625201dc91a4c4fb8850fb225ef4e6c7fd9",
+    "backend/src/masterone/mdm/migrate.py": "3e46907e646a3f89e16b74e32496547549d25f24cce68e1e0f3bc35e80d0eae0",
+    "backend/migrations/versions/0032_workflow_generation_coverage.py": "a8859ab9ce4a1be19c55ccd94664b7ac7fa716b4ca479339b258f51c8aba5512",
+    "MASTERONE_ADVANCED_SPEC_20261014.md": "e5325a954660261ba1ef7438cfd87106af0b30457375b3e1503ae87cf51831d2"
+  }
+}

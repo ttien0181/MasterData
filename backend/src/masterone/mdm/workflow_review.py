@@ -29,6 +29,14 @@ def paginate(query, column, limit, cursor, serialize):
 
 def eligibility(pair):
     result = effective_result(pair)
+    if result.get('coordinator_version') == 'r1_v1':
+        permission = dict(result['eligibility'])
+        if pair.decision in ('REJECTED', 'NON_MATCH'):
+            permission.update(manual_allowed=False, auto_allowed=False,
+                              blocked_reasons=['STEWARD_NEGATIVE_DECISION' if pair.decision == 'NON_MATCH' else 'REVIEW_VETO'])
+        if result.get('primary_group') == 'D':
+            permission['reason_required'] = True
+        return permission
     permission = adapt_evaluation(result, review=ReviewDecision(pair.decision))[2]
     reasons = list(permission.reasons)
     if not permission.manual_allowed and not reasons:
@@ -42,7 +50,8 @@ def eligibility(pair):
 
 
 def pair_read(pair):
-    return {'pair_id': pair.id, 'baseline': effective_result(pair), 'decision': pair.decision,
+    from masterone.mdm.review_taxonomy import taxonomy
+    return {**taxonomy(effective_result(pair)), 'pair_id': pair.id, 'baseline': effective_result(pair), 'decision': pair.decision,
             'review_reason': pair.review_reason, 'automation': pair.automation,
             'original_baseline': pair.baseline, 'assessment_id': pair.assessment_id,
             'advice': pair.advice, 'revision': pair.revision, 'eligibility': eligibility(pair), 'score_unit': 'p119_rule_v1'}
@@ -51,15 +60,45 @@ def pair_read(pair):
 def scoped_pairs(db, run_id, filters=None):
     query = db.query(WorkflowPair).filter_by(run_id=run_id)
     filters = filters or {}
+    projected = None
+    if filters.get('visibility') == 'review' or filters.get('taxonomy') == 'actions_v1':
+        from sqlalchemy import String, Boolean, column, func, true
+        effective = effective_column()
+        if db.bind.dialect.name == 'postgresql':
+            projected = func.json_to_record(effective).table_valued(
+                column('primary_group', String), column('subgroup', String),
+                column('decision', String), column('triage_status', String),
+                column('reason',String),column('triage_reason',String),column('agent_disagreement',Boolean)
+            ).render_derived(with_types=True).lateral('review_visibility')
+            query = query.join(projected, true())
+        group = projected.c.primary_group if projected is not None else effective['primary_group'].as_string()
+        decision = projected.c.decision if projected is not None else effective['decision'].as_string()
+        if filters.get('visibility') == 'review':
+            query = query.filter(func.coalesce(group, '') != 'BLOCKED',
+                                 func.coalesce(decision, '').notin_(('BLOCKED', 'NOT_MERGEABLE', 'NON_MATCH')))
+    review_group,review_subgroup=None,None
+    if filters.get('taxonomy') == 'actions_v1':
+        from masterone.mdm.review_taxonomy import taxonomy_columns
+        evaluation=effective_column()
+        def field(key):
+            return projected.c[key] if projected is not None else evaluation[key].as_string()
+        disagreement=projected.c.agent_disagreement if projected is not None else evaluation['agent_disagreement'].as_boolean()
+        review_group,review_subgroup=taxonomy_columns(field('primary_group'),field('subgroup'),field('decision'),
+            field('triage_status'),func.coalesce(field('triage_reason'),field('reason')),disagreement)
     if filters.get('group'):
-        column = effective_column()['primary_group'].as_string()
-        query = query.filter(column.is_(None) if filters['group'] == 'UNCLASSIFIED' else column == filters['group'])
+        group = projected.c.primary_group if projected is not None else effective_column()['primary_group'].as_string()
+        if review_group is not None:group=review_group
+        query = query.filter(group.is_(None) if filters['group'] == 'UNCLASSIFIED' else group == filters['group'])
     if filters.get('subgroup'):
-        query = query.filter(effective_column()['subgroup'].as_string() == filters['subgroup'])
+        subgroup = projected.c.subgroup if projected is not None else effective_column()['subgroup'].as_string()
+        if review_subgroup is not None:subgroup=review_subgroup
+        query = query.filter(subgroup == filters['subgroup'])
     if filters.get('resolution'):
         from masterone.mdm.workflow_review_rules import pending_predicate
-        query = query.filter(pending_predicate() if filters['resolution'] == 'REQUIRED' else
-                             effective_column()['decision'].as_string() == 'INSUFFICIENT_EVIDENCE' if filters['resolution'] == 'INSUFFICIENT' else
+        pending = pending_predicate(baseline=projected.c.decision, triage=projected.c.triage_status) if projected is not None else pending_predicate()
+        baseline = projected.c.decision if projected is not None else effective_column()['decision'].as_string()
+        query = query.filter(pending if filters['resolution'] == 'REQUIRED' else
+                             baseline == 'INSUFFICIENT_EVIDENCE' if filters['resolution'] == 'INSUFFICIENT' else
                              WorkflowPair.decision.in_(('UNDECIDED', 'DEFERRED')) if filters['resolution'] == 'PENDING'
                              else WorkflowPair.decision == filters['resolution'])
     return query
@@ -73,7 +112,8 @@ def negative_links(db, run_id, pairs):
     rows = db.query(ResolutionNegativeEdge.left_record_id, ResolutionNegativeEdge.right_record_id).filter(
         ResolutionNegativeEdge.run_id == run_id, ResolutionNegativeEdge.active.is_(True),
         tuple_(ResolutionNegativeEdge.left_record_id, ResolutionNegativeEdge.right_record_id).in_(orientations))
-    return {tuple(sorted(row)) for row in rows}
+    from masterone.mdm.workflow_structure import structure_links
+    return {tuple(sorted(row)) for row in rows} | (structure_links(db, run_id) & endpoints)
 
 
 def apply_decision(db, run, pair, decision, actor, *, links=None, resolve_conflicts=True, reason=None):
@@ -113,7 +153,7 @@ def decide_pair(db, run_id, pair_id, request, actor):
         return prior.result
     check_revision(run, payload)
     from masterone.mdm.workflow_service import review_blocking_operation
-    if run.workflow_state != 'DECIDE_REVIEW' or review_blocking_operation(db, run_id):
+    if run.workflow_state not in ('DECIDE_REVIEW','GOLDEN_REVIEW') or review_blocking_operation(db, run_id):
         conflict('DECISIONS_LOCKED')
     pair = db.query(WorkflowPair).filter_by(run_id=run_id, id=pair_id).one_or_none()
     if pair is None:
@@ -122,10 +162,14 @@ def decide_pair(db, run_id, pair_id, request, actor):
         conflict('STALE_PAIR_REVISION')
     if pair.decision == 'NON_MATCH':
         conflict('AMENDMENT_REQUIRED')
+    from masterone.mdm.steward_feedback import capture_review_snapshot, persist_feedback
+    snapshot = capture_review_snapshot(db, run, pair)
     apply_decision(db, run, pair, request.decision, actor, reason=request.reason)
+    run.workflow_state = 'DECIDE_REVIEW'
     run.workflow_revision += 1
     run.decision_revision += 1
     op = new_operation(db, run, 'PAIR_DECISION', request.request_id, payload, actor)
+    persist_feedback(db, run, pair, op, actor, snapshot, 'HUMAN_DIRECT')
     op.status, op.stage = 'COMPLETED', 'completed'
     op.result = {**pair_read(pair), 'workflow_revision': run.workflow_revision, 'decision_revision': run.decision_revision}
     db.commit()

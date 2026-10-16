@@ -22,7 +22,7 @@ export default function SessionHub() {
     return () => { active = false; };
   }, [filters, cursor, reload]);
   async function open(run: string) { try { const w = await getWorkflow(run); router.push(w.workflow_version === 1 ? `/app/legacy?run=${encodeURIComponent(run)}` : sessionPath(run)); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không mở được phiên.'); } }
-  return <main className="workflow-main"><header className="workflow-session-header"><div><p className="workflow-eyebrow">Master data workspace</p><h1>Tổng quan</h1><p>Upload dữ liệu hoặc mở một phiên trong lịch sử.</p></div>{can(user, 'create_run') && <Link className="workflow-button" href="/app/uploads/new">Upload / tạo phiên</Link>}</header>
+  return <main className="workflow-main"><header className="workflow-session-header"><h1>Tổng quan</h1>{can(user, 'create_run') && <Link className="workflow-button" href="/app/uploads/new">Upload / tạo phiên</Link>}</header>
     {drafts.some(d => d.status !== 'COMMITTED') && <section className="workflow-panel"><h2>Dữ liệu đang chuẩn bị</h2>{drafts.filter(d => d.status !== 'COMMITTED').map(d => <p key={d.session_id}><Link href={`/app/uploads/${encodeURIComponent(d.session_id)}`}>{d.name || 'Upload đang chuẩn bị'}</Link></p>)}</section>}
     <SessionsHub embedded items={history?.items || []} total={history?.total || 0} nextCursor={history?.next_cursor || null} loading={loading} error={error} canManage={can(user, 'manage_run')}
       onPage={page} onRetry={options => page(null, options)} onOpen={run => void open(run)} onClose={() => undefined}

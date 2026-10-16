@@ -20,9 +20,10 @@ from masterone.mdm.pipeline.clustering import build_proposals
 from masterone.mdm.pipeline.decision_semantics import load_cannot_links
 from masterone.mdm.pipeline.golden_v2 import record_payload
 from masterone.mdm.pipeline.review_grouping import classify_pair
-from masterone.mdm.pipeline.scoring_engine import MemorySnapshot, ScoringConfig, ScoringEngine, iter_score_batches
+from masterone.mdm.pipeline.scoring_engine import MemorySnapshot, ScoringConfig, iter_score_batches
 from masterone.mdm.pipeline.semantic_address import run_annotations, with_annotations
 from masterone.mdm.resolution_persistence import persist_snapshot
+from masterone.mdm.decision_progress import ProgressScoringEngine as ScoringEngine, candidate_progress
 
 
 def _compute(records: list[dict], run_id: str, policy_version: str,
@@ -33,7 +34,7 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
              execution_blocked_pairs: frozenset = frozenset(),
              _stream_store=None, _stream_event=None, _normalize=False, _attempt_id=None,
              _checkpoint_factory=None, _checkpoint_fault=None, _policy_factory=None,
-             _stop_after_decide=False) -> dict:
+             _stop_after_decide=False, integration_candidates=None) -> dict:
     if not _stop_after_decide and (_checkpoint_factory is not None or _policy_factory is not None):
         from masterone.mdm.workflow_service import require_legacy
         with (_checkpoint_factory or _policy_factory)() as db:
@@ -58,7 +59,8 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
         restored = resume.restore_result()
         if restored is not None:
             return restored
-    fallback = streaming.fallback_reason(scoring_config, store)
+    fallback = ('PINNED_ADVANCED_CANDIDATE_UNION' if integration_candidates is not None
+                else streaming.fallback_reason(scoring_config, store))
     prepared = None
     if fallback is None:
         records, candidate_result, scoring_engine, scoring_metrics, score_path, prepared = streaming.compute_scores(
@@ -68,11 +70,12 @@ def _compute(records: list[dict], run_id: str, policy_version: str,
     else:
         if _stream_event:
             _stream_event("fallback:" + fallback, None)
-        candidate_result = CandidateEngine(candidate_config).generate(records)
+        candidate_result = integration_candidates if integration_candidates is not None else CandidateEngine(candidate_config).generate(records)
+        candidate_progress(len(candidate_result.pairs), force=True)
         scoring_engine = ScoringEngine(MemorySnapshot(records), scoring_config, negative_pairs=negative_pairs)
         score_path = score_dir / "scored.parquet"
         scoring_metrics = scoring_engine.write_scores(
-            ({"left_id": a, "right_id": b, "reasons": sorted(reasons)} for (a, b), reasons in sorted(candidate_result.pairs.items())),
+            ({"left_id": a, "right_id": b, "reasons": sorted(reasons)} for (a, b), reasons in candidate_result.pairs.items()),
             score_path, expected_count=len(candidate_result.pairs))
     candidate_blocks = candidate_result.pairs
     by_id = {record["id"]: record for record in records}

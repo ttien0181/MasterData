@@ -11,6 +11,9 @@ def test_status_does_not_materialize_pair_payloads(client, workflow_run):
     with client.session_factory.begin() as db:
         pair = db.query(WorkflowPair).filter_by(run_id=workflow_run).first()
         pair.decision = 'DEFERRED'
+        from masterone.mdm.models import ResolutionRun
+        # Direct fixture writes must advance the revision just like the review API.
+        db.get(ResolutionRun, workflow_run).decision_revision += 1
     statements = []
     engine = client.session_factory.kw['bind']
     def record(_conn, _cursor, statement, *_):

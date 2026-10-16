@@ -476,7 +476,12 @@ def test_generation_migration_preservation_and_nondestructive_rollback(tmp_path,
         db.add(ResolutionReviewCase(id="old-case", run_id="run", pair_ids=["old-pair"], member_record_ids=["a", "b"],
             primary_group="D", subgroup="D1", signature_hash="old", triage_reason="REVIEW", status="REJECTED", revision=3))
         db.flush()
-        db.add(ResolutionAuditEvent(id="old-audit", run_id="run", actor_user_id="owner", pair_id="old-pair", proposal_id="old-proposal", action="REVIEW", details={"kept": True}))
+        # Seed the historical schema using only columns present at 0021. The
+        # current ORM also emits governance columns introduced after this revision.
+        db.execute(text("INSERT INTO mdm_resolution_audit_events "
+            "(id,run_id,actor_user_id,pair_id,proposal_id,action,details,created_at) "
+            "VALUES ('old-audit','run','owner','old-pair','old-proposal','REVIEW',:details,CURRENT_TIMESTAMP)"),
+            {"details": '{"kept": true}'})
     command.upgrade(cfg, "head")
     with factory() as db:
         assert db.get(ResolutionPublication, "run") is None

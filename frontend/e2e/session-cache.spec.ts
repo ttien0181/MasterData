@@ -21,7 +21,7 @@ async function fixture(page: Page) {
     } else if (path.endsWith('/pairs')) {
       const second = Number(url.searchParams.get('offset') || 0) > 0, id = second ? 'p2' : 'p1';
       body = { items: [{ pair_id: id, baseline: { id, left_id: 'r0', right_id: 'r1', primary_group: 'D', subgroup: 'D1', score: 5, decision: 'REVIEW', field_evidence: [{ field: 'name', value: 'Synthetic evidence' }] }, decision: 'UNDECIDED', revision: 1, score_unit: 'p119_rule_v1', eligibility: { manual_allowed: true, auto_allowed: false, blocked_reasons: [] } }], total: 20, next_cursor: second ? null : 'p2' };
-    } else if (path.endsWith('/pairs/summary')) body = {total:20,needs_review:20,accepted:0,denied:0,kept_separate:0,deferred:0,blocked:0,manual_available:20,auto_available:0,decision_revision:1,groups:[{key:'D',total:20,subgroups:[]}]};
+    } else if (path.endsWith('/pairs/summary')) body = {total:20,needs_review:20,accepted:0,denied:0,kept_separate:0,deferred:0,blocked:0,manual_available:20,auto_available:0,decision_revision:1,groups:[{key:'B',total:20,subgroups:[]}]};
     else if (path.endsWith('/golden/resolution')) body = { resolution: null, undo_operation_id: null, stale: false };
     else if (path.endsWith('/clusters')) {
       const second = !!url.searchParams.get('cursor');
@@ -43,24 +43,33 @@ async function fixture(page: Page) {
   return { reads, writes, revoke: () => { forbidden = true; }, expire: () => { expired = true; } };
 }
 async function tab(page: Page, label: RegExp) {
+  const menu = page.getByRole('complementary', { name: 'Điều hướng phiên' }).getByRole('button', { name: /ĐIỀU HƯỚNG PHIÊN/ });
+  if (await menu.isVisible() && await menu.getAttribute('aria-expanded') === 'false') await menu.click();
+  if (label.source.includes('Duyệt') && await page.getByRole('button', { name: 'Mở mục con Phân loại các cặp bản ghi', exact: true }).isVisible()) {
+    await page.getByRole('button', { name: 'Mở mục con Phân loại các cặp bản ghi', exact: true }).click();
+  }
+  if(label.source.includes('Các nhóm bản ghi')) {
+    const toggle=page.getByRole('button',{name:'Mở mục con Các nhóm bản ghi',exact:true});
+    if(await toggle.isVisible())await toggle.click();
+    label=/^Danh sách nhóm$/;
+  }
   // Avoid Playwright scrolling to the top navigation before dispatching the click.
   const link = page.getByRole('navigation', { name: 'Các bước trong phiên' }).getByRole('link', { name: label });
   const href = await link.getAttribute('href');
   await link.evaluate(element => (element as HTMLElement).click());
   await expect(page).toHaveURL(new URL(href!, page.url()).href);
-  const heading = href!.endsWith('/data') ? 'Tổng quan dữ liệu' : href!.endsWith('/decisions') ? 'Phân loại các cặp bản ghi' : href!.endsWith('/clusters') ? 'Các nhóm bản ghi' : 'Golden record';
+  const heading = href!.endsWith('/data/records') ? 'Dữ liệu tải lên' : href!.endsWith('/data') ? 'Phân tích dữ liệu' : href!.endsWith('/decisions/pairs') ? 'Phân loại các cặp bản ghi' : href!.endsWith('/decisions') ? 'Tổng quan phân loại' : href!.endsWith('/clusters/records') ? 'Danh sách nhóm' : href!.endsWith('/clusters') ? 'Tổng quan nhóm' : 'Golden record';
   await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
 }
 const details = (page: Page, key: string) => page.locator(`details[data-view-key="${key}"]`);
 async function expand(page: Page, key: string) {
   await details(page, key).evaluate(element => { (element as HTMLDetailsElement).open = true; element.dispatchEvent(new Event('toggle')); });
 }
-const count = (reads: string[], suffix: RegExp) => reads.filter(path => suffix.test(path)).length;
 
 test('all four URL tabs retain loaded pages, selections, drafts and view state; save refreshes the affected Golden revision', async ({ page }) => {
   const mock = await fixture(page);
   await page.setViewportSize({ width: 900, height: 760 });
-  await page.goto('/app/sessions/r/data');
+  await page.goto('/app/sessions/r/data/records');
   await expect(page.getByRole('cell', { name: 'Raw 0', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Trang sau', exact: true }).click();
   await expect(page.getByRole('cell', { name: 'Raw 10', exact: true })).toBeVisible();
@@ -70,20 +79,20 @@ test('all four URL tabs retain loaded pages, selections, drafts and view state; 
   await table.evaluate(element => { element.scrollLeft = 150; element.dispatchEvent(new Event('scroll')); });
   await page.evaluate(() => { window.scrollTo(0, 350); window.dispatchEvent(new Event('scroll')); });
   const dataY = await page.evaluate(() => window.scrollY);
-  await tab(page, /Phân loại các cặp bản ghi/);
+  await tab(page, /^Duyệt các cặp bản ghi$/);
   await expect(page.getByRole('checkbox', { name: 'Chọn cặp p1', exact: true })).toBeVisible();
-  await page.getByRole('combobox', { name: 'Group', exact: true }).selectOption('D');
+  await page.getByRole('group', { name: 'Group', exact: true }).getByRole('button', { name: /^Group B / }).click();
   await expect(page.getByRole('button', { name: 'Trang tiếp', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Trang tiếp', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Chọn cặp p2', exact: true }).check();
   await page.getByRole('textbox', { name: 'Tìm trong trang' }).fill('r0');
-  await expand(page, 'pair:p2');
-  await page.locator('[data-scroll-key="pairs"]').evaluate(element => { element.scrollLeft = 120; element.dispatchEvent(new Event('scroll')); });
+  const pairScroll = await page.locator('[data-scroll-key="pairs"]').evaluate(element => { element.scrollLeft = 120; element.dispatchEvent(new Event('scroll')); return element.scrollLeft; });
   await tab(page, /Các nhóm bản ghi/);
   await page.getByRole('button', { name: /Nhóm c ·/ }).click();
   await page.getByRole('textbox', { name: 'Chỉnh tay name' }).fill('Draft across tabs');
   await expand(page, 'context:c');
   await page.getByRole('button', { name: 'Trang tiếp', exact: true }).nth(1).click();
+  await expand(page, 'member-sources:c');
   await expect(details(page, 'member:c:r1')).toBeVisible();
   await expand(page, 'member:c:r1');
   await page.getByRole('button', { name: 'Trang tiếp', exact: true }).nth(2).click();
@@ -104,19 +113,19 @@ test('all four URL tabs retain loaded pages, selections, drafts and view state; 
   await expect(page.getByRole('textbox', { name: 'Chỉnh tay name' })).toHaveValue('Draft across tabs');
   await expect(page.getByRole('checkbox', { name: 'Chọn nhóm c2' })).toBeChecked();
   await expect(details(page, 'context:c')).toHaveAttribute('open', '');
+  await expect(details(page, 'member-sources:c')).toHaveAttribute('open', '');
   await expect(details(page, 'member:c:r1')).toHaveAttribute('open', '');
   await expect(details(page, 'evidence:c:e2')).toHaveAttribute('open', '');
   await page.goForward();
   await expect(page.getByText('Second Golden', { exact: true })).toBeVisible();
   await expect(details(page, 'source:c2:name')).toHaveAttribute('open', '');
   await expect(page.getByRole('textbox', { name: 'Lý do' })).toHaveValue('Preserved reason');
-  await tab(page, /Phân loại các cặp bản ghi/);
+  await tab(page, /^Duyệt các cặp bản ghi$/);
   await expect(page.getByRole('checkbox', { name: 'Chọn cặp p2' })).toBeChecked();
-  await expect(page.getByRole('combobox', { name: 'Group', exact: true })).toHaveValue('D');
+  await expect(page.getByRole('group', { name: 'Group', exact: true }).getByRole('button', { name: /^Group B / })).toHaveAttribute('aria-pressed','true');
   await expect(page.getByRole('textbox', { name: 'Tìm trong trang' })).toHaveValue('r0');
-  await expect(details(page, 'pair:p2')).toHaveAttribute('open', '');
-  await expect.poll(() => page.locator('[data-scroll-key="pairs"]').evaluate(element => element.scrollLeft)).toBe(120);
-  await tab(page, /Tổng quan dữ liệu/);
+  await expect.poll(() => page.locator('[data-scroll-key="pairs"]').evaluate(element => element.scrollLeft)).toBe(pairScroll);
+  await tab(page, /^Dữ liệu tải lên$/);
   await expect(page.getByRole('cell', { name: 'Normalized 10', exact: true })).toBeVisible();
   await expect(details(page, 'r10:detail')).toHaveAttribute('open', '');
   await expect.poll(() => table.evaluate(element => element.scrollLeft)).toBe(150);
@@ -129,8 +138,63 @@ test('all four URL tabs retain loaded pages, selections, drafts and view state; 
   await tab(page, /Golden record/);
   await page.getByRole('button', { name: 'Trang đầu', exact: true }).click();
   await expect(page.getByText('Draft across tabs', { exact: true })).toBeVisible();
-  expect(count(mock.reads, /\/workflow\/data\?/)).toBe(2);
+  // Saving Golden must not refetch any source-data page already loaded before the save.
+  expect(mock.reads.filter(path => /\/workflow\/data\?/.test(path))).toEqual(before.filter(path => /\/workflow\/data\?/.test(path)));
   expect(mock.writes).toHaveLength(1);
+});
+
+test('decision overview and review keep filters, page and selection across their separate windows', async ({ page }) => {
+  const mock = await fixture(page);
+  await page.goto('/app/sessions/r/decisions');
+  await expect(page.getByRole('heading', { name: 'Tổng quan phân loại', exact: true })).toBeVisible();
+  await expect(page.getByRole('table')).toHaveCount(0);
+  await tab(page, /^Duyệt các cặp bản ghi$/);
+  await page.getByRole('group', { name: 'Group', exact: true }).getByRole('button', { name: /^Group B / }).click();
+  await page.getByRole('button', { name: 'Trang tiếp', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Chọn cặp p2', exact: true }).check();
+  await page.getByRole('textbox', { name: 'Tìm trong trang' }).fill('r0');
+  const currentPageReads = () => mock.reads.filter(path => path.includes('/workflow/pairs?') && path.includes('offset=10')).length;
+  const count = currentPageReads();
+  await tab(page, /^Tổng quan phân loại$/);
+  await expect(page.getByRole('table')).toHaveCount(0);
+  await tab(page, /^Duyệt các cặp bản ghi$/);
+  await expect(page.getByRole('checkbox', { name: 'Chọn cặp p2', exact: true })).toBeChecked();
+  await expect(page.getByRole('group', { name: 'Group', exact: true }).getByRole('button', { name: /^Group B / })).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByRole('textbox', { name: 'Tìm trong trang' })).toHaveValue('r0');
+  expect(currentPageReads()).toBe(count);
+  expect(mock.writes).toEqual([]);
+});
+
+test('analysis and uploaded data are separate windows and keep record page, mode and scroll without refetching', async ({ page }) => {
+  const mock = await fixture(page);
+  await page.setViewportSize({ width: 1100, height: 760 });
+  await page.goto('/app/sessions/r/data');
+  await expect(page.getByRole('heading', { name: 'Phân tích dữ liệu', exact: true })).toBeVisible();
+  await expect(page.getByRole('table', { name: 'Bản ghi dữ liệu' })).toHaveCount(0);
+  const nav = page.getByRole('navigation', { name: 'Các bước trong phiên' });
+  const dataMenu = nav.locator('ol > li').first().locator('ul');
+  await expect(dataMenu.getByRole('link')).toHaveCount(2);
+  await tab(page, /^Dữ liệu tải lên$/);
+  await expect(page.getByRole('row')).toHaveCount(11);
+  await expect(page.getByLabel('Thống kê toàn bộ dữ liệu')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Trang sau', exact: true }).click();
+  await expect(page.getByRole('cell', { name: 'Raw 10', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Chuẩn hóa', exact: true }).click();
+  await expand(page, 'r10:detail');
+  const table = page.locator('[data-scroll-key="records"]');
+  await table.evaluate(element => { element.scrollLeft = 180; element.dispatchEvent(new Event('scroll')); });
+  await page.evaluate(() => { window.scrollTo(0, 250); window.dispatchEvent(new Event('scroll')); });
+  const y = await page.evaluate(() => window.scrollY), before = [...mock.reads];
+  await tab(page, /^Phân tích dữ liệu$/);
+  await expect(page.getByRole('table')).toHaveCount(0);
+  await tab(page, /^Dữ liệu tải lên$/);
+  await expect(page.getByRole('button', { name: 'Chuẩn hóa', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByText('Trang 2 / 2', { exact: true })).toBeVisible();
+  await expect(details(page, 'r10:detail')).toHaveAttribute('open', '');
+  await expect.poll(() => table.evaluate(element => element.scrollLeft)).toBe(180);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(y);
+  expect(mock.reads).toEqual(before);
+  expect(mock.writes).toEqual([]);
 });
 
 test('expired login during save clears retained private draft and returns to login', async ({ page }) => {

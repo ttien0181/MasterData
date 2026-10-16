@@ -1,0 +1,3 @@
+id,entity_id,source_system,full_name,phone_number,email_address,raw_address,address_id,noise_type,difficulty,temporal_case
+,E1,CRM,Nguyen An,0912345678,an@example.test,1 Pho Hue,ADDR-1,clean,easy,old
+b,E1,ERP,Nguyen An,0912345678,an@example.test,1 Pho Hue,ADDR-2,typo,hard,new

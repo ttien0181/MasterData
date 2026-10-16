@@ -1,3 +1,4 @@
+from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -23,6 +24,7 @@ from masterone.mdm.workflow_contracts import (
     Mutation,
     OperationRead,
     PairAdviceRequest,
+    ProcessRequest,
     ReopenRequest,
     RepairRequest,
     ResolveRequest,
@@ -38,7 +40,7 @@ router = APIRouter(prefix='/mdm/runs/{run_id}/workflow', tags=['Session workflow
 @router.get('', response_model=WorkflowRead)
 @router.get('/', response_model=WorkflowRead, include_in_schema=False)
 def read_workflow(run_id: str, db: Session = Depends(get_session), auth: CurrentSession = Depends(require_capability('read'))):
-    result = get_workflow(db, run_id, auth.user.id)
+    result = get_workflow(db, run_id, auth.user.id, cache_reads=True)
     from masterone.auth.security import check_capability
     capabilities = {'start-decide': 'start_run', 'decide-pair': 'approve_pair', 'bulk-decisions': 'approve_pair',
                     'finalize-decisions': 'approve_pair', 'save-golden': 'edit_golden', 'auto-select': 'edit_golden',
@@ -48,6 +50,7 @@ def read_workflow(run_id: str, db: Session = Depends(get_session), auth: Current
                     'queue-decisions': 'approve_pair','automation-shadow':'approve_pair',
                     'automation-apply':'approve_pair','automation-stop':'approve_pair'}
     capabilities.update({'annotate-groups': 'approve_pair', 'amend-pair': 'approve_pair', 'finalize-partial': 'approve_pair',
+                         'build-cluster-queue':'approve_pair',
                          'approve-group': 'approve_pair', 'preview-clusters': 'approve_pair'})
     actions = []
     for action in result['allowed_actions']:
@@ -57,6 +60,12 @@ def read_workflow(run_id: str, db: Session = Depends(get_session), auth: Current
         except HTTPException:
             pass
     result['allowed_actions'] = actions
+    if 'start-decide' in actions:
+        try:
+            check_capability(auth, 'approve_pair')
+            result['allowed_actions'].append('process-data')
+        except HTTPException:
+            pass
     if result['workflow_state'] == 'DECIDE_REVIEW':
         try:
             check_capability(auth, 'approve_pair')
@@ -71,6 +80,14 @@ def read_request_receipt(run_id: str, request_id: str, db: Session = Depends(get
     owned_run(db, run_id, auth.user.id)
     op = db.query(WorkflowOperation).filter_by(run_id=run_id, request_id=request_id).one_or_none()
     return operation_read(op) if op else None
+
+
+@router.get('/telemetry')
+def read_telemetry(run_id: str, db: Session = Depends(get_session),
+                   auth: CurrentSession = Depends(require_capability('read'))):
+    owned_run(db, run_id, auth.user.id)
+    from masterone.mdm.workflow_telemetry import usage_report
+    return usage_report(db, run_id)
 
 
 @router.get('/operations/{operation_id}', response_model=OperationRead)
@@ -94,6 +111,15 @@ def retry_operation(run_id: str, operation_id: str, body: Mutation, db: Session 
 def start_decide(run_id: str, body: Mutation, db: Session = Depends(get_session),
                  auth: CurrentSession = Depends(require_mutation_capability('start_run'))):
     return begin_operation(db, run_id, 'DECIDE', body.request_id, body.model_dump(), body.expected_workflow_revision, auth.user.id)
+
+
+@router.post('/process', response_model=OperationRead, status_code=202)
+def process_data(run_id: str, body: ProcessRequest, db: Session = Depends(get_session),
+                 auth: CurrentSession = Depends(require_mutation_capability('start_run'))):
+    from masterone.auth.security import check_capability
+    from masterone.mdm.workflow_processing import begin_processing
+    check_capability(auth, 'approve_pair')
+    return begin_processing(db, run_id, body, auth.user.id)
 
 
 @router.post('/reassess', response_model=OperationRead, status_code=202)
@@ -133,28 +159,36 @@ def assess_with_ai(run_id: str, body: PairAdviceRequest, db: Session = Depends(g
 @router.get('/data')
 def read_data(run_id: str, limit: int = Query(10, ge=1, le=100), cursor: str | None = None,
               offset: int | None = Query(None, ge=0),
+              include_profile: bool = True, include_records: bool = True,
               db: Session = Depends(get_session), auth: CurrentSession = Depends(require_capability('read'))):
     owned_run(db, run_id, auth.user.id)
     from masterone.mdm.data_profile import data_read
-    return data_read(db, run_id, limit, cursor, offset)
+    return data_read(db, run_id, limit, cursor, offset, include_profile=include_profile, include_records=include_records)
 
 
 @router.get('/pairs')
 def read_pairs(run_id: str, limit: int = Query(10, ge=1, le=100), cursor: str | None = None,
                offset: int | None = Query(None, ge=0),
                group: str | None = None, subgroup: str | None = None, resolution: str | None = None,
+               visibility: Literal['review'] | None = None,
+               taxonomy: Literal['actions_v1'] | None = None,
                db: Session = Depends(get_session), auth: CurrentSession = Depends(require_capability('read'))):
-    owned_run(db, run_id, auth.user.id)
+    run = owned_run(db, run_id, auth.user.id)
     from masterone.mdm.workflow_pair_reads import pair_page
-    return pair_page(db, run_id, limit, cursor, offset, dict(group=group, subgroup=subgroup, resolution=resolution))
+    from masterone.mdm.pair_read_cache import cached_read
+    filters = dict(group=group, subgroup=subgroup, resolution=resolution, visibility=visibility,taxonomy=taxonomy)
+    return cached_read(db, run, 'page', [limit, cursor, offset, filters],
+                       lambda: pair_page(db, run_id, limit, cursor, offset, filters))
 
 
 @router.get('/pairs/summary')
-def read_pair_summary(run_id: str, db: Session = Depends(get_session),
+def read_pair_summary(run_id: str, visibility: Literal['review'] | None = None, taxonomy: Literal['actions_v1'] | None = None, db: Session = Depends(get_session),
                       auth: CurrentSession = Depends(require_capability('read'))):
     run = owned_run(db, run_id, auth.user.id)
     from masterone.mdm.workflow_pair_reads import pair_summary
-    return pair_summary(db, run)
+    from masterone.mdm.pair_read_cache import cached_read
+    filters = dict(visibility=visibility,taxonomy=taxonomy)
+    return cached_read(db, run, 'summary', filters, lambda: pair_summary(db, run, filters))
 
 
 @router.get('/pairs/{pair_id}/review-cluster')
@@ -175,10 +209,12 @@ def preview_bulk_decisions(run_id: str, body: BulkRequest, db: Session = Depends
     op = active_operation(db, run_id)
     # Read-only counts can evolve while a bulk job runs. Assessment identity must still match.
     check_revision(run, {'expected_assessment_id': body.expected_assessment_id})
-    if run.workflow_state != 'DECIDE_REVIEW' or (op and op.operation_type != 'BULK_DECISIONS'):
+    if run.workflow_state not in ('DECIDE_REVIEW', 'GOLDEN_REVIEW') or (op and op.operation_type != 'BULK_DECISIONS'):
         conflict('DECISIONS_LOCKED')
     from masterone.mdm.workflow_pair_reads import bulk_preview
-    return bulk_preview(db, run, body)
+    from masterone.mdm.pair_read_cache import cached_read
+    params = body.model_dump(exclude={'request_id', 'preview_token', 'reason'})
+    return cached_read(db, run, 'bulk-preview', params, lambda: bulk_preview(db, run, body))
 
 
 @router.get('/pairs/{pair_id}')
@@ -226,6 +262,22 @@ def bulk_decisions(run_id: str, body: BulkRequest, db: Session = Depends(get_ses
     payload = body.model_dump(exclude={key for key in
         ('preview_token', 'reason', 'review_group_token', 'review_group_record_ids') if getattr(body, key) is None})
     return begin_operation(db, run_id, 'BULK_DECISIONS', body.request_id, payload, body.expected_workflow_revision, auth.user.id)
+
+
+@router.get('/cluster-queue')
+def read_cluster_queue(run_id: str, db: Session = Depends(get_session),
+                       auth: CurrentSession = Depends(require_capability('read'))):
+    from masterone.mdm.workflow_cluster_queue import queue_summary
+    return queue_summary(db,owned_run(db,run_id,auth.user.id))
+
+
+@router.post('/cluster-queue',response_model=OperationRead,status_code=202)
+def build_cluster_queue(run_id: str, body: FinalizeRequest, db: Session = Depends(get_session),
+                        auth: CurrentSession = Depends(require_mutation_capability('approve_pair'))):
+    if body.queue_mode is None:
+        raise HTTPException(422,'queue_mode is required')
+    from masterone.mdm.workflow_finalize import finalize_decisions as finalize
+    return finalize(db,run_id,body,auth.user.id)
 
 
 @router.post('/finalize-decisions', response_model=OperationRead, status_code=202)

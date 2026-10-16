@@ -6,8 +6,13 @@ import type { PairFilter, PairRead, WorkflowRead } from '@/lib/workflowContracts
 import { sessionKey, useSessionCache } from './SessionCache';
 import { useSessionRead } from './useSessionRead';
 
-const FRESH_TIME = 120_000;
+// Workflow revisions invalidate these reads. Elapsed time alone must not rerun
+// a full candidate scan when navigating back to an unchanged classification.
+const FRESH_TIME = Infinity;
 const BULK_REFRESH_INTERVAL = 5_000;
+function groupHasPairs(group: {total:number;pending?:number}, resolution?:string) {
+  return (resolution==='REQUIRED'?(group.pending??group.total):group.total)>0;
+}
 export function normalizedPairFilter(filter: PairFilter): PairFilter {
   return Object.fromEntries(Object.entries(filter).filter(([, value]) => !!value));
 }
@@ -54,32 +59,27 @@ function useRevisionRefresh(run: string, resource: 'pairs' | 'pair-summary', rev
 export function usePairReviewCache(workflow: WorkflowRead, filter: PairFilter, offset: number, enabled: boolean) {
   const cache = useSessionCache();
   const run = workflow.run_id, revision = workflow.decision_revision, assessmentId=workflow.assessment_id, adviceRevision=workflow.advice_revision;
-  const normalized = useMemo(() => normalizedPairFilter(filter), [filter.group, filter.subgroup, filter.resolution]);
+  const normalized = useMemo(() => normalizedPairFilter(filter), [filter.group, filter.subgroup, filter.resolution, filter.visibility, filter.taxonomy]);
   const options = useMemo(() => pageOptions(cache.userId, run, normalized, offset, revision, assessmentId, adviceRevision), [cache.userId, run, normalized, offset, revision, assessmentId, adviceRevision]);
   const load = useCallback(async (signal: AbortSignal) => (await options.queryFn({ signal })).value, [options]);
   const read = useSessionRead(run, ['pairs', normalized], { offset, limit: 10, ...(assessmentId?{assessment_id:assessmentId}:{}), ...(adviceRevision?{advice_revision:adviceRevision}:{}) }, load, enabled, true, FRESH_TIME);
-  const summaryLoad = useCallback(async (signal: AbortSignal) => {
-    const result = await getPairSummary(run, signal);
-    return { ...result, decision_revision: result.decision_revision ?? revision };
-  }, [run, revision, assessmentId, adviceRevision]);
-  const summary = useSessionRead(run, ['pair-summary'], assessmentId?{assessment_id:assessmentId}:{}, summaryLoad, enabled, true, FRESH_TIME);
+  const summary = usePairSummary(workflow, enabled);
   const allowed = enabled && !cache.blocked[run];
   const bulk = workflow.active_operation?.operation_type === 'BULK_DECISIONS';
   useRevisionRefresh(run, 'pairs', revision, read.data?.decisionRevision, read, allowed, bulk);
-  useRevisionRefresh(run, 'pair-summary', revision, summary.data?.decision_revision, summary, allowed, bulk);
 
-  const prefetchGroup = useCallback((group: string) => {
-    if (!allowed || workflow.active_operation || !(summary.data?.groups.find(item => item.key === group)?.total)) return;
-    void cache.client.prefetchQuery(pageOptions(cache.userId, run, { group, resolution:normalized.resolution }, 0, revision, assessmentId, adviceRevision));
-  }, [allowed, workflow.active_operation, summary.data, cache.client, cache.userId, run, revision, assessmentId, adviceRevision, normalized.resolution]);
+  const prefetchGroup = useCallback((group: string, targetFilter:PairFilter={group}, targetOffset=0) => {
+    const item=summary.data?.groups.find(item => item.key === group);
+    if (!allowed || workflow.active_operation || !item || !groupHasPairs(item,targetFilter.resolution)) return;
+    void cache.client.prefetchQuery(pageOptions(cache.userId, run, { ...targetFilter,group, visibility:normalized.visibility,taxonomy:normalized.taxonomy }, targetOffset, revision, assessmentId, adviceRevision));
+  }, [allowed, workflow.active_operation, summary.data, cache.client, cache.userId, run, revision, assessmentId, adviceRevision, normalized.resolution, normalized.visibility, normalized.taxonomy]);
   useEffect(() => {
     if (!allowed || workflow.active_operation || !read.data || read.previous || read.fetching || read.error || !summary.data || read.data.decisionRevision !== revision) return;
     let stopped = false;
     const tasks: ReturnType<typeof pageOptions>[] = [];
     if (read.data.next_cursor && read.data.loadedOffset === offset) tasks.push(pageOptions(cache.userId, run, normalized, offset + 10, revision, assessmentId, adviceRevision));
-    for (const group of summary.data.groups.filter(item => item.total > 0 && item.key !== normalized.group).slice(0, 3)) {
-      tasks.push(pageOptions(cache.userId, run, { group: group.key, resolution:normalized.resolution }, 0, revision, assessmentId, adviceRevision));
-    }
+    // Only warm the next page automatically. Other Groups load on hover/focus
+    // or selection, avoiding background scans of a large unrelated Group C.
     const timer = setTimeout(async () => {
       for (const task of tasks) {
         if (stopped) return;
@@ -105,4 +105,16 @@ export function usePairReviewCache(workflow: WorkflowRead, filter: PairFilter, o
     void cache.client.invalidateQueries({ queryKey: sessionKey(cache.userId, run, 'pair-summary') }, { cancelRefetch: false });
   }, [cache.client, cache.userId, run]);
   return { read, summary, prefetchGroup, updatedPair, fresh: !!read.data && !read.previous && !read.error && read.data.decisionRevision === revision && read.data.assessmentId === assessmentId && read.data.adviceRevision === adviceRevision };
+}
+
+export function usePairSummary(workflow: WorkflowRead, enabled: boolean) {
+  const cache = useSessionCache();
+  const run = workflow.run_id, revision = workflow.decision_revision, assessmentId = workflow.assessment_id, adviceRevision = workflow.advice_revision;
+  const summaryLoad = useCallback(async (signal: AbortSignal) => {
+    const result = await getPairSummary(run, signal);
+    return { ...result, decision_revision: result.decision_revision ?? revision };
+  }, [run, revision, assessmentId, adviceRevision]);
+  const summary = useSessionRead(run, ['pair-summary'], {visibility:'review',taxonomy:'actions_v1',...(assessmentId?{assessment_id:assessmentId}:{}),...(adviceRevision?{advice_revision:adviceRevision}:{})}, summaryLoad, enabled, true, FRESH_TIME);
+  useRevisionRefresh(run, 'pair-summary', revision, summary.data?.decision_revision, summary, enabled && !cache.blocked[run], workflow.active_operation?.operation_type === 'BULK_DECISIONS');
+  return summary;
 }

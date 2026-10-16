@@ -1,4 +1,7 @@
 import pytest
+
+pytest.importorskip('langgraph', reason='Sample chat is an optional development extra')
+
 from masterone.agents.graph import agent
 
 

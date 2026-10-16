@@ -53,6 +53,8 @@ export function useTabView(run: string, tab: string, ready: boolean) {
     if (!restored.current) { targetY.current = ui.read(key, seed.current).y; pending.current = true; }
     let frame = 0, finish = 0;
     const restoreVertical = () => {
+      // Explicit sidebar deep links take precedence over the saved tab position.
+      if (window.location.hash) { pending.current = false; restored.current = true; return; }
       if (!pending.current || interacted.current) return;
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {

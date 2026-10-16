@@ -8,7 +8,7 @@ from alembic.config import Config
 
 from masterone.config import get_settings
 
-HEAD = "0032_generation_coverage"
+HEAD = "0034_pair_endpoint_index"
 
 
 def alembic_config(url: str, config_path: str | Path | None = None) -> Config:

@@ -1,0 +1,5 @@
+.membersTable table { width: 100%; border-collapse: collapse; text-align: left; }
+.membersTable table th, .membersTable table td { min-width: 200px; padding: 14px 16px; vertical-align: top; border-bottom: 1px solid var(--line, #dce4ef); overflow-wrap: anywhere; line-height: 1.6; }
+.membersTable table th { background: var(--bg-subtle, #f5f8fc); color: var(--ink-2, #475569); }
+.membersTable table th:first-child { min-width: 150px; }
+.membersTable table th small { display: block; margin-top: 6px; font-weight: 400; color: var(--ink-3, #64748b); }

@@ -16,7 +16,7 @@ export default function GoldenResolution({ scope = {}, dirty = false, readOnly=f
   const changes = useSessionRead(w.run_id, ['resolution-changes', resolution?.operation_id], { offset }, changesLoad, !!proposal);
   const locked=readOnly||!!w.cluster_result?.read_only||!!w.cluster_result?.stale;
   const body = () => ({...goldenRevision(w),expected_decision_revision:w.decision_revision});
-  return <section className="workflow-panel"><h3>Xử lý nhóm và Golden</h3><p>Accept xác nhận liên kết. Golden chỉ chính thức sau kiểm tra Deny, định danh, bằng chứng liên hệ và giới hạn thành viên. Nhóm hợp lệ có thể được xác nhận khi vùng khác còn xung đột.</p>
+  return <section className="workflow-panel"><h3>Xử lý nhóm và Golden</h3>
     <button disabled={locked || dirty || action.busy || !w.allowed_actions.includes('resolve-golden')} onClick={() => void action.run(() => resolveGolden(w.run_id, {...body(),...scope}))}>Tự xử lý &amp; tạo Golden</button>
     {dirty && <p>Lưu lựa chọn Golden trước khi xử lý.</p>}{action.error && <p role="alert">{action.error}</p>}
     {resolution && <><p role="status">Đã xác nhận {resolution.result.confirmed} Golden; {resolution.result.blocked} nhóm cần chọn trường.</p>

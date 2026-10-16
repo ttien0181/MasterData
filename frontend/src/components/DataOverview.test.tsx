@@ -6,16 +6,18 @@ import type { DataRead, WorkflowRead } from '@/lib/workflowContracts';
 import * as api from '@/lib/workflowApi';
 import { SessionCacheProvider } from './SessionCache';
 vi.mock('@/lib/workflowApi', async orig => ({ ...await orig<typeof api>(), getData: vi.fn() }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const w: WorkflowRead = { run_id: 'r', workflow_version: 2, workflow_state: 'DATA_READY', workflow_revision: 1, decision_revision: 0, cluster_revision: 0, golden_revision: 0, counts: {}, allowed_actions: [], blockers: [], active_operation: null, retryable_operation: null };
 const data = (offset = 0): DataRead => ({ files: [{ filename: 'customers.csv', row_count: 25, sha256: 'a' }], schema: ['name', 'email'], profile: { record_count: 25, unit: 'records', source_counts: { CRM: 25 }, quality_flags: { INVALID_EMAIL_FORMAT: 2 }, field_quality: {}, records_with_quality_flags: 2, field_completeness: { name: { present: 25, missing: 0 }, email: { present: 20, missing: 5 } } }, samples: { items: Array.from({ length: Math.min(10, 25 - offset) }, (_, i) => ({ record_id: `r${offset+i}`, external_id: `${offset+i}`, source_system: 'CRM', raw_fields: { name: `Person ${offset+i}`, email: 'bad' }, normalized_fields: { name: `Normalized ${offset+i}` }, quality_flags: ['INVALID_EMAIL_FORMAT'], extra_fields: { custom: 'Extra value' } })), total: 25, next_cursor: offset < 20 ? 'next' : null, offset } });
-function show() { render(<SessionCacheProvider userId="test"><WorkflowContext.Provider value={{ workflow: w, refresh: vi.fn() }}><DataOverview /></WorkflowContext.Provider></SessionCacheProvider>); }
-it('renders global metrics, readable cells, normalization and ten records per page', async () => {
+function show(mode: 'analysis' | 'records' = 'records') { return render(<SessionCacheProvider userId="test"><WorkflowContext.Provider value={{ workflow: w, refresh: vi.fn() }}><DataOverview mode={mode} /></WorkflowContext.Provider></SessionCacheProvider>); }
+it('renders readable cells, normalization and ten records per page without fetching the global profile', async () => {
   vi.mocked(api.getData).mockImplementation(async (_run, query) => data(Number(query?.get('offset') || 0)));
   show();
   const table = await screen.findByRole('table', { name: 'Bản ghi dữ liệu' });
   expect(within(table).getAllByRole('row')).toHaveLength(11);
-  expect(screen.getByText('Tổng bản ghi')).toBeInTheDocument();
+  expect(screen.queryByText('Tổng bản ghi')).not.toBeInTheDocument();
+  expect(vi.mocked(api.getData).mock.calls[0][1]?.get('include_profile')).toBe('false');
   expect(screen.getByText('Person 0', { selector: 'td' })).toBeInTheDocument();
   expect(document.querySelector('pre')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Chuẩn hóa' }));
@@ -28,6 +30,17 @@ it('renders global metrics, readable cells, normalization and ten records per pa
   expect(screen.getByRole('button', { name: 'Trang sau' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Trang trước' }));
   expect(await screen.findByText('Normalized 10', { selector: 'td' })).toBeInTheDocument();
+});
+it('shows global analysis and charts in a separate view without loading record pages', async () => {
+  vi.mocked(api.getData).mockResolvedValue({ ...data(), samples: { items: [], total: 25, next_cursor: null } });
+  show('analysis');
+  expect(await screen.findByRole('heading', { name: 'Phân tích dữ liệu' })).toBeVisible();
+  await screen.findByText('Tổng bản ghi');
+  expect(screen.getByLabelText('Thống kê toàn bộ dữ liệu')).toHaveTextContent('25');
+  expect(screen.getByLabelText('Tỷ lệ nguồn CRM')).toHaveAttribute('max', '25');
+  expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  expect(screen.queryByText('Hệ thống cung cấp dữ liệu')).not.toBeInTheDocument();
+  expect(vi.mocked(api.getData).mock.calls[0][1]?.get('include_records')).toBe('false');
 });
 it('keeps the loaded page and retries when the same navigation button is clicked after an error', async () => {
   let failed = false;

@@ -17,13 +17,16 @@ const w:WorkflowRead={run_id:'r',workflow_version:2,workflow_state:'DECIDE_REVIE
 const pair:PairRead={pair_id:'p',revision:1,decision:'UNDECIDED',score_unit:'rule',baseline:{id:'p',left_id:'a',right_id:'b',decision:'REVIEW',score:3,field_evidence:[]},eligibility:{manual_allowed:true,auto_allowed:false,blocked_reasons:[]},left_record:{record_id:'a',source_system:'CRM',raw_fields:{name:'Same',email:'left@example.com'},normalized_fields:{name:'same'},extra_fields:{custom:'left'}},right_record:{record_id:'b',source_system:'BILL',raw_fields:{name:'Same',email:'right@example.com'},normalized_fields:{name:'same'},extra_fields:{custom:'right'}}};
 it('prioritizes differences and includes extra source fields in comparison',()=>{
  render(<PairComparison pair={pair} close={vi.fn()}/>);
+ fireEvent.click(screen.getByRole('checkbox',{name:'Trường bổ sung'}));
  expect(screen.getByText('left')).toBeInTheDocument();
  const rows=within(screen.getByRole('table')).getAllByRole('row');
  expect(rows.findIndex(r=>r.textContent?.includes('left@example.com'))).toBeLessThan(rows.findIndex(r=>r.textContent?.includes('Same')));
 });
-it('offers keep-separate independently from Deny and defer',()=>{
- const decide=vi.fn();render(<table><tbody><PairReviewRow pair={pair} selected={false} toggle={vi.fn()} canWrite busy={false} decide={decide} compare={vi.fn()} explain={vi.fn()}/></tbody></table>);
- fireEvent.click(screen.getByRole('button',{name:'Không gộp cặp p'}));expect(decide).toHaveBeenCalledWith('no_merge');
+it('offers only Accept and Deny and sends an explicit negative decision',()=>{
+ const decide=vi.fn();render(<table><tbody><PairReviewRow pair={pair} selected={false} toggle={vi.fn()} canWrite busy={false} decide={decide} compare={vi.fn()}/></tbody></table>);
+ expect(screen.queryByRole('button',{name:'Không gộp cặp p'})).not.toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Hoãn cặp p'})).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Deny cặp p'}));expect(decide).toHaveBeenCalledWith('deny');
 });
 it('rejects an oversized soft Accept reason and closes the write gate after assessment changes',()=>{
  const confirm=vi.fn();const host=(workflow:WorkflowRead)=><SessionCacheProvider userId="accept-reason"><WorkflowContext.Provider value={{workflow,refresh:vi.fn()}}><PairAcceptReason pair={pair} close={vi.fn()} confirm={confirm}/></WorkflowContext.Provider></SessionCacheProvider>;
@@ -35,19 +38,31 @@ it('requires a reason before bulk Accept when preview contains soft conflict pai
  vi.mocked(api.previewBulkDecisions).mockResolvedValue({total:2,applicable:2,blocked:0,skipped:0,workflow_revision:4,decision_revision:1,reason_required:1});
  const confirm=vi.fn(),body={request_id:'b',expected_workflow_revision:4,expected_decision_revision:1,decision:'merge' as const,scope:{filter:{}}};
  render(<SessionCacheProvider userId="bulk-reason"><WorkflowContext.Provider value={{workflow:w,refresh:vi.fn()}}><PairBulkConfirmation body={body} label="All" busy={false} error="" close={vi.fn()} confirm={confirm}/></WorkflowContext.Provider></SessionCacheProvider>);
- await screen.findByText('2 cặp có thể áp dụng');expect(screen.getByRole('button',{name:'Xác nhận Accept'})).toBeDisabled();
+ await screen.findByText('2 cặp có thể Accept');expect(screen.getByRole('button',{name:'Xác nhận Accept'})).toBeDisabled();
  fireEvent.change(screen.getByRole('textbox',{name:'Lý do Accept'}),{target:{value:'   '}});expect(screen.getByRole('button',{name:'Xác nhận Accept'})).toBeDisabled();
  fireEvent.change(screen.getByRole('textbox',{name:'Lý do Accept'}),{target:{value:'Source verified'}});fireEvent.click(screen.getByRole('button',{name:'Xác nhận Accept'}));
  expect(confirm).toHaveBeenCalledWith(expect.anything(),'Source verified');
+});
+
+it('does not ask for a reason or offer Accept when preview has zero eligible pairs',async()=>{
+ vi.mocked(api.previewBulkDecisions).mockResolvedValue({total:194821,applicable:0,blocked:194821,skipped:0,workflow_revision:4,decision_revision:1});
+ const body={request_id:'empty',expected_workflow_revision:4,expected_decision_revision:1,decision:'merge' as const,scope:{filter:{group:'C'}}};
+ render(<SessionCacheProvider userId="empty-bulk"><WorkflowContext.Provider value={{workflow:w,refresh:vi.fn()}}><PairBulkConfirmation body={body} label="Group C" busy={false} error="" close={vi.fn()} confirm={vi.fn()} queued/></WorkflowContext.Provider></SessionCacheProvider>);
+ await screen.findByText('Không có cặp đủ điều kiện Accept');
+ expect(screen.queryByRole('textbox',{name:'Lý do Accept'})).not.toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Xác nhận Accept'})).not.toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'Đóng'})).toBeEnabled();
 });
 it('explains current cluster context and links both published memberships',()=>{
  render(<PairComparison pair={{...pair,cluster_context:{revision:2,stale:true,left_cluster:{cluster_id:'c1',member_count:3},right_cluster:{cluster_id:'c2',member_count:1}}}} close={vi.fn()}/>);
  expect(screen.getByText(/Ngữ cảnh nhóm đã cũ/)).toBeInTheDocument();expect(screen.getByRole('link',{name:/c1/})).toHaveAttribute('href',expect.stringContaining('cluster=c1'));expect(screen.getByRole('link',{name:/c2/})).toBeInTheDocument();
 });
 it('prevents resolved decisions from being silently overwritten by normal buttons',()=>{
- render(<table><tbody><PairReviewRow pair={{...pair,decision:'DENIED'}} selected={false} toggle={vi.fn()} canWrite busy={false} decide={vi.fn()} compare={vi.fn()} explain={vi.fn()} amend={vi.fn()}/></tbody></table>);
+ render(<table><tbody><PairReviewRow pair={{...pair,decision:'DENIED'}} selected={false} toggle={vi.fn()} canWrite busy={false} decide={vi.fn()} compare={vi.fn()}/></tbody></table>);
  expect(screen.getByRole('button',{name:'Accept cặp p'})).toBeDisabled();
- expect(screen.getByRole('button',{name:'Sửa quyết định cặp p'})).toBeEnabled();
+ expect(screen.getByRole('button',{name:'Deny cặp p'})).toBeDisabled();
+ const amend=vi.fn();render(<PairComparison pair={{...pair,decision:'DENIED'}} close={vi.fn()} amend={amend}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Sửa quyết định'}));expect(amend).toHaveBeenCalledTimes(1);
 });
 it('requires a new preview if decision revisions change while waiting in the queue',async()=>{
  vi.mocked(api.previewBulkDecisions).mockResolvedValue({total:3,applicable:2,blocked:0,skipped:1,workflow_revision:4,decision_revision:1,preview_token:'token'});

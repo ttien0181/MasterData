@@ -2,6 +2,7 @@
 import argparse
 import logging
 import multiprocessing
+import re
 import signal
 import socket
 import threading
@@ -24,6 +25,23 @@ from masterone.mdm.job_queue import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def operation_timeout(worker_seconds, config):
+    """Provider run_seconds bounds encoding, not setup/scoring/publication.
+
+    Hybrid profiles explicitly pin an end-to-end execution budget; legacy
+    evidence profiles retain the worker deadline and the runtime's own API cap.
+    """
+    return min(worker_seconds, config['execution_budget']['run_seconds']) if config and config.get('execution_budget') else worker_seconds
+
+
+def _safe_failure_code(error):
+    # Expose fixed resource/service codes; arbitrary exception text can contain secrets.
+    code = str(error)
+    if isinstance(error, ValueError) and re.fullmatch(r'(?:EMBEDDING|ENCODER|RETRIEVAL|MATCHING|CANDIDATE)_[A-Z0-9_]{1,96}', code):
+        return code
+    return 'PIPELINE_FAILED'
 
 
 def execute_attempt(database_url, claim):
@@ -52,7 +70,7 @@ def execute_attempt(database_url, claim):
         logger.error("ATTEMPT_FAILED attempt_id=%s error_type=%s frames=%s",
                      claim.attempt_id, type(error).__name__, ",".join(frames))
         try:
-            failed(factory, claim)
+            failed(factory, claim, _safe_failure_code(error))
         except OwnershipLostError:
             pass
         except Exception as final_error:
@@ -91,26 +109,63 @@ class ResolutionWorker:
             self.thread.join(timeout=self.lease_seconds + 5)
 
     def run_once(self):
+        from masterone.mdm.heavy_jobs import heavy_job_slot
+        # Acquire before claiming: a queued task must not lose its lease waiting for an import.
+        with heavy_job_slot(blocking=False) as acquired:
+            return self._run_once() if acquired else False
+
+    def _run_once(self):
         recover(self.factory)
         claim = claim_next(self.factory, self.worker_id, lease_seconds=self.lease_seconds,
                            timeout_seconds=self.timeout_seconds)
         if claim is None:
             return False
+        agents_budget = None
+        config = None
+        with self.factory() as db:
+            from masterone.mdm.models import ResolutionRun, ResolutionTask
+            from masterone.mdm.workflow_models import WorkflowOperation
+            task = db.get(ResolutionTask, claim.task_id)
+            op = db.get(WorkflowOperation, task.operation_id) if task.operation_id else None
+            if op and op.payload.get('matching_binding_id'):
+                from masterone.mdm.matching_agents.workflow_agents import config_for_operation
+                config = config_for_operation(db, db.get(ResolutionRun, claim.run_id), op)
+                if config:
+                    agents_budget = config['resource_budget']
         url = self.factory.kw["bind"].url.render_as_string(hide_password=False)
         child = multiprocessing.get_context("spawn").Process(
             target=execute_attempt, args=(url, claim), name="resolution-attempt")
         self.child = child
         try:
             child.start()
-            deadline = time.monotonic() + self.timeout_seconds
+            deadline = time.monotonic() + operation_timeout(self.timeout_seconds, config)
+            budget_error = None
             while child.is_alive() and not self.stop_event.wait(min(self.lease_seconds / 3, 1)):
                 if time.monotonic() >= deadline:
+                    budget_error = 'MATCHING_WORKER_TIMEOUT' if agents_budget else None
                     break
+                if agents_budget:
+                    import psutil
+                    try:
+                        process = psutil.Process(child.pid)
+                        rss = sum(p.memory_info().rss for p in [process] + process.children(recursive=True))
+                        if rss > agents_budget['worker_rss_bytes']:
+                            budget_error = 'MATCHING_WORKER_RSS_BUDGET'
+                            break
+                    except psutil.NoSuchProcess:
+                        pass
                 try:
                     heartbeat(self.factory, claim, self.lease_seconds)
                 except OwnershipLostError:
                     break
             if child.is_alive():
+                if agents_budget:
+                    import psutil
+                    try:
+                        for process in psutil.Process(child.pid).children(recursive=True):
+                            process.kill()
+                    except psutil.NoSuchProcess:
+                        pass
                 child.terminate()
             child.join(timeout=5)
             if child.is_alive():
@@ -119,7 +174,7 @@ class ResolutionWorker:
             # Success is committed by the child, never inferred from exit code.
             recover(self.factory)
             try:
-                failed(self.factory, claim, "WORKER_STOPPED" if self.stop_event.is_set() else "WORKER_CRASHED")
+                failed(self.factory, claim, budget_error or ("WORKER_STOPPED" if self.stop_event.is_set() else "WORKER_CRASHED"))
             except OwnershipLostError:
                 pass
         finally:
