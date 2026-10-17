@@ -2,6 +2,85 @@ from masterone.mdm.workflow_review import apply_decision, eligibility, negative_
 from masterone.mdm.workflow_service import conflict
 
 
+def _measure_bulk_sql(function):
+    """Aggregate numeric DB work per operation, without logging source values."""
+    from functools import wraps
+
+    @wraps(function)
+    def measured(operation_id, factory, progress):
+        import json
+        import logging
+        from collections import Counter
+        from time import perf_counter
+
+        from sqlalchemy import event
+
+        engine = factory.kw['bind']
+        counts, seconds = Counter(), Counter()
+        def before(_conn, _cursor, statement, _parameters, context, many):
+            context._bulk_sql_started = perf_counter()
+            kind = statement.split()[0].upper()
+            counts[kind] += 1
+            counts['executemany_calls'] += int(many)
+        def after(_conn, _cursor, statement, _parameters, context, _many):
+            seconds[statement.split()[0].upper()] += perf_counter() - context._bulk_sql_started
+        def commit(_conn):
+            counts['commit_attempts'] += 1
+        event.listen(engine, 'before_cursor_execute', before)
+        event.listen(engine, 'after_cursor_execute', after)
+        event.listen(engine, 'commit', commit)
+        try:
+            return function(operation_id, factory, progress)
+        finally:
+            event.remove(engine, 'before_cursor_execute', before)
+            event.remove(engine, 'after_cursor_execute', after)
+            event.remove(engine, 'commit', commit)
+            logging.getLogger(__name__).info('BULK_SQL_METRICS %s', json.dumps(
+                {'operation_id': operation_id, 'counts': dict(counts), 'sql_seconds': dict(seconds)}))
+    return measured
+
+
+def flush_review_batch(db, run_id, pairs):
+    """Persist homogeneous decisions in sets, within the existing checkpoint transaction.
+
+    Decision/feedback builders still run for every pair. Only their persistence
+    changes; revision predicates detect an unexpected write before checkpointing.
+    """
+    from collections import defaultdict
+
+    from sqlalchemy import insert, update
+    from sqlalchemy.orm.attributes import set_committed_value
+
+    from masterone.mdm.matching_foundation_models import StewardFeedback
+    from masterone.mdm.models import ResolutionAuditEvent
+    from masterone.mdm.workflow_models import WorkflowPair
+
+    groups = defaultdict(list)
+    for pair in pairs:
+        groups[pair.revision - 1, pair.decision, pair.review_reason].append(pair)
+    with db.no_autoflush:
+        for (revision, decision, reason), rows in groups.items():
+            result = db.execute(update(WorkflowPair.__table__).where(
+                WorkflowPair.run_id == run_id, WorkflowPair.id.in_([p.id for p in rows]),
+                WorkflowPair.revision == revision).values(
+                    decision=decision, review_reason=reason, automation=None, revision=revision + 1))
+            if result.rowcount != len(rows):
+                raise ValueError('WORKFLOW_BULK_PAIR_REVISION_CHANGED')
+            for pair in rows:
+                for key in ('decision', 'review_reason', 'automation', 'revision'):
+                    set_committed_value(pair, key, getattr(pair, key))
+        # Defaults (audit UUID/timestamp) remain the model's existing defaults.
+        # Database lineage/hash/FK guards run for these inserts as usual.
+        for model in (StewardFeedback, ResolutionAuditEvent):
+            pending = [row for row in db.new if isinstance(row, model) and row.run_id == run_id]
+            if pending:
+                values = [{c.name: getattr(row, c.name) for c in model.__table__.columns
+                           if c.name in row.__dict__ or c.default is None} for row in pending]
+                db.execute(insert(model.__table__), values)
+                for row in pending:
+                    db.expunge(row)
+
+
 def selected_pairs(db, run_id, scope):
     if (scope.get('pair_ids') is None) == (scope.get('filter') is None):
         conflict('BULK_SCOPE_REQUIRED')
@@ -43,6 +122,7 @@ def validate_soft_group(db, run, payload):
         conflict('SOFT_BULK_GROUP_REVIEW_CHANGED')
 
 
+@_measure_bulk_sql
 def run_bulk_decisions(operation_id, factory, progress):
     """Persist each bounded batch and its cursor together; retry never repeats writes."""
     from masterone.config import get_settings
@@ -69,6 +149,7 @@ def run_bulk_decisions(operation_id, factory, progress):
             else:
                 links = negative_links(db, run.id, rows)
                 applied = []
+                changed_pairs = []
                 from masterone.mdm.steward_feedback import (
                     capture_review_snapshot,
                     persist_feedback,
@@ -93,6 +174,9 @@ def run_bulk_decisions(operation_id, factory, progress):
                             counts['applied'] += 1
                             counts['accepted'] += 1  # Keep the old progress contract as an alias.
                             applied.append(pair.id)
+                            changed_pairs.append(pair)
+                if op.payload['decision'] == 'no_merge':
+                    flush_review_batch(db, run.id, changed_pairs)
                 if applied:
                     if op.payload['decision'] in ('no_merge', 'deny'):
                         db.query(WorkflowConflict).filter(WorkflowConflict.run_id == run.id,

@@ -27,6 +27,12 @@ def test_larger_review_batch_resumes_without_duplicate_feedback(client, workflow
         expected_decision_revision=state['decision_revision'], decision='no_merge', scope={'pair_ids': ids}))
     assert response.status_code == 202, response.text
     claim = claim_next(client.session_factory, 'round2-test', lease_seconds=300)
+    pair_update_batches = []
+    engine = client.session_factory.kw['bind']
+    def collect_updates(_conn, _cursor, statement, _parameters, _context, executemany):
+        if statement.lower().startswith('update mdm_workflow_pairs'):
+            pair_update_batches.append(executemany)
+    event.listen(engine, 'before_cursor_execute', collect_updates)
     with client.session_factory() as db:
         oid = db.get(ResolutionTask, claim.task_id).operation_id
     def interrupt(*args):
@@ -38,11 +44,18 @@ def test_larger_review_batch_resumes_without_duplicate_feedback(client, workflow
             assert db.get(WorkflowOperation, oid).result['checkpoint']['counts']['processed'] == 500
             assert db.query(StewardFeedback).filter_by(operation_id=oid).count() == 500
         execute_workflow(oid, client.session_factory, lambda *_: None)
+    event.remove(engine, 'before_cursor_execute', collect_updates)
+    assert pair_update_batches and not any(pair_update_batches), 'Review must update bounded sets, not one UPDATE per pair'
     with client.session_factory() as db:
         assert db.query(StewardFeedback).filter_by(operation_id=oid).count() == 650
         assert all(p.decision == 'REJECTED' and p.revision == 1 for p in db.query(WorkflowPair).filter(WorkflowPair.id.in_(ids)))
         assert db.query(ResolutionAuditEvent).filter_by(run_id=workflow_run, action='FEEDBACK_CAPTURED').count() == 650
         assert db.query(ResolutionAuditEvent).filter_by(run_id=workflow_run, action='WORKFLOW_PAIR_REJECTED').count() == 650
+        audits = db.query(ResolutionAuditEvent).filter_by(run_id=workflow_run, action='FEEDBACK_CAPTURED').all()
+        assert {row.workflow_pair_id for row in audits} == set(ids)
+        assert all(row.subject_type == 'StewardFeedback' and row.subject_id and row.owner_user_id
+                   and row.data_scope == 'owner-private' and row.id and row.created_at for row in audits)
+        assert {row.subject_id for row in audits} == {row.id for row in db.query(StewardFeedback).filter_by(operation_id=oid)}
 
 
 @pytest.mark.parametrize('assessed', [False, True, 'json-null'])

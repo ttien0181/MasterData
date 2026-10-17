@@ -47,7 +47,7 @@ def validate_group(snapshot, record_ids, *, review_reason=None, frequencies=None
             pending.extend(adjacency[rid] - visited)
     if visited != ids:
         return 'GROUP_ACCEPTED_LINKS_REQUIRED'
-    with closing(DecisionStore()) as store:
+    with closing(DecisionStore(memory=len(ids) <= 20)) as store:
         for pair in internal:
             decision = snapshot['overlays'].get(pair['id'], 'UNDECIDED')
             proposed = bool((review_reason or '').strip()) and decision in ('UNDECIDED', 'DEFERRED')

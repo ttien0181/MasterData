@@ -21,9 +21,11 @@ def edge_key(pair):
 
 
 class DecisionStore:
-    def __init__(self, directory=None):
-        self.scratch = TemporaryDirectory(prefix="p119-decisions-", dir=directory)
-        self.con = sqlite3.connect(str(Path(self.scratch.name) / "edges.db"))
+    def __init__(self, directory=None, *, memory=False):
+        # Exact-member review bounds its universe before opting into memory.
+        # Complete-run clustering keeps its disk spool by default.
+        self.scratch = None if memory else TemporaryDirectory(prefix="p119-decisions-", dir=directory)
+        self.con = sqlite3.connect(":memory:" if memory else str(Path(self.scratch.name) / "edges.db"))
         self.con.execute("PRAGMA cache_size=-4096")
         self.con.execute("PRAGMA temp_store=FILE")
         self.con.execute("CREATE TABLE edges (id TEXT PRIMARY KEY, left_id TEXT, right_id TEXT, weight REAL, decision TEXT, payload TEXT, UNIQUE(left_id,right_id))")
@@ -94,7 +96,8 @@ class DecisionStore:
 
     def close(self):
         self.con.close()
-        self.scratch.cleanup()
+        if self.scratch is not None:
+            self.scratch.cleanup()
 
     def write_parquet(self, path, batch_size=2048):
         import pyarrow as pa
