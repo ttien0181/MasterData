@@ -2,14 +2,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ResolutionFlow from "./ResolutionFlow";
 import ResolutionWorkspace from "./ResolutionWorkspace";
-import { createResolutionPreview, executeResolutionPreview, getResolutionExportReadiness, getResolutionItem,
+import { ApiError, createResolutionPreview, executeResolutionPreview, getResolutionExportReadiness, getResolutionItem,
   getResolutionItems, getResolutionOverview, getResolutionRuns, getReviewCategories, resolveMergeConflict,
   getSeparateRecords, explainResolutionItem, transitionReviewItems } from "@/lib/api";
 import type { AuthUser } from "@/lib/contracts";
 import { getSavedChoices } from "@/lib/resolutionChoices";
 
 vi.mock("@/lib/api", () => ({
-  ApiError: class extends Error { status = 0; },
+  ApiError: class extends Error { constructor(message: string, readonly status: number) { super(message); } },
   compareResolutionExport: vi.fn(), createResolutionPreview: vi.fn(), executeResolutionPreview: vi.fn(), downloadResolutionExport: vi.fn(),
   downloadResolutionSource: vi.fn(), explainReviewCategory: vi.fn(), explainResolutionItem: vi.fn(),
   getResolutionExportReadiness: vi.fn(), getResolutionExports: vi.fn(), getResolutionItem: vi.fn(),
@@ -299,7 +299,7 @@ describe("Resolution item flow", () => {
     await waitFor(() => expect(getSavedChoices("run-1", "review", "case-1", ["a", "b"])).toEqual({ phone: "b" }));
   });
 
-  it("allows a partial save in Merge while keeping CSV export blocked", async () => {
+  it("allows a partial save in Merge while deferring export checks until preview", async () => {
     vi.mocked(getResolutionExportReadiness).mockResolvedValue({ merge_count: 1, pending_review_count: 0, staged_conflict_count: 0,
       incomplete_count: 1, incomplete_items: [{ item_id: "case-1", fields: ["address"] }], blockers: [], can_export: false });
     vi.mocked(getResolutionItem).mockResolvedValue({ ...detail, origin: "REVIEW", missing_fields: ["phone", "address"],
@@ -309,7 +309,8 @@ describe("Resolution item flow", () => {
       ] },
     });
     render(<ResolutionFlow user={steward} runId="run-1" stage="auto" onChanged={vi.fn()} notify={vi.fn()} />);
-    expect(await screen.findByRole("button", { name: /Xem trước CSV kết quả/ })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: /Xem trước CSV kết quả/ })).toBeEnabled();
+    expect(getResolutionExportReadiness).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /Xem so sánh/ }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("radio", { name: /0901001002/ }));
@@ -334,24 +335,29 @@ describe("Resolution item flow", () => {
     vi.mocked(getResolutionExportReadiness).mockResolvedValue({ merge_count: 1, pending_review_count: 2, staged_conflict_count: 0,
       incomplete_count: 0, incomplete_items: [], blockers: [], can_export: true });
     vi.mocked(getResolutionItems).mockResolvedValue({ total: 0, items: [] });
+    vi.mocked(createResolutionPreview).mockRejectedValueOnce(new ApiError("Còn item cần review; cần xác nhận xuất các bản ghi đó riêng lẻ", 409));
     render(<ResolutionFlow user={steward} runId="run-1" stage="auto" onChanged={vi.fn()} notify={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: /Xem trước CSV kết quả/ }));
-    expect(createResolutionPreview).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Tiếp tục xem trước" }));
+    expect(createResolutionPreview).toHaveBeenCalledWith("run-1", false);
+    fireEvent.click(await screen.findByRole("button", { name: "Tiếp tục xem trước" }));
     await waitFor(() => expect(createResolutionPreview).toHaveBeenCalledWith("run-1", true));
     fireEvent.click(await screen.findByRole("button", { name: "Xác nhận gộp và xuất CSV" }));
     await waitFor(() => expect(executeResolutionPreview).toHaveBeenCalledWith("run-1", "preview-1", expect.any(String)));
   });
 
-  it("names the item blocking export and opens its comparison", async () => {
+  it("reports an export blocker only after preview is requested", async () => {
     vi.mocked(getResolutionItems).mockResolvedValue({ total: 1, items: [{ ...reviewItem, bucket: "merge", kind: "proposal" }] });
     vi.mocked(getResolutionExportReadiness).mockResolvedValue({ merge_count: 1, pending_review_count: 0,
       staged_conflict_count: 0, incomplete_count: 1, incomplete_items: [{ item_id: "case-1", fields: ["phone"] }],
       blockers: [{ item_id: "case-1", kind: "MISSING_CHOICES", label: "An Bình", message: "Chọn giá trị cho các trường khác nhau.", fields: ["phone"] }], can_export: false });
-    render(<ResolutionFlow user={steward} runId="run-1" stage="auto" onChanged={vi.fn()} notify={vi.fn()} />);
-    expect(await screen.findByRole("button", { name: /Xem trước CSV kết quả/ })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: /An Bình.*Chọn giá trị/ }));
-    expect(await screen.findByRole("dialog", { name: "An Bình" })).toBeInTheDocument();
+    vi.mocked(createResolutionPreview).mockRejectedValueOnce(new ApiError("Còn giá trị chưa chọn hoặc cụm cần tách trước khi xem trước", 409));
+    const notify = vi.fn();
+    render(<ResolutionFlow user={steward} runId="run-1" stage="auto" onChanged={vi.fn()} notify={notify} />);
+    const preview = await screen.findByRole("button", { name: /Xem trước CSV kết quả/ });
+    expect(preview).toBeEnabled();
+    expect(getResolutionExportReadiness).not.toHaveBeenCalled();
+    fireEvent.click(preview);
+    await waitFor(() => expect(notify).toHaveBeenCalledWith("Còn giá trị chưa chọn hoặc cụm cần tách trước khi xem trước"));
   });
 
   it("shows user-facing outcome metrics with separate records hidden", async () => {

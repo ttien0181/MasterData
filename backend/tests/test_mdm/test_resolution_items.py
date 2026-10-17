@@ -99,6 +99,106 @@ def test_pair_approval_creates_one_disjoint_proposal_and_audit(client):
     assert read_csv(response)[0]["source_record_ids"] == "A|B|C"
 
 
+def test_stage_all_filtered_pairs_across_pages_without_merging(client):
+    run_id = seed_run(client)
+    prefix = f"/api/v1/mdm/runs/{run_id}"
+    with client.session_factory.begin() as db:
+        db.get(ResolutionRun, run_id).record_count = 32
+        db.get(ResolutionFile, "file-items").row_count = 32
+        for index in range(29):
+            record_id = f"extra-record-{index:02d}"
+            db.add(ResolutionRecord(id=record_id, run_id=run_id, file_id="file-items",
+                external_id=record_id, source_system="BILL",
+                raw_fields={"name": "An", "phone": "222", "email": "", "address": ""},
+                normalized_fields={}))
+            db.add(ResolutionPair(id=f"extra-{index:02d}", run_id=run_id,
+                left_record_id="b", right_record_id=record_id, blocking_reasons=[],
+                field_evidence=[], score=0.6, pair_decision="REVIEW", decision_reason="AMBIGUOUS",
+                triage_status="REVIEW", triage_reason="AMBIGUOUS", primary_group="A"))
+    response = client.post(f"{prefix}/review-pairs/stage", json={
+        "all_matching": True, "primary_group": "A", "excluded_ids": ["extra-01"]})
+    assert response.status_code == 200, response.text
+    assert response.json()["staged_count"] == 28
+    assert client.get(f"{prefix}/items/review_pairs").json()["total"] == 2
+    staged = client.get(f"{prefix}/items/merge").json()
+    assert staged["total"] == 29
+    assert client.get(f"{prefix}/overview").json()["counts"]["auto"] == 29
+    assert staged["items"][0]["status"] == "STAGED_FOR_MERGE"
+    with client.session_factory() as db:
+        assert db.get(ResolutionPair, "extra-00").user_decision == "UNDECIDED"
+        assert db.get(ResolutionProposal, "safe-ab").status == "AUTO_READY"
+    returned = client.post(f"{prefix}/review-pairs/extra-00/unstage")
+    assert returned.status_code == 200, returned.text
+    assert client.get(f"{prefix}/items/review_pairs").json()["total"] == 3
+
+
+def test_staged_pair_is_checked_and_merged_only_at_csv_preview(client):
+    run_id = seed_run(client)
+    prefix = f"/api/v1/mdm/runs/{run_id}"
+    staged = client.post(f"{prefix}/review-pairs/stage", json={"pair_ids": ["uncertain-bc"]})
+    assert staged.status_code == 200, staged.text
+    assert client.post(f"{prefix}/exports", json={"acknowledge_unreviewed": True}).status_code == 409
+    with client.session_factory() as db:
+        assert db.get(ResolutionPair, "uncertain-bc").user_decision == "UNDECIDED"
+        assert db.get(ResolutionProposal, "safe-ab").status == "AUTO_READY"
+    preview = client.post(f"{prefix}/previews", json={"acknowledge_unreviewed": True})
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["accepted_pair_count"] == 1
+    assert preview.json()["eligible_count"] == 1
+    with client.session_factory() as db:
+        pair = db.get(ResolutionPair, "uncertain-bc")
+        assert pair.user_decision == "UNDECIDED"
+        assert pair.staged_for_merge is True
+        assert db.get(ResolutionProposal, "safe-ab").status == "AUTO_READY"
+    executed = client.post(f"{prefix}/previews/{preview.json()['preview_id']}/execute",
+                           json={"execute_request_id": "once"})
+    assert executed.status_code == 200, executed.text
+    with client.session_factory() as db:
+        pair = db.get(ResolutionPair, "uncertain-bc")
+        assert pair.user_decision == "ACCEPTED"
+        assert pair.staged_for_merge is False
+    rows = read_csv(client.get(f"{prefix}/exports/{preview.json()['preview_id']}/download"))
+    assert len(rows) == 1
+    assert rows[0]["source_record_ids"] == "A|B|C"
+    assert rows[0]["phone_number"] == "111"
+
+
+def test_staged_conflict_blocks_preview_without_accepting_pair(client):
+    run_id = seed_run(client)
+    prefix = f"/api/v1/mdm/runs/{run_id}"
+    with client.session_factory.begin() as db:
+        db.add(ResolutionPair(id="negative-ac", run_id=run_id,
+            left_record_id="a", right_record_id="c", blocking_reasons=[],
+            field_evidence=[], score=0.1, pair_decision="NON_MATCH", decision_reason="NON_MATCH",
+            user_decision="NON_MATCH", triage_status="REJECTED", triage_reason="NON_MATCH"))
+    assert client.post(f"{prefix}/review-pairs/stage", json={
+        "pair_ids": ["uncertain-bc"]}).status_code == 200
+    preview = client.post(f"{prefix}/previews", json={"acknowledge_unreviewed": True})
+    assert preview.status_code == 409, preview.text
+    with client.session_factory() as db:
+        pair = db.get(ResolutionPair, "uncertain-bc")
+        assert pair.staged_for_merge is True
+        assert pair.user_decision == "UNDECIDED"
+        assert db.get(ResolutionProposal, "safe-ab").status == "AUTO_READY"
+
+
+def test_newly_staged_pair_invalidates_an_older_preview(client):
+    run_id = seed_run(client)
+    prefix = f"/api/v1/mdm/runs/{run_id}"
+    with client.session_factory.begin() as db:
+        db.add(ResolutionPair(id="uncertain-ac", run_id=run_id,
+            left_record_id="a", right_record_id="c", blocking_reasons=[],
+            field_evidence=[], score=0.6, pair_decision="REVIEW", decision_reason="AMBIGUOUS",
+            triage_status="REVIEW", triage_reason="AMBIGUOUS"))
+    preview = client.post(f"{prefix}/previews", json={"acknowledge_unreviewed": True})
+    assert preview.status_code == 200, preview.text
+    assert client.post(f"{prefix}/review-pairs/stage", json={
+        "pair_ids": ["uncertain-ac"]}).status_code == 200
+    response = client.post(f"{prefix}/previews/{preview.json()['preview_id']}/execute",
+                           json={"execute_request_id": "stale"})
+    assert response.status_code == 409, response.text
+
+
 def test_pair_review_checks_revision_role_and_run_ownership(client):
     run_id = seed_run(client)
     prefix = f"/api/v1/mdm/runs/{run_id}"

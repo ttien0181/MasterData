@@ -66,6 +66,7 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
   const estimatedEntityCount = overview?.estimated_entity_count ?? overview?.counts.separate ?? 0;
   const duplicateRecordCount = overview?.duplicate_record_count
     ?? Math.max(0, (overview?.record_count ?? 0) - estimatedEntityCount);
+  const reviewPairCount = overview?.counts.review_pairs ?? overview?.counts.review ?? 0;
 
   function openDonutSegment(event: React.MouseEvent<HTMLButtonElement>) {
     if (!overview) return;
@@ -74,7 +75,7 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
     const x = event.clientX - left - width / 2;
     const y = event.clientY - top - height / 2;
     const angle = (Math.atan2(x, -y) + Math.PI * 2) % (Math.PI * 2);
-    const total = overview.counts.auto + overview.counts.review;
+    const total = overview.counts.auto + reviewPairCount;
     navigateStage(total > 0 && angle / (Math.PI * 2) >= overview.counts.auto / total ? "review" : "auto");
   }
 
@@ -418,22 +419,22 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
               <div className="card overview-kpi"><strong>{overview.record_count.toLocaleString("vi-VN")}</strong><span>Bản ghi</span><small>Từ {overview.file_count} file dữ liệu</small></div>
               <div className="card overview-kpi"><strong>{estimatedEntityCount.toLocaleString("vi-VN")}</strong><span>Thực thể ước tính</span><small>Sau các đề xuất gộp hiện có</small></div>
               <div className="card overview-kpi overview-kpi-highlight"><strong>{duplicateRecordCount.toLocaleString("vi-VN")}</strong><span>Bản ghi trùng dự kiến loại bỏ</span><small>Nếu áp dụng đề xuất gộp</small></div>
-              <button className="card overview-kpi overview-kpi-review" type="button" onClick={() => navigateStage("review")}><strong>{(overview.counts.review_pairs ?? overview.counts.review).toLocaleString("vi-VN")}</strong><span>Cần xem xét</span><small>Cặp bản ghi chờ xác nhận →</small></button>
+              <button className="card overview-kpi overview-kpi-review" type="button" onClick={() => navigateStage("review")}><strong>{reviewPairCount.toLocaleString("vi-VN")}</strong><span>Cần xem xét</span><small>Cặp bản ghi chờ xác nhận →</small></button>
             </div>
             <SessionAnalytics runId={runId} revision={`${overview.counts.auto}:${overview.counts.review_pairs ?? overview.counts.review}:${overview.counts.rejected}`} />
           </section>}
           {overview.status === "COMPLETED" && <div className="resolution-overview-distribution card">
             <div><h3>Phân bố công việc</h3><p>Các mục đang chờ quyết định</p>
-              <div className="resolution-donut-legend"><button type="button" onClick={() => navigateStage("auto")}><i className="waiting" />Chờ gộp <b>{overview.counts.auto.toLocaleString("vi-VN")}</b></button><button type="button" onClick={() => navigateStage("review")}><i className="review" />Cần review <b>{overview.counts.review.toLocaleString("vi-VN")}</b></button></div>
+              <div className="resolution-donut-legend"><button type="button" onClick={() => navigateStage("auto")}><i className="waiting" />Chờ gộp <b>{overview.counts.auto.toLocaleString("vi-VN")}</b></button><button type="button" onClick={() => navigateStage("review")}><i className="review" />Cần review <b>{reviewPairCount.toLocaleString("vi-VN")}</b></button></div>
             </div>
-            <div className="resolution-donut" style={{ "--waiting-share": `${overview.counts.auto + overview.counts.review ? overview.counts.auto / (overview.counts.auto + overview.counts.review) * 100 : 0}%` } as React.CSSProperties}>
-              <button type="button" className="resolution-donut-chart" aria-label={`Biểu đồ: Chờ gộp ${overview.counts.auto} cụm, Cần review ${overview.counts.review} item; bấm phần màu để mở danh sách`} onClick={openDonutSegment}><span><strong>{(overview.counts.auto + overview.counts.review).toLocaleString("vi-VN")}</strong><small>mục công việc</small></span></button>
+            <div className="resolution-donut" style={{ "--waiting-share": `${overview.counts.auto + reviewPairCount ? overview.counts.auto / (overview.counts.auto + reviewPairCount) * 100 : 0}%` } as React.CSSProperties}>
+              <button type="button" className="resolution-donut-chart" aria-label={`Biểu đồ: Chờ gộp ${overview.counts.auto} mục, Cần review ${reviewPairCount} cặp; bấm phần màu để mở danh sách`} onClick={openDonutSegment}><span><strong>{(overview.counts.auto + reviewPairCount).toLocaleString("vi-VN")}</strong><small>mục công việc</small></span></button>
             </div>
           </div>}
           {overview.status === "COMPLETED" && <div className="stat-grid resolution-stats">
             <div className="card stat-card resolution-stat"><span className="stat-value">{overview.record_count.toLocaleString("vi-VN")}</span><span className="stat-label">Bản ghi đầu vào</span><span className="stat-change">{overview.file_count} file dữ liệu</span></div>
             <button className="card stat-card resolution-stat stat-primary" type="button" onClick={() => navigateStage("auto")}><span className="stat-value">{overview.counts.auto.toLocaleString("vi-VN")}</span><span className="stat-label">Cụm chờ gộp</span><span className="stat-change">Xem danh sách →</span></button>
-            <button className="card stat-card resolution-stat stat-review" type="button" onClick={() => navigateStage("review")}><span className="stat-value">{overview.counts.review.toLocaleString("vi-VN")}</span><span className="stat-label">Mục cần review</span><span className="stat-change">Mở hàng đợi →</span></button>
+            <button className="card stat-card resolution-stat stat-review" type="button" onClick={() => navigateStage("review")}><span className="stat-value">{reviewPairCount.toLocaleString("vi-VN")}</span><span className="stat-label">Cặp cần review</span><span className="stat-change">Mở hàng đợi →</span></button>
           </div>}
           {overview.status === "COMPLETED" && <section className="card source-summary resolution-signal-summary" aria-label="Kết quả đối chiếu dữ liệu"><div><p className="section-kicker">ĐỐI CHIẾU DỮ LIỆU</p><h3>Các dấu hiệu tìm thấy</h3><small>{overview.candidate_count.toLocaleString("vi-VN")} cặp được đối chiếu · {overview.counts.insufficient.toLocaleString("vi-VN")} cặp chưa đủ thông tin để xác nhận</small></div><div className="source-summary-values">
             {([ ["A", overview.counts.group_a, "Thông tin khớp rõ", "Tên và thông tin liên hệ giống nhau"], ["C", overview.counts.group_c, "Cần thêm thông tin", "Tên chưa đủ rõ để xác nhận"], ["D", overview.counts.group_d, "Thông tin mâu thuẫn", "Tên khác nhau rõ rệt"] ] as const).map(([group, count, label, description]) => <span className="source-count" key={group}><b>{label}</b><strong>{count.toLocaleString("vi-VN")}</strong><small>{description}</small></span>)}

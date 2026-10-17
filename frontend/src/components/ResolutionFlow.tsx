@@ -5,10 +5,10 @@ import type { Stage } from "./AppShell";
 import { ShellIcon } from "./ShellIcons";
 import { type AiExplanation, ApiError, compareResolutionExport, createResolutionPreview, executeResolutionPreview,
   downloadResolutionExport, downloadResolutionSource,
-  explainResolutionItem, explainReviewCategory, getResolutionExportReadiness,
+  explainResolutionItem, explainReviewCategory, unstageReviewPair,
   getResolutionExports, getResolutionItem, getResolutionItems, getReviewCategories, resolveMergeConflict,
   transitionReviewItems } from "@/lib/api";
-import type { ResolutionExportReadiness, ResolutionExportSummary, ResolutionPreview, ResolutionItem,
+import type { ResolutionExportSummary, ResolutionPreview, ResolutionItem,
   ResolutionItemDetail, ReviewCategory, AuthUser } from "@/lib/contracts";
 import { can } from "@/lib/permissions";
 import { differenceSegments, groupFieldOptions } from "./resolutionFields";
@@ -104,7 +104,6 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
   const [origin, setOrigin] = useState("");
   const [category, setCategory] = useState<ReviewCategory | null>(null);
   const [categories, setCategories] = useState<ReviewCategory[]>([]);
-  const [readiness, setReadiness] = useState<ResolutionExportReadiness | null>(null);
   const [exports, setExports] = useState<ResolutionExportSummary[]>([]);
   const [comparison, setComparison] = useState<{ source_count: number; output_count: number;
     source_sample: Record<string, string>[]; output_sample: Record<string, string>[] } | null>(null);
@@ -145,18 +144,16 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
         if (currentRequest !== requestId.current) return;
         setExports(result.items);
       } else {
-        const [result, categoryResults, readinessResult] = await Promise.all([
+        const [result, categoryResults] = await Promise.all([
           getResolutionItems(runId, bucket, { offset, limit: PAGE_SIZE,
             ...(stage === "auto" && origin ? { origin } : {}),
             ...(stage === "review" && category ? { primary_group: category.primary_group, subgroup: category.subgroup } : {}),
           }),
           stage === "review" ? getReviewCategories(runId) : Promise.resolve([]),
-          stage === "auto" ? getResolutionExportReadiness(runId) : Promise.resolve(null),
         ]);
         if (currentRequest !== requestId.current) return;
         setItems(result.items); setTotal(result.total);
         if (stage === "review") setCategories(categoryResults);
-        if (stage === "auto") setReadiness(readinessResult);
       }
       setLoadState({ key: queryKey, phase: "ready", error: "" });
     } catch (error) {
@@ -219,30 +216,13 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
     finally { setBusy(false); }
   }
 
-  async function openBlocker(itemId: string) {
-    const item = items.find((candidate) => candidate.id === itemId);
-    if (item) { await openItem(item); return; }
-    setBusy(true);
-    try {
-      const detail = await getResolutionItem(runId, "merge", itemId);
-      const saved = getSavedChoices(runId, "merge", itemId, detail.member_record_ids);
-      const valid = saved ? Object.fromEntries(Object.entries(saved).filter(([field, sourceId]) =>
-        detail.field_options[field]?.some((option) => option.source_record_id === sourceId))) : {};
-      const selected = { ...detail.choices, ...valid };
-      setActive({ ...detail, choices: selected }); setChoices(selected); setSharedOpen(false);
-    } catch (error) { notify(error instanceof Error ? error.message : "Không mở được hồ sơ cần xử lý"); }
-    finally { setBusy(false); }
-  }
-
   async function save() {
-    if (!active || !canEdit) return;
+    if (!active || !canEdit || active.status === "STAGED_FOR_MERGE") return;
     setBusy(true);
     try {
       saveChoices(runId, bucket, active.id, active.member_record_ids, choices);
       setActive({ ...active, choices });
       notify("Đã lưu lựa chọn giá trị.");
-      if (stage === "auto") void getResolutionExportReadiness(runId).then(setReadiness).catch((error: unknown) =>
-        notify(error instanceof Error ? error.message : "Không cập nhật được trạng thái xuất CSV"));
     } catch (error) { notify(error instanceof Error ? error.message : "Không lưu được lựa chọn"); }
     finally { setBusy(false); }
   }
@@ -306,7 +286,23 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
       executeRequestId.current = crypto.randomUUID();
       setPreviewStale(false);
       setPreview(result);
-    } catch (error) { notify(error instanceof Error ? error.message : "Không tạo được bản xem trước"); }
+      await Promise.all([load(), onChanged()]);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409 && error.message.startsWith("Còn item cần review")) {
+        setConfirmExport(true);
+      } else notify(error instanceof Error ? error.message : "Không tạo được bản xem trước");
+    }
+    finally { setBusy(false); }
+  }
+
+  async function returnStagedPair(item: ResolutionItem) {
+    setBusy(true);
+    try {
+      await unstageReviewPair(runId, item.id.replace(/^staged:/, ""));
+      setActive(null);
+      await Promise.all([load(), onChanged()]);
+      notify("Đã đưa cặp trở lại Cần xem xét.");
+    } catch (error) { notify(error instanceof Error ? error.message : "Không đưa lại được cặp bản ghi"); }
     finally { setBusy(false); }
   }
 
@@ -321,7 +317,6 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
         setPreviewStale(true);
-        void getResolutionExportReadiness(runId).then(setReadiness).catch(() => undefined);
         notify("Dữ liệu hoặc quyết định đã thay đổi. Hãy tạo lại bản xem trước trước khi xuất CSV.");
       } else notify(error instanceof Error ? error.message : "Không thực hiện được bản xem trước");
     }
@@ -377,8 +372,8 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
         <div className="resolution-options">{groups.map((group) => {
           const selected = group.sources.some((option) => option.source_record_id === choices[field]);
           const sourceId = selected ? choices[field] : group.sources[0].source_record_id;
-          return <label key={group.value} className={`resolution-option ${selected ? "chosen" : ""} ${active.status === "REVIEW_STAGED_CONFLICT" ? "read-only" : ""}`}>
-            {active.status !== "REVIEW_STAGED_CONFLICT" && <input type="radio" disabled={!canEdit} name={`field-${field}`} checked={selected} onChange={() => setChoices((current) => ({ ...current, [field]: sourceId }))} />}
+          return <label key={group.value} className={`resolution-option ${selected ? "chosen" : ""} ${active.status === "REVIEW_STAGED_CONFLICT" || active.status === "STAGED_FOR_MERGE" ? "read-only" : ""}`}>
+            {active.status !== "REVIEW_STAGED_CONFLICT" && <input type="radio" disabled={!canEdit || active.status === "STAGED_FOR_MERGE"} name={`field-${field}`} checked={selected} onChange={() => setChoices((current) => ({ ...current, [field]: sourceId }))} />}
             <span className="resolution-option-content"><b>{valueWithDifference(group.value, groups.map((candidate) => candidate.value))}</b><span className="resolution-source-list">{group.sources.map((option) => <span key={option.source_record_id} className={`resolution-source ${sourceColor(option.source_system)}`}>{option.source_system} · {option.external_id}</span>)}</span></span>
             {selected && <span className="resolution-option-check" aria-hidden="true">✓</span>}
           </label>;
@@ -415,11 +410,12 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
         {items.map((item) => <article key={item.id} className="card resolution-item">
           <span className="resolution-item-glyph" aria-hidden="true"><ShellIcon name={stage === "auto" ? "auto" : "review"} size={17} /></span>
           <button type="button" className="resolution-item-open" onClick={() => void openItem(item)}>
-            <span className="resolution-item-title"><strong>{item.label || "Khách hàng"}</strong><span className="source-pill">{item.origin === "REVIEW" ? "Bạn đã xác nhận" : "Tự động"}</span></span>
+            <span className="resolution-item-title"><strong>{item.label || "Khách hàng"}</strong><span className="source-pill">{item.status === "STAGED_FOR_MERGE" ? "Bạn đã chọn" : item.origin === "REVIEW" ? "Bạn đã xác nhận" : "Tự động"}</span></span>
             {item.status === "REVIEW_STAGED_CONFLICT" && <span className="resolution-conflict-badge">Cần tách cụm trước khi xuất CSV</span>}
-            <span className="resolution-item-meta">{item.member_count.toLocaleString("vi-VN")} bản ghi đầu vào → 1 hồ sơ sau gộp</span>
+            <span className="resolution-item-meta">{item.member_count.toLocaleString("vi-VN")} bản ghi đầu vào {item.status === "STAGED_FOR_MERGE" ? "· sẽ kiểm tra khi xem trước CSV" : "→ 1 hồ sơ sau gộp"}</span>
             <span className="resolution-item-link">Xem so sánh →</span>
           </button>
+          {item.status === "STAGED_FOR_MERGE" && <button type="button" className="button outline" disabled={busy || !canApprove} onClick={() => void returnStagedPair(item)}>Đưa lại Cần xem xét</button>}
         </article>)}
         {!items.length && <div className="card empty-state"><b>Không có hồ sơ trong danh sách</b><p>Chọn bộ lọc khác hoặc nạp dữ liệu để tiếp tục.</p></div>}
       </>}
@@ -477,8 +473,8 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
     <div className="resolution-flow-toolbar">
       <div><h2>{stage === "auto" ? "Hồ sơ sẽ hợp nhất" : "Danh sách cần review"}</h2><p>{loading ? "Đang tải…" : loadError ? "Không tải được dữ liệu" : `${total.toLocaleString("vi-VN")} hồ sơ${stage === "auto" ? " sau gộp trong danh sách này" : ""}`}</p>{stage === "auto" && <p>Mỗi dòng tập hợp các bản ghi của cùng một đối tượng để tạo một hồ sơ khi xuất CSV.</p>}</div>
       {stage === "auto" && <div className="resolution-flow-actions">
-        <label>Nguồn quyết định <select value={origin} onChange={(event) => { setOrigin(event.target.value); setOffset(0); }}><option value="">Tất cả hồ sơ</option><option value="AUTO">Tự động</option><option value="REVIEW">Bạn đã xác nhận</option></select></label>
-        <button type="button" className="button primary" disabled={busy || loading || !!loadError || !readiness?.can_export || !canExport} title={!canExport ? "Tài khoản chưa có quyền xuất dữ liệu" : !readiness?.can_export ? "Xem các vấn đề cần xử lý bên dưới" : undefined} onClick={() => readiness?.pending_review_count ? setConfirmExport(true) : void previewCsv(false)}>Xem trước CSV kết quả →</button>
+        <label>Nguồn quyết định <select value={origin} onChange={(event) => { setOrigin(event.target.value); setOffset(0); }}><option value="">Tất cả hồ sơ</option><option value="AUTO">Tự động</option><option value="REVIEW">Bạn đã chọn hoặc xác nhận</option></select></label>
+        <button type="button" className="button primary" disabled={busy || loading || !!loadError || !canExport} title={!canExport ? "Tài khoản chưa có quyền xuất dữ liệu" : undefined} onClick={() => void previewCsv(false)}>Xem trước CSV kết quả →</button>
       </div>}
       {stage === "review" && canReview && <div className="resolution-review-controls"><label className="resolution-select-all"><input type="checkbox" disabled={busy || loading || !!loadError} checked={!loading && !loadError && total > 0 && selected.length === total} onChange={() => void selectAll()} /> Chọn tất cả {loading || loadError ? "" : total.toLocaleString("vi-VN")} hồ sơ</label>
         {!loading && !loadError && selected.length > 0 && <div className="resolution-flow-actions"><strong className="resolution-selected-count">{selected.length.toLocaleString("vi-VN")} hồ sơ đã chọn</strong>
@@ -490,11 +486,6 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
     {category && stage === "review" && <div className="card resolution-category-guide"><div><strong>{categoryGroupLabel(category.primary_group)} · {subgroupLabel(category.subgroup)}</strong><p>{category.rule_template_vi}</p>
       {explanations[category.signature_hash] && <div className="resolution-ai-review"><strong>{explanations[category.signature_hash].status === "TEMPLATE" ? "Giải thích theo quy tắc" : "Giải thích từ AI"}</strong><p>{explanations[category.signature_hash].summary_vi}</p><small>AI giải thích tín hiệu tổng hợp, quyết định thuộc về bạn.</small></div>}</div>
       <button type="button" className="button outline" disabled={busy || !canExplain} onClick={() => void explainCategory(category)}>Giải thích bằng AI</button></div>}
-    {stage === "auto" && !loading && !loadError && readiness && <div className={`resolution-readiness ${!readiness.can_export ? "needs-input" : ""}`}>
-      <strong>{readiness.can_export ? "Sẵn sàng xem trước CSV" : `${(readiness.blockers ?? []).length} vấn đề cần xử lý trước khi xuất CSV`}</strong>
-      {!readiness.can_export && <ul className="resolution-blockers">{(readiness.blockers ?? []).map((blocker) => <li key={`${blocker.item_id}-${blocker.kind}`}><button type="button" onClick={() => void openBlocker(blocker.item_id)}><b>{blocker.label || blocker.item_id}</b><span>{blocker.message}{blocker.fields?.length ? ` ${blocker.fields.map((field) => labels[field] ?? field).join(", ")}.` : ""}</span><em>Mở hồ sơ →</em></button></li>)}</ul>}
-      {readiness.pending_review_count > 0 && <p>Vẫn còn bản ghi cần xem xét. Những bản ghi chưa được xác nhận gộp sẽ được giữ riêng trong CSV.</p>}
-    </div>}
     {stage === "review" ? <>
       <section className="card review-list-panel" aria-label="Hồ sơ cần review">
         {renderItemList()}
@@ -558,20 +549,21 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
           {itemExplanation?.itemId === active.id && <div className="resolution-ai-review"><strong>{itemExplanation.status === "TEMPLATE" ? "Giải thích theo quy tắc" : "Giải thích từ AI"}</strong><p>{itemExplanation.summary}</p><small>AI chỉ giải thích tín hiệu; quyết định thuộc về bạn.</small></div>}
         </div>
         {active.merge_blocked_reason && <div className="resolution-readiness needs-input" role="alert">{active.merge_blocked_reason} Tách cụm sẽ từ chối các liên kết chưa quyết định và giữ các nhóm khớp an toàn.</div>}
+        {active.status === "STAGED_FOR_MERGE" && <p className="muted-copy">Giá trị cuối cùng sẽ được chọn theo quy tắc mặc định của nhóm khi xem trước CSV.</p>}
         <div className="resolution-field-list">
           {!!differentFields.length && <p className="resolution-field-section-label">Cần đối chiếu <span>Phần tô màu là điểm khác biệt</span></p>}
           {differentFields.map(renderField)}
           {emptyFields.map(renderField)}
           {!!sharedFields.length && <div className="resolution-shared-section"><button type="button" className="resolution-shared-toggle" aria-expanded={sharedOpen} onClick={() => setSharedOpen((open) => !open)}>{sharedFields.length} trường giống nhau <span aria-hidden="true">{sharedOpen ? "▴" : "▾"}</span></button>{sharedOpen && <div className="resolution-field-list">{sharedFields.map(renderField)}</div>}</div>}
         </div>
-        <div className="resolution-dialog-footer"><div className="resolution-footer-status">{active.status === "REVIEW_STAGED_CONFLICT" ? <><strong>Cụm đang chờ tách</strong><small>Sau khi tách, chọn lại giá trị trên từng nhóm hợp lệ.</small></> : <><strong>{differentFields.length ? `${selectedCount}/${differentFields.length} trường khác nhau đã có lựa chọn` : "Không có trường khác nhau cần chọn"}</strong><small>{choicesDirty ? "Có thay đổi chưa lưu." : "Chưa có thay đổi để lưu."} {selectedCount < differentFields.length && "Cần chọn đủ trước khi xuất CSV."}</small></>}</div>
+        <div className="resolution-dialog-footer"><div className="resolution-footer-status">{active.status === "REVIEW_STAGED_CONFLICT" ? <><strong>Cụm đang chờ tách</strong><small>Sau khi tách, chọn lại giá trị trên từng nhóm hợp lệ.</small></> : active.status === "STAGED_FOR_MERGE" ? <><strong>Đã đưa sang Tự động gộp</strong><small>Giá trị mặc định sẽ được xác định khi xem trước CSV.</small></> : <><strong>{differentFields.length ? `${selectedCount}/${differentFields.length} trường khác nhau đã có lựa chọn` : "Không có trường khác nhau cần chọn"}</strong><small>{choicesDirty ? "Có thay đổi chưa lưu." : "Chưa có thay đổi để lưu."} {selectedCount < differentFields.length && "Cần chọn đủ trước khi xuất CSV."}</small></>}</div>
           <button type="button" className="button outline" disabled={busy} onClick={closeItem}>{choicesDirty ? "Hủy thay đổi" : "Đóng"}</button>
-          {active.status !== "REVIEW_STAGED_CONFLICT" && <button type="button" className="button primary" disabled={busy || !choicesDirty || !canEdit} title={!choicesDirty ? "Chưa có thay đổi để lưu" : undefined} onClick={() => void save()}>Lưu lựa chọn</button>}
+          {active.status !== "REVIEW_STAGED_CONFLICT" && active.status !== "STAGED_FOR_MERGE" && <button type="button" className="button primary" disabled={busy || !choicesDirty || !canEdit} title={!choicesDirty ? "Chưa có thay đổi để lưu" : undefined} onClick={() => void save()}>Lưu lựa chọn</button>}
           {active.status === "REVIEW_STAGED_CONFLICT" && <button type="button" className="button primary" disabled={busy || !canReject} onClick={() => void splitConflict()}>Tách cụm an toàn</button>}
         </div>
       </div>
     </div>}
     {confirmExport && <div className="history-overlay" role="dialog" aria-modal="true" aria-labelledby="export-warning-heading"><div className="card resolution-confirm-dialog"><h2 id="export-warning-heading">Còn bản ghi cần xem xét</h2><p>CSV vẫn bao gồm toàn bộ dữ liệu đầu vào. Những bản ghi chưa được xác nhận gộp sẽ được giữ riêng.</p><div><button type="button" className="button outline" onClick={() => setConfirmExport(false)}>Quay lại</button><button type="button" className="button primary" disabled={busy} onClick={() => void previewCsv(true)}>Tiếp tục xem trước</button></div></div></div>}
-    {preview && <div className="history-overlay" role="dialog" aria-modal="true" aria-labelledby="preview-heading"><div className="card resolution-confirm-dialog"><h2 id="preview-heading">Xem trước CSV kết quả</h2><p>{preview.eligible_count.toLocaleString("vi-VN")} hồ sơ hợp nhất. CSV dự kiến có {preview.estimated_output_rows.toLocaleString("vi-VN")} dòng, gồm {(preview.separate_record_count ?? Math.max(0, preview.estimated_output_rows - preview.eligible_count)).toLocaleString("vi-VN")} bản ghi giữ riêng.</p><p>{preview.review_required_count > 0 && "Những bản ghi chưa được xác nhận gộp sẽ được giữ riêng."} Bản xem trước hết hạn lúc {new Date(preview.expires_at).toLocaleTimeString("vi-VN")}.</p>{previewStale && <p role="alert">Bản xem trước đã cũ vì dữ liệu hoặc quyết định thay đổi. Tạo lại để tiếp tục.</p>}<div><button type="button" className="button outline" disabled={busy} onClick={() => { setPreview(null); setPreviewStale(false); }}>Quay lại</button>{previewStale ? <button type="button" className="button primary" disabled={busy} onClick={() => void previewCsv(preview.review_required_count > 0)}>Tạo lại bản xem trước</button> : <button type="button" className="button primary" disabled={busy} onClick={() => void executeCsv()}>Xác nhận gộp và xuất CSV</button>}</div></div></div>}
+    {preview && <div className="history-overlay" role="dialog" aria-modal="true" aria-labelledby="preview-heading"><div className="card resolution-confirm-dialog"><h2 id="preview-heading">Xem trước CSV kết quả</h2>{!!preview.accepted_pair_count && <p>Đã kiểm tra {preview.accepted_pair_count.toLocaleString("vi-VN")} cặp bạn đưa sang Tự động gộp. Các cặp sẽ được xác nhận khi xuất CSV.</p>}<p>{preview.eligible_count.toLocaleString("vi-VN")} hồ sơ hợp nhất. CSV dự kiến có {preview.estimated_output_rows.toLocaleString("vi-VN")} dòng, gồm {(preview.separate_record_count ?? Math.max(0, preview.estimated_output_rows - preview.eligible_count)).toLocaleString("vi-VN")} bản ghi giữ riêng.</p><p>{preview.review_required_count > 0 && "Những bản ghi chưa được xác nhận gộp sẽ được giữ riêng."} Bản xem trước hết hạn lúc {new Date(preview.expires_at).toLocaleTimeString("vi-VN")}.</p>{previewStale && <p role="alert">Bản xem trước đã cũ vì dữ liệu hoặc quyết định thay đổi. Tạo lại để tiếp tục.</p>}<div><button type="button" className="button outline" disabled={busy} onClick={() => { setPreview(null); setPreviewStale(false); }}>Quay lại</button>{previewStale ? <button type="button" className="button primary" disabled={busy} onClick={() => void previewCsv(preview.review_required_count > 0)}>Tạo lại bản xem trước</button> : <button type="button" className="button primary" disabled={busy} onClick={() => void executeCsv()}>Xác nhận gộp và xuất CSV</button>}</div></div></div>}
   </section>;
 }

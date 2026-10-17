@@ -4,6 +4,7 @@ from uuid import uuid4
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -181,6 +182,7 @@ class ResolutionPair(Base):
     __table_args__ = (
         UniqueConstraint("run_id", "left_record_id", "right_record_id", name="uq_mdm_resolution_pair_records"),
         Index("ix_mdm_resolution_pairs_run_triage", "run_id", "triage_status"),
+        Index("ix_mdm_resolution_pairs_run_staged", "run_id", "staged_for_merge"),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -201,6 +203,7 @@ class ResolutionPair(Base):
     policy_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     policy_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
     user_decision: Mapped[str] = mapped_column(String(24), default="UNDECIDED")
+    staged_for_merge: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     revision: Mapped[int] = mapped_column(Integer, default=1)
 
 
@@ -301,6 +304,8 @@ class ResolutionPreview(Base):
     pair_set_hash: Mapped[str] = mapped_column(String(64))
     proposal_revisions: Mapped[dict] = mapped_column(JSON)
     choices: Mapped[dict] = mapped_column(JSON)
+    readiness_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    staged_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     acknowledge_unreviewed: Mapped[bool] = mapped_column(default=False)
     status: Mapped[str] = mapped_column(String(20), default="OPEN")
     execute_request_id: Mapped[str | None] = mapped_column(String(80), nullable=True)

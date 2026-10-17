@@ -60,7 +60,9 @@ from masterone.mdm.resolution_items import (
     source_csv,
     transition_review,
 )
-from masterone.mdm.resolution_pairs import decide_review_pair, pair_categories, pending_pairs
+from masterone.mdm.resolution_pairs import (
+    decide_review_pair, pair_categories, pending_pairs, stage_review_pairs, unstage_review_pair,
+)
 from masterone.mdm.run_summary import summary_for
 from masterone.mdm.resolution_preview import execute_preview, prepare_preview
 from masterone.mdm.resolution_split import execute_split, list_merge_events, prepare_split
@@ -93,11 +95,39 @@ class PairDecisionRequest(BaseModel):
     revision: int = Field(ge=1)
 
 
+class StagePairsRequest(BaseModel):
+    all_matching: bool = False
+    pair_ids: list[str] = Field(default_factory=list, max_length=10000)
+    excluded_ids: list[str] = Field(default_factory=list, max_length=10000)
+    primary_group: str | None = None
+    subgroup: str | None = None
+
+
 @router.get("/{run_id}/pair-categories")
 def get_pair_categories(run_id: str, db: Session = Depends(get_session),
                         auth: CurrentSession = Depends(require_capability("read"))):
     owned_run(db, run_id, auth.user.id)
     return pair_categories(db, run_id)
+
+
+@router.post("/{run_id}/review-pairs/stage")
+def post_stage_review_pairs(run_id: str, request: StagePairsRequest,
+                            db: Session = Depends(get_session),
+                            auth: CurrentSession = Depends(require_mutation_capability("approve_pair"))):
+    run = owned_run(db, run_id, auth.user.id)
+    if run.status != "COMPLETED":
+        raise HTTPException(409, "Chỉ chuyển cặp khi phiên đã xử lý xong")
+    return stage_review_pairs(db, run_id, all_matching=request.all_matching,
+        pair_ids=request.pair_ids, excluded_ids=request.excluded_ids,
+        primary_group=request.primary_group, subgroup=request.subgroup, actor=auth.user.id)
+
+
+@router.post("/{run_id}/review-pairs/{pair_id}/unstage")
+def post_unstage_review_pair(run_id: str, pair_id: str,
+                             db: Session = Depends(get_session),
+                             auth: CurrentSession = Depends(require_mutation_capability("approve_pair"))):
+    owned_run(db, run_id, auth.user.id)
+    return unstage_review_pair(db, run_id, pair_id, auth.user.id)
 
 
 @router.post("/{run_id}/review-pairs/{pair_id}/decision")
@@ -224,6 +254,8 @@ def post_export(run_id: str, request: ExportRequest, db: Session = Depends(get_s
                 execute_request_id: str | None = Header(default=None, min_length=1, max_length=80,
                                                        alias="Idempotency-Key")):
     run = owned_run(db, run_id, auth.user.id)
+    if db.query(ResolutionPair.id).filter_by(run_id=run_id, staged_for_merge=True).first():
+        raise HTTPException(409, "Hãy xem trước CSV để kiểm tra các cặp đã đưa sang Tự động gộp")
     if run.policy_version == "person-linh-v1":
         raise HTTPException(409, "Hãy xem trước và xác nhận bản gộp trước khi xuất CSV")
     from uuid import NAMESPACE_URL, uuid5

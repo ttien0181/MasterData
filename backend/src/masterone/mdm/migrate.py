@@ -8,7 +8,7 @@ from alembic.config import Config
 
 from masterone.config import get_settings
 
-HEAD = "0027_llm_policy"
+HEAD = "0028_pair_merge_staging"
 
 
 def alembic_config(url: str, config_path: str | Path | None = None) -> Config:

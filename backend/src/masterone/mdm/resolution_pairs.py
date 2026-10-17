@@ -3,7 +3,7 @@
 from hashlib import sha256
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, update
 from sqlalchemy.orm import Session
 
 from masterone.mdm.models import (
@@ -12,6 +12,7 @@ from masterone.mdm.models import (
     ResolutionProposal,
     ResolutionReviewCase,
     ResolutionRun,
+    ResolutionRunSummary,
 )
 from masterone.mdm.pipeline.decision_semantics import require_manual_merge
 from masterone.mdm.pipeline.golden import build_golden
@@ -23,8 +24,50 @@ def pending_pairs(db: Session, run_id: str):
     return db.query(ResolutionPair).filter(
         ResolutionPair.run_id == run_id, ResolutionPair.triage_status == "REVIEW",
         ResolutionPair.user_decision.in_(["UNDECIDED", "DEFERRED"]),
+        ResolutionPair.staged_for_merge.is_(False),
         ~ResolutionPair.pair_decision.in_(["NON_MATCH", "NOT_MERGEABLE"]),
     )
+
+
+def stage_review_pairs(db: Session, run_id: str, *, all_matching: bool,
+                       pair_ids: list[str], excluded_ids: list[str],
+                       primary_group: str | None, subgroup: str | None, actor: str):
+    """Mark a filtered set without loading each page or building merge groups."""
+    if all_matching == bool(pair_ids) or len(pair_ids) != len(set(pair_ids)):
+        raise HTTPException(422, "Danh sách cặp được chọn không hợp lệ")
+    query = pending_pairs(db, run_id)
+    if all_matching:
+        if primary_group:
+            query = query.filter(ResolutionPair.primary_group.is_(None) if primary_group == "OTHER"
+                                 else ResolutionPair.primary_group == primary_group)
+        if subgroup:
+            query = query.filter(ResolutionPair.subgroup.is_(None) if subgroup == "OTHER"
+                                 else ResolutionPair.subgroup == subgroup)
+        if excluded_ids:
+            query = query.filter(~ResolutionPair.id.in_(excluded_ids))
+    else:
+        query = query.filter(ResolutionPair.id.in_(pair_ids))
+    changed = query.update({ResolutionPair.staged_for_merge: True}, synchronize_session=False)
+    if changed:
+        db.execute(update(ResolutionRunSummary).where(ResolutionRunSummary.run_id == run_id)
+                   .values(version=ResolutionRunSummary.version + 1))
+        db.add(ResolutionAuditEvent(run_id=run_id, actor_user_id=actor,
+            action="PAIRS_STAGED_FOR_MERGE", details={"count": changed}))
+    db.commit()
+    return {"staged_count": changed}
+
+
+def unstage_review_pair(db: Session, run_id: str, pair_id: str, actor: str):
+    changed = db.query(ResolutionPair).filter_by(run_id=run_id, id=pair_id,
+        staged_for_merge=True).update({ResolutionPair.staged_for_merge: False}, synchronize_session=False)
+    if not changed:
+        raise HTTPException(404, "Cặp không còn chờ kiểm tra")
+    db.execute(update(ResolutionRunSummary).where(ResolutionRunSummary.run_id == run_id)
+               .values(version=ResolutionRunSummary.version + 1))
+    db.add(ResolutionAuditEvent(run_id=run_id, actor_user_id=actor,
+        pair_id=pair_id, action="PAIR_UNSTAGED_FOR_MERGE", details={}))
+    db.commit()
+    return {"pair_id": pair_id}
 
 
 def pair_categories(db: Session, run_id: str):
