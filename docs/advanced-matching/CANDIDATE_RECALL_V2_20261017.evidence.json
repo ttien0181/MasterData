@@ -1,0 +1,2041 @@
+{
+  "baseline_commit": "90a8ed6",
+  "date_bangkok": "2026-10-17",
+  "environment": {
+    "python": "3.11.17",
+    "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.41",
+    "dependencies": {
+      "numpy": "2.4.6",
+      "scikit-learn": "1.9.1",
+      "rapidfuzz": "3.14.6",
+      "pyarrow": "26.0.0",
+      "duckdb": "1.5.6",
+      "psutil": "7.2.2"
+    },
+    "module_sha256": {
+      "masterone.config": "ecc4c88dfad283011e6988834d767f9feafa379b25d3e5748f4875ba9035070a",
+      "masterone.mdm.engine_adapter": "e8884d24df669bfe24ccade1ae6f0f7adcf4c40878cabfdfe5b8f34925f0ac75",
+      "masterone.mdm.matching_foundation_service": "fa68966e70539437b387f33543e06e540de3cda1ffa9c6ed98e9704a46af3265",
+      "masterone.mdm.pipeline.candidate_engine": "f69703112c86364b3b5bdf6050dad392cd1dd9b87e299df45880f2c92fa5e036",
+      "masterone.mdm.pipeline.person_blocking": "b4fad57803d10b831d48f87e56f750043f7e037cf015756f1e2bb884772b1fe1",
+      "masterone.mdm.matching_agents.candidate_union": "a4449c824e581107f0f29508288d25650a5cdb211c172e32953088a5de142cca"
+    }
+  },
+  "root_cause": {
+    "records": 9992,
+    "truth_pairs": 4864,
+    "candidates": 90128,
+    "tp": 3258,
+    "fn": 1606,
+    "reproduced_candidates": 90128,
+    "reproduction_added": 0,
+    "reproduction_removed": 0,
+    "retrieval_seconds": 2.629396605999318,
+    "peak_rss_bytes": 722137088,
+    "overlapping_facts": {
+      "all_common_blocks_oversized": 1606,
+      "same_full_dob": 1211,
+      "token_missing_extra": 1530,
+      "two_or_more_common_tokens": 1606,
+      "no_equal_valid_contact": 1606,
+      "different_address": 1605,
+      "different_tfidf_partition": 395,
+      "same_month_day_changed_year": 395,
+      "equal_token_set": 76
+    },
+    "disjoint_categories": {
+      "same_dob_shortened_name": 1154,
+      "changed_year_same_month_day": 395,
+      "same_dob_other_name_variation": 57
+    },
+    "ablation": {
+      "person_token_full_dob": {
+        "total": 4420,
+        "overlap": 2644,
+        "new": 1776,
+        "recovered": 1211
+      },
+      "person_tokens_month_day": {
+        "total": 5595,
+        "overlap": 3843,
+        "new": 1752,
+        "recovered": 395
+      }
+    },
+    "union_count": 93656,
+    "union_tp": 4864,
+    "tfidf_failures": {
+      "zero_similarity_after_df_pruning": 1202,
+      "different_partition": 395,
+      "top_k_truncation": 9
+    },
+    "label_status": {
+      "CERTAIN": 9992
+    },
+    "entity_sizes": {
+      "2": 4864,
+      "1": 264
+    },
+    "baseline_passes": {
+      "address_gram": {
+        "generated_pairs": 6808,
+        "skipped_pairs": 2712002894
+      },
+      "dob_numbered_street": {
+        "generated_pairs": 8,
+        "skipped_pairs": 0
+      },
+      "exact_email": {
+        "generated_pairs": 0,
+        "skipped_pairs": 0
+      },
+      "exact_name": {
+        "generated_pairs": 28126,
+        "skipped_pairs": 34023
+      },
+      "exact_phone": {
+        "generated_pairs": 2,
+        "skipped_pairs": 0
+      },
+      "name_full_dob": {
+        "generated_pairs": 4,
+        "skipped_pairs": 0
+      },
+      "name_gram": {
+        "generated_pairs": 1754,
+        "skipped_pairs": 120864880
+      },
+      "name_prefix_year": {
+        "generated_pairs": 29162,
+        "skipped_pairs": 28129
+      },
+      "name_province": {
+        "generated_pairs": 21686,
+        "skipped_pairs": 40463
+      },
+      "phone_suffix_year": {
+        "generated_pairs": 90,
+        "skipped_pairs": 0
+      },
+      "surname_year": {
+        "generated_pairs": 27848,
+        "skipped_pairs": 26667
+      },
+      "tfidf_name": {
+        "generated_pairs": 28179,
+        "skipped_pairs": 0
+      }
+    }
+  },
+  "ablation": {
+    "baseline": {
+      "mode": "baseline",
+      "records": 9992,
+      "truth_kind": "SYNTHETIC_GENERATOR",
+      "truth_scope": "all CERTAIN same-entity combinations; includes policy-out-of-scope ORGANIZATION",
+      "truth_used_during_pipeline": false,
+      "provider_attempts": 0,
+      "flags": {
+        "decision_semantics_v2_enabled": false,
+        "cluster_safety_v2_enabled": false,
+        "generation_staging_enabled": false,
+        "candidate_recall_v2": false
+      },
+      "candidate_count": 90128,
+      "candidate": {
+        "tp": 3258,
+        "fp": 86870,
+        "fn": 1606,
+        "precision": 0.036148588673886026,
+        "recall": 0.6698190789473685,
+        "f1": 0.06859525012632643
+      },
+      "retrieval_seconds": 4.218678123000245,
+      "score_cluster_seconds": null,
+      "production_seconds": 4.218708799000524,
+      "retrieval_peak_rss_bytes": 443015168,
+      "production_peak_rss_bytes": 443015168,
+      "pairs_per_record": 9.020016012810249,
+      "degree": {
+        "mean": 18.040032025620498,
+        "p95": 47,
+        "max": 97
+      },
+      "passes": {
+        "address_gram": {
+          "candidates": 6808,
+          "overlap": 0,
+          "new_candidates": 6808,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "dob_numbered_street": {
+          "candidates": 8,
+          "overlap": 0,
+          "new_candidates": 8,
+          "true_pairs": 3,
+          "new_true_pairs": 3
+        },
+        "exact_name": {
+          "candidates": 28126,
+          "overlap": 3,
+          "new_candidates": 28123,
+          "true_pairs": 729,
+          "new_true_pairs": 729
+        },
+        "exact_phone": {
+          "candidates": 2,
+          "overlap": 0,
+          "new_candidates": 2,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "name_full_dob": {
+          "candidates": 4,
+          "overlap": 2,
+          "new_candidates": 2,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "name_gram": {
+          "candidates": 1749,
+          "overlap": 238,
+          "new_candidates": 1511,
+          "true_pairs": 91,
+          "new_true_pairs": 1
+        },
+        "name_prefix_year": {
+          "candidates": 29162,
+          "overlap": 354,
+          "new_candidates": 28808,
+          "true_pairs": 11,
+          "new_true_pairs": 11
+        },
+        "name_province": {
+          "candidates": 21686,
+          "overlap": 21686,
+          "new_candidates": 0,
+          "true_pairs": 729,
+          "new_true_pairs": 0
+        },
+        "phone_suffix_year": {
+          "candidates": 90,
+          "overlap": 2,
+          "new_candidates": 88,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "surname_year": {
+          "candidates": 27848,
+          "overlap": 26837,
+          "new_candidates": 1011,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "tfidf_name": {
+          "candidates": 28179,
+          "overlap": 4412,
+          "new_candidates": 23767,
+          "true_pairs": 3192,
+          "new_true_pairs": 2514
+        }
+      },
+      "new_vs_historical": 0,
+      "lost_vs_historical": 0,
+      "additional_true_vs_historical": 0,
+      "by_type": {
+        "PERSON": {
+          "tp": 2529,
+          "fp": 74773,
+          "fn": 1606,
+          "precision": 0.032715841763473134,
+          "recall": 0.611608222490931,
+          "f1": 0.062109360610042116
+        },
+        "ORGANIZATION": {
+          "tp": 729,
+          "fp": 9853,
+          "fn": 0,
+          "precision": 0.0688905688905689,
+          "recall": 1.0,
+          "f1": 0.12890106975510565
+        }
+      },
+      "pair": null,
+      "cluster_pairwise": null,
+      "decisions": {},
+      "truth_decisions": null,
+      "recovered_truth_decisions": null,
+      "scope": "offline rule proposals; REVIEW/GOLDEN/HTTP require a separate end-to-end run"
+    },
+    "normalization": {
+      "mode": "normalization",
+      "records": 9992,
+      "truth_kind": "SYNTHETIC_GENERATOR",
+      "truth_scope": "all CERTAIN same-entity combinations; includes policy-out-of-scope ORGANIZATION",
+      "truth_used_during_pipeline": false,
+      "provider_attempts": 0,
+      "flags": {
+        "decision_semantics_v2_enabled": false,
+        "cluster_safety_v2_enabled": false,
+        "generation_staging_enabled": false,
+        "candidate_recall_v2": false
+      },
+      "candidate_count": 90128,
+      "candidate": {
+        "tp": 3258,
+        "fp": 86870,
+        "fn": 1606,
+        "precision": 0.036148588673886026,
+        "recall": 0.6698190789473685,
+        "f1": 0.06859525012632643
+      },
+      "retrieval_seconds": 2.477899663000244,
+      "score_cluster_seconds": null,
+      "production_seconds": 2.47792447700067,
+      "retrieval_peak_rss_bytes": 442015744,
+      "production_peak_rss_bytes": 442015744,
+      "pairs_per_record": 9.020016012810249,
+      "degree": {
+        "mean": 18.040032025620498,
+        "p95": 47,
+        "max": 97
+      },
+      "passes": {
+        "address_gram": {
+          "candidates": 6808,
+          "overlap": 0,
+          "new_candidates": 6808,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "dob_numbered_street": {
+          "candidates": 8,
+          "overlap": 0,
+          "new_candidates": 8,
+          "true_pairs": 3,
+          "new_true_pairs": 3
+        },
+        "exact_name": {
+          "candidates": 28126,
+          "overlap": 3,
+          "new_candidates": 28123,
+          "true_pairs": 729,
+          "new_true_pairs": 729
+        },
+        "exact_phone": {
+          "candidates": 2,
+          "overlap": 0,
+          "new_candidates": 2,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "name_full_dob": {
+          "candidates": 4,
+          "overlap": 2,
+          "new_candidates": 2,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "name_gram": {
+          "candidates": 1749,
+          "overlap": 238,
+          "new_candidates": 1511,
+          "true_pairs": 91,
+          "new_true_pairs": 1
+        },
+        "name_prefix_year": {
+          "candidates": 29162,
+          "overlap": 354,
+          "new_candidates": 28808,
+          "true_pairs": 11,
+          "new_true_pairs": 11
+        },
+        "name_province": {
+          "candidates": 21686,
+          "overlap": 21686,
+          "new_candidates": 0,
+          "true_pairs": 729,
+          "new_true_pairs": 0
+        },
+        "phone_suffix_year": {
+          "candidates": 90,
+          "overlap": 2,
+          "new_candidates": 88,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "surname_year": {
+          "candidates": 27848,
+          "overlap": 26837,
+          "new_candidates": 1011,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "tfidf_name": {
+          "candidates": 28179,
+          "overlap": 4412,
+          "new_candidates": 23767,
+          "true_pairs": 3192,
+          "new_true_pairs": 2514
+        }
+      },
+      "new_vs_historical": 0,
+      "lost_vs_historical": 0,
+      "additional_true_vs_historical": 0,
+      "by_type": {
+        "PERSON": {
+          "tp": 2529,
+          "fp": 74773,
+          "fn": 1606,
+          "precision": 0.032715841763473134,
+          "recall": 0.611608222490931,
+          "f1": 0.062109360610042116
+        },
+        "ORGANIZATION": {
+          "tp": 729,
+          "fp": 9853,
+          "fn": 0,
+          "precision": 0.0688905688905689,
+          "recall": 1.0,
+          "f1": 0.12890106975510565
+        }
+      },
+      "pair": null,
+      "cluster_pairwise": null,
+      "decisions": {},
+      "truth_decisions": null,
+      "recovered_truth_decisions": null,
+      "scope": "offline rule proposals; REVIEW/GOLDEN/HTTP require a separate end-to-end run"
+    },
+    "identifiers_control": {
+      "mode": "identifiers",
+      "records": 9992,
+      "truth_kind": "SYNTHETIC_GENERATOR",
+      "truth_scope": "all CERTAIN same-entity combinations; includes policy-out-of-scope ORGANIZATION",
+      "truth_used_during_pipeline": false,
+      "provider_attempts": 0,
+      "flags": {
+        "decision_semantics_v2_enabled": false,
+        "cluster_safety_v2_enabled": false,
+        "generation_staging_enabled": false,
+        "candidate_recall_v2": false
+      },
+      "candidate_count": 90128,
+      "candidate": {
+        "tp": 3258,
+        "fp": 86870,
+        "fn": 1606,
+        "precision": 0.036148588673886026,
+        "recall": 0.6698190789473685,
+        "f1": 0.06859525012632643
+      },
+      "retrieval_seconds": 2.510413220999908,
+      "score_cluster_seconds": null,
+      "production_seconds": 2.5104389010002706,
+      "retrieval_peak_rss_bytes": 442822656,
+      "production_peak_rss_bytes": 442822656,
+      "pairs_per_record": 9.020016012810249,
+      "degree": {
+        "mean": 18.040032025620498,
+        "p95": 47,
+        "max": 97
+      },
+      "passes": {
+        "address_gram": {
+          "candidates": 6808,
+          "overlap": 0,
+          "new_candidates": 6808,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "dob_numbered_street": {
+          "candidates": 8,
+          "overlap": 0,
+          "new_candidates": 8,
+          "true_pairs": 3,
+          "new_true_pairs": 3
+        },
+        "exact_name": {
+          "candidates": 28126,
+          "overlap": 3,
+          "new_candidates": 28123,
+          "true_pairs": 729,
+          "new_true_pairs": 729
+        },
+        "exact_phone": {
+          "candidates": 2,
+          "overlap": 0,
+          "new_candidates": 2,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "name_full_dob": {
+          "candidates": 4,
+          "overlap": 2,
+          "new_candidates": 2,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "name_gram": {
+          "candidates": 1749,
+          "overlap": 238,
+          "new_candidates": 1511,
+          "true_pairs": 91,
+          "new_true_pairs": 1
+        },
+        "name_prefix_year": {
+          "candidates": 29162,
+          "overlap": 354,
+          "new_candidates": 28808,
+          "true_pairs": 11,
+          "new_true_pairs": 11
+        },
+        "name_province": {
+          "candidates": 21686,
+          "overlap": 21686,
+          "new_candidates": 0,
+          "true_pairs": 729,
+          "new_true_pairs": 0
+        },
+        "phone_suffix_year": {
+          "candidates": 90,
+          "overlap": 2,
+          "new_candidates": 88,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "surname_year": {
+          "candidates": 27848,
+          "overlap": 26837,
+          "new_candidates": 1011,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "tfidf_name": {
+          "candidates": 28179,
+          "overlap": 4412,
+          "new_candidates": 23767,
+          "true_pairs": 3192,
+          "new_true_pairs": 2514
+        }
+      },
+      "new_vs_historical": 0,
+      "lost_vs_historical": 0,
+      "additional_true_vs_historical": 0,
+      "by_type": {
+        "PERSON": {
+          "tp": 2529,
+          "fp": 74773,
+          "fn": 1606,
+          "precision": 0.032715841763473134,
+          "recall": 0.611608222490931,
+          "f1": 0.062109360610042116
+        },
+        "ORGANIZATION": {
+          "tp": 729,
+          "fp": 9853,
+          "fn": 0,
+          "precision": 0.0688905688905689,
+          "recall": 1.0,
+          "f1": 0.12890106975510565
+        }
+      },
+      "pair": null,
+      "cluster_pairwise": null,
+      "decisions": {},
+      "truth_decisions": null,
+      "recovered_truth_decisions": null,
+      "scope": "offline rule proposals; REVIEW/GOLDEN/HTTP require a separate end-to-end run"
+    },
+    "full_dob_source_projection": {
+      "mode": "dob",
+      "records": 9992,
+      "truth_kind": "SYNTHETIC_GENERATOR",
+      "truth_scope": "all CERTAIN same-entity combinations; includes policy-out-of-scope ORGANIZATION",
+      "truth_used_during_pipeline": false,
+      "provider_attempts": 0,
+      "flags": {
+        "decision_semantics_v2_enabled": false,
+        "cluster_safety_v2_enabled": false,
+        "generation_staging_enabled": false,
+        "candidate_recall_v2": true
+      },
+      "candidate_count": 91904,
+      "candidate": {
+        "tp": 4469,
+        "fp": 87435,
+        "fn": 395,
+        "precision": 0.04862682799442897,
+        "recall": 0.9187911184210527,
+        "f1": 0.09236524470899471
+      },
+      "retrieval_seconds": 3.3227531479997197,
+      "score_cluster_seconds": null,
+      "production_seconds": 3.3227783459997227,
+      "retrieval_peak_rss_bytes": 471707648,
+      "production_peak_rss_bytes": 471707648,
+      "pairs_per_record": 9.197758206565252,
+      "degree": {
+        "mean": 18.395516413130505,
+        "p95": 47,
+        "max": 98
+      },
+      "passes": {
+        "address_gram": {
+          "candidates": 6808,
+          "overlap": 0,
+          "new_candidates": 6808,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "dob_numbered_street": {
+          "candidates": 8,
+          "overlap": 0,
+          "new_candidates": 8,
+          "true_pairs": 3,
+          "new_true_pairs": 3
+        },
+        "exact_name": {
+          "candidates": 28126,
+          "overlap": 3,
+          "new_candidates": 28123,
+          "true_pairs": 729,
+          "new_true_pairs": 729
+        },
+        "exact_phone": {
+          "candidates": 2,
+          "overlap": 0,
+          "new_candidates": 2,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "name_full_dob": {
+          "candidates": 4,
+          "overlap": 2,
+          "new_candidates": 2,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "name_gram": {
+          "candidates": 1749,
+          "overlap": 238,
+          "new_candidates": 1511,
+          "true_pairs": 91,
+          "new_true_pairs": 1
+        },
+        "name_prefix_year": {
+          "candidates": 29162,
+          "overlap": 354,
+          "new_candidates": 28808,
+          "true_pairs": 11,
+          "new_true_pairs": 11
+        },
+        "name_province": {
+          "candidates": 21686,
+          "overlap": 21686,
+          "new_candidates": 0,
+          "true_pairs": 729,
+          "new_true_pairs": 0
+        },
+        "phone_suffix_year": {
+          "candidates": 90,
+          "overlap": 2,
+          "new_candidates": 88,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "surname_year": {
+          "candidates": 27848,
+          "overlap": 26837,
+          "new_candidates": 1011,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "tfidf_name": {
+          "candidates": 28179,
+          "overlap": 4412,
+          "new_candidates": 23767,
+          "true_pairs": 3192,
+          "new_true_pairs": 2514
+        },
+        "person_token_full_dob": {
+          "candidates": 4420,
+          "overlap": 2644,
+          "new_candidates": 1776,
+          "true_pairs": 3740,
+          "new_true_pairs": 1211
+        }
+      },
+      "new_vs_historical": 1776,
+      "lost_vs_historical": 0,
+      "additional_true_vs_historical": 1211,
+      "by_type": {
+        "PERSON": {
+          "tp": 3740,
+          "fp": 75338,
+          "fn": 395,
+          "precision": 0.04729507574799565,
+          "recall": 0.9044740024183797,
+          "f1": 0.08988980087245983
+        },
+        "ORGANIZATION": {
+          "tp": 729,
+          "fp": 9853,
+          "fn": 0,
+          "precision": 0.0688905688905689,
+          "recall": 1.0,
+          "f1": 0.12890106975510565
+        }
+      },
+      "pair": null,
+      "cluster_pairwise": null,
+      "decisions": {},
+      "truth_decisions": null,
+      "recovered_truth_decisions": null,
+      "scope": "offline rule proposals; REVIEW/GOLDEN/HTTP require a separate end-to-end run"
+    },
+    "global_fuzzy_name": {
+      "mode": "lexical",
+      "records": 9992,
+      "truth_kind": "SYNTHETIC_GENERATOR",
+      "truth_scope": "all CERTAIN same-entity combinations; includes policy-out-of-scope ORGANIZATION",
+      "truth_used_during_pipeline": false,
+      "provider_attempts": 0,
+      "flags": {
+        "decision_semantics_v2_enabled": false,
+        "cluster_safety_v2_enabled": false,
+        "generation_staging_enabled": false,
+        "candidate_recall_v2": false
+      },
+      "candidate_count": 139818,
+      "candidate": {
+        "tp": 3698,
+        "fp": 136120,
+        "fn": 1166,
+        "precision": 0.02644866898396487,
+        "recall": 0.7602796052631579,
+        "f1": 0.05111900581965967
+      },
+      "retrieval_seconds": 5.665486193000106,
+      "score_cluster_seconds": null,
+      "production_seconds": 5.665508555000088,
+      "retrieval_peak_rss_bytes": 445722624,
+      "production_peak_rss_bytes": 445722624,
+      "pairs_per_record": 13.992994395516414,
+      "degree": {
+        "mean": 27.985988791032828,
+        "p95": 56,
+        "max": 210
+      },
+      "passes": {
+        "address_gram": {
+          "candidates": 6808,
+          "overlap": 0,
+          "new_candidates": 6808,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "dob_numbered_street": {
+          "candidates": 8,
+          "overlap": 0,
+          "new_candidates": 8,
+          "true_pairs": 3,
+          "new_true_pairs": 3
+        },
+        "exact_name": {
+          "candidates": 28126,
+          "overlap": 3,
+          "new_candidates": 28123,
+          "true_pairs": 729,
+          "new_true_pairs": 729
+        },
+        "exact_phone": {
+          "candidates": 2,
+          "overlap": 0,
+          "new_candidates": 2,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "name_full_dob": {
+          "candidates": 4,
+          "overlap": 2,
+          "new_candidates": 2,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "name_gram": {
+          "candidates": 1749,
+          "overlap": 238,
+          "new_candidates": 1511,
+          "true_pairs": 91,
+          "new_true_pairs": 1
+        },
+        "name_prefix_year": {
+          "candidates": 29162,
+          "overlap": 354,
+          "new_candidates": 28808,
+          "true_pairs": 11,
+          "new_true_pairs": 11
+        },
+        "name_province": {
+          "candidates": 21686,
+          "overlap": 21686,
+          "new_candidates": 0,
+          "true_pairs": 729,
+          "new_true_pairs": 0
+        },
+        "phone_suffix_year": {
+          "candidates": 90,
+          "overlap": 2,
+          "new_candidates": 88,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "surname_year": {
+          "candidates": 27848,
+          "overlap": 26837,
+          "new_candidates": 1011,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "tfidf_global_name": {
+          "candidates": 73438,
+          "overlap": 19140,
+          "new_candidates": 54298,
+          "true_pairs": 2874,
+          "new_true_pairs": 2133
+        },
+        "tfidf_name": {
+          "candidates": 28179,
+          "overlap": 9020,
+          "new_candidates": 19159,
+          "true_pairs": 3192,
+          "new_true_pairs": 821
+        }
+      },
+      "new_vs_historical": 49690,
+      "lost_vs_historical": 0,
+      "additional_true_vs_historical": 440,
+      "by_type": {
+        "PERSON": {
+          "tp": 2969,
+          "fp": 117773,
+          "fn": 1166,
+          "precision": 0.02458962084444518,
+          "recall": 0.7180169286577993,
+          "f1": 0.0475507899773377
+        },
+        "ORGANIZATION": {
+          "tp": 729,
+          "fp": 16103,
+          "fn": 0,
+          "precision": 0.043310361216730035,
+          "recall": 1.0,
+          "f1": 0.08302488468766016
+        }
+      },
+      "pair": null,
+      "cluster_pairwise": null,
+      "decisions": {},
+      "truth_decisions": null,
+      "recovered_truth_decisions": null,
+      "scope": "offline rule proposals; REVIEW/GOLDEN/HTTP require a separate end-to-end run"
+    },
+    "selected": {
+      "mode": "v2",
+      "records": 9992,
+      "truth_kind": "SYNTHETIC_GENERATOR",
+      "truth_scope": "all CERTAIN same-entity combinations; includes policy-out-of-scope ORGANIZATION",
+      "truth_used_during_pipeline": false,
+      "provider_attempts": 0,
+      "flags": {
+        "decision_semantics_v2_enabled": false,
+        "cluster_safety_v2_enabled": false,
+        "generation_staging_enabled": false,
+        "candidate_recall_v2": true
+      },
+      "candidate_count": 93656,
+      "candidate": {
+        "tp": 4864,
+        "fp": 88792,
+        "fn": 0,
+        "precision": 0.051934739899205606,
+        "recall": 1.0,
+        "f1": 0.09874137231019083
+      },
+      "retrieval_seconds": 2.92054177800037,
+      "score_cluster_seconds": null,
+      "production_seconds": 2.9205781690006916,
+      "retrieval_peak_rss_bytes": 468656128,
+      "production_peak_rss_bytes": 468656128,
+      "pairs_per_record": 9.373098478783026,
+      "degree": {
+        "mean": 18.746196957566053,
+        "p95": 48,
+        "max": 98
+      },
+      "passes": {
+        "address_gram": {
+          "candidates": 6808,
+          "overlap": 0,
+          "new_candidates": 6808,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "dob_numbered_street": {
+          "candidates": 8,
+          "overlap": 0,
+          "new_candidates": 8,
+          "true_pairs": 3,
+          "new_true_pairs": 3
+        },
+        "exact_name": {
+          "candidates": 28126,
+          "overlap": 3,
+          "new_candidates": 28123,
+          "true_pairs": 729,
+          "new_true_pairs": 729
+        },
+        "exact_phone": {
+          "candidates": 2,
+          "overlap": 0,
+          "new_candidates": 2,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "name_full_dob": {
+          "candidates": 4,
+          "overlap": 2,
+          "new_candidates": 2,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "name_gram": {
+          "candidates": 1749,
+          "overlap": 238,
+          "new_candidates": 1511,
+          "true_pairs": 91,
+          "new_true_pairs": 1
+        },
+        "name_prefix_year": {
+          "candidates": 29162,
+          "overlap": 354,
+          "new_candidates": 28808,
+          "true_pairs": 11,
+          "new_true_pairs": 11
+        },
+        "name_province": {
+          "candidates": 21686,
+          "overlap": 21686,
+          "new_candidates": 0,
+          "true_pairs": 729,
+          "new_true_pairs": 0
+        },
+        "phone_suffix_year": {
+          "candidates": 90,
+          "overlap": 2,
+          "new_candidates": 88,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "surname_year": {
+          "candidates": 27848,
+          "overlap": 26837,
+          "new_candidates": 1011,
+          "true_pairs": 0,
+          "new_true_pairs": 0
+        },
+        "tfidf_name": {
+          "candidates": 28179,
+          "overlap": 4412,
+          "new_candidates": 23767,
+          "true_pairs": 3192,
+          "new_true_pairs": 2514
+        },
+        "person_token_full_dob": {
+          "candidates": 4420,
+          "overlap": 2644,
+          "new_candidates": 1776,
+          "true_pairs": 3740,
+          "new_true_pairs": 1211
+        },
+        "person_tokens_month_day": {
+          "candidates": 5595,
+          "overlap": 3843,
+          "new_candidates": 1752,
+          "true_pairs": 4135,
+          "new_true_pairs": 395
+        }
+      },
+      "new_vs_historical": 3528,
+      "lost_vs_historical": 0,
+      "additional_true_vs_historical": 1606,
+      "by_type": {
+        "PERSON": {
+          "tp": 4135,
+          "fp": 76695,
+          "fn": 0,
+          "precision": 0.05115674873190647,
+          "recall": 1.0,
+          "f1": 0.0973341964338257
+        },
+        "ORGANIZATION": {
+          "tp": 729,
+          "fp": 9853,
+          "fn": 0,
+          "precision": 0.0688905688905689,
+          "recall": 1.0,
+          "f1": 0.12890106975510565
+        }
+      },
+      "pair": null,
+      "cluster_pairwise": null,
+      "decisions": {},
+      "truth_decisions": null,
+      "recovered_truth_decisions": null,
+      "scope": "offline rule proposals; REVIEW/GOLDEN/HTTP require a separate end-to-end run"
+    }
+  },
+  "retrieval_repeats": {
+    "baseline": {
+      "seconds": [
+        2.9212264510006207,
+        2.4951445480000984,
+        2.7145802289996936
+      ],
+      "median_seconds": 2.7145802289996936,
+      "max_peak_rss_bytes": 443723776
+    },
+    "v2": {
+      "seconds": [
+        3.3202553239989356,
+        3.251358530998914,
+        2.9781619750010577
+      ],
+      "median_seconds": 3.251358530998914,
+      "max_peak_rss_bytes": 471076864
+    }
+  },
+  "tradeoff": {
+    "additional_candidates": 3528,
+    "candidate_growth_percent": 3.914432806674961,
+    "recovered_true_pairs": 1606,
+    "additional_tp_per_1000_candidates": 455.2154195011338,
+    "median_overhead_seconds": 0.5367783019992203,
+    "recall_gain_percentage_points_per_added_second": 61.51159982116996
+  },
+  "offline_score": {
+    "tc3": {
+      "baseline": {
+        "mode": "baseline",
+        "records": 9992,
+        "truth_kind": "SYNTHETIC_GENERATOR",
+        "truth_scope": "all CERTAIN same-entity combinations; includes policy-out-of-scope ORGANIZATION",
+        "truth_used_during_pipeline": false,
+        "provider_attempts": 0,
+        "flags": {
+          "decision_semantics_v2_enabled": false,
+          "cluster_safety_v2_enabled": false,
+          "generation_staging_enabled": false,
+          "candidate_recall_v2": false
+        },
+        "candidate_count": 90128,
+        "candidate": {
+          "tp": 3258,
+          "fp": 86870,
+          "fn": 1606,
+          "precision": 0.036148588673886026,
+          "recall": 0.6698190789473685,
+          "f1": 0.06859525012632643
+        },
+        "retrieval_seconds": 2.7741286199998285,
+        "score_cluster_seconds": 13.723419833999287,
+        "production_seconds": 16.999507648000872,
+        "retrieval_peak_rss_bytes": 441647104,
+        "production_peak_rss_bytes": 1377222656,
+        "pairs_per_record": 9.020016012810249,
+        "degree": {
+          "mean": 18.040032025620498,
+          "p95": 47,
+          "max": 97
+        },
+        "passes": {
+          "address_gram": {
+            "candidates": 6808,
+            "overlap": 0,
+            "new_candidates": 6808,
+            "true_pairs": 0,
+            "new_true_pairs": 0
+          },
+          "dob_numbered_street": {
+            "candidates": 8,
+            "overlap": 0,
+            "new_candidates": 8,
+            "true_pairs": 3,
+            "new_true_pairs": 3
+          },
+          "exact_name": {
+            "candidates": 28126,
+            "overlap": 3,
+            "new_candidates": 28123,
+            "true_pairs": 729,
+            "new_true_pairs": 729
+          },
+          "exact_phone": {
+            "candidates": 2,
+            "overlap": 0,
+            "new_candidates": 2,
+            "true_pairs": 0,
+            "new_true_pairs": 0
+          },
+          "name_full_dob": {
+            "candidates": 4,
+            "overlap": 2,
+            "new_candidates": 2,
+            "true_pairs": 0,
+            "new_true_pairs": 0
+          },
+          "name_gram": {
+            "candidates": 1749,
+            "overlap": 238,
+            "new_candidates": 1511,
+            "true_pairs": 91,
+            "new_true_pairs": 1
+          },
+          "name_prefix_year": {
+            "candidates": 29162,
+            "overlap": 354,
+            "new_candidates": 28808,
+            "true_pairs": 11,
+            "new_true_pairs": 11
+          },
+          "name_province": {
+            "candidates": 21686,
+            "overlap": 21686,
+            "new_candidates": 0,
+            "true_pairs": 729,
+            "new_true_pairs": 0
+          },
+          "phone_suffix_year": {
+            "candidates": 90,
+            "overlap": 2,
+            "new_candidates": 88,
+            "true_pairs": 0,
+            "new_true_pairs": 0
+          },
+          "surname_year": {
+            "candidates": 27848,
+            "overlap": 26837,
+            "new_candidates": 1011,
+            "true_pairs": 0,
+            "new_true_pairs": 0
+          },
+          "tfidf_name": {
+            "candidates": 28179,
+            "overlap": 4412,
+            "new_candidates": 23767,
+            "true_pairs": 3192,
+            "new_true_pairs": 2514
+          }
+        },
+        "new_vs_historical": 0,
+        "lost_vs_historical": 0,
+        "additional_true_vs_historical": 0,
+        "by_type": {
+          "PERSON": {
+            "tp": 2529,
+            "fp": 74773,
+            "fn": 1606,
+            "precision": 0.032715841763473134,
+            "recall": 0.611608222490931,
+            "f1": 0.062109360610042116
+          },
+          "ORGANIZATION": {
+            "tp": 729,
+            "fp": 9853,
+            "fn": 0,
+            "precision": 0.0688905688905689,
+            "recall": 1.0,
+            "f1": 0.12890106975510565
+          }
+        },
+        "pair": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 4864,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "cluster_pairwise": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 4864,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "decisions": {
+          "NOT_MERGEABLE": 2244,
+          "REVIEW": 1,
+          "INSUFFICIENT_EVIDENCE": 87883
+        },
+        "truth_decisions": {
+          "INSUFFICIENT_EVIDENCE": 3258
+        },
+        "recovered_truth_decisions": {},
+        "scope": "offline rule proposals; REVIEW/GOLDEN/HTTP require a separate end-to-end run",
+        "shared_historical_decisions": {
+          "pairs": 90128,
+          "sha256": "92261eb61bbd951e3a9b3818657ac32f995f68c698739806b34a9a94e15e7004"
+        },
+        "source_code_sha256": {
+          "scripts/benchmark_candidate_recall_v2.py": "7e77b7fa5920a1db222d048b010f70e376d466aa518584a7ca845be9cf3a21f5",
+          "backend/src/masterone/mdm/pipeline/candidate_engine.py": "f69703112c86364b3b5bdf6050dad392cd1dd9b87e299df45880f2c92fa5e036",
+          "backend/src/masterone/mdm/pipeline/person_blocking.py": "b4fad57803d10b831d48f87e56f750043f7e037cf015756f1e2bb884772b1fe1",
+          "backend/src/masterone/mdm/pipeline/tfidf_blocking.py": "38634acfc515d1ba07510dc966b98cb571cd7dcb586d1c1db1bb3b11c8291067",
+          "backend/src/masterone/mdm/pipeline/scoring_engine.py": "92b90182c2b4c4ed99527483bb3d648e7d7d29276b3640a5806edff56414e8da",
+          "backend/src/masterone/mdm/pipeline/standardization.py": "03f8d93e1ea46526ba838a0a49217242aacdcdc7a3977f30cdd4856aace162d2",
+          "backend/src/masterone/mdm/resolution_service.py": "983dd2235a864226f11222c0c460a6c3e1b12b81c63aec8e504340a85a8b041f",
+          "backend/src/masterone/mdm/engine_adapter.py": "e8884d24df669bfe24ccade1ae6f0f7adcf4c40878cabfdfe5b8f34925f0ac75"
+        }
+      },
+      "v2": {
+        "mode": "v2",
+        "records": 9992,
+        "truth_kind": "SYNTHETIC_GENERATOR",
+        "truth_scope": "all CERTAIN same-entity combinations; includes policy-out-of-scope ORGANIZATION",
+        "truth_used_during_pipeline": false,
+        "provider_attempts": 0,
+        "flags": {
+          "decision_semantics_v2_enabled": false,
+          "cluster_safety_v2_enabled": false,
+          "generation_staging_enabled": false,
+          "candidate_recall_v2": true
+        },
+        "candidate_count": 93656,
+        "candidate": {
+          "tp": 4864,
+          "fp": 88792,
+          "fn": 0,
+          "precision": 0.051934739899205606,
+          "recall": 1.0,
+          "f1": 0.09874137231019083
+        },
+        "retrieval_seconds": 3.205495088999669,
+        "score_cluster_seconds": 14.396614393999698,
+        "production_seconds": 18.182895638001355,
+        "retrieval_peak_rss_bytes": 471347200,
+        "production_peak_rss_bytes": 1432866816,
+        "pairs_per_record": 9.373098478783026,
+        "degree": {
+          "mean": 18.746196957566053,
+          "p95": 48,
+          "max": 98
+        },
+        "passes": {
+          "address_gram": {
+            "candidates": 6808,
+            "overlap": 0,
+            "new_candidates": 6808,
+            "true_pairs": 0,
+            "new_true_pairs": 0
+          },
+          "dob_numbered_street": {
+            "candidates": 8,
+            "overlap": 0,
+            "new_candidates": 8,
+            "true_pairs": 3,
+            "new_true_pairs": 3
+          },
+          "exact_name": {
+            "candidates": 28126,
+            "overlap": 3,
+            "new_candidates": 28123,
+            "true_pairs": 729,
+            "new_true_pairs": 729
+          },
+          "exact_phone": {
+            "candidates": 2,
+            "overlap": 0,
+            "new_candidates": 2,
+            "true_pairs": 0,
+            "new_true_pairs": 0
+          },
+          "name_full_dob": {
+            "candidates": 4,
+            "overlap": 2,
+            "new_candidates": 2,
+            "true_pairs": 0,
+            "new_true_pairs": 0
+          },
+          "name_gram": {
+            "candidates": 1749,
+            "overlap": 238,
+            "new_candidates": 1511,
+            "true_pairs": 91,
+            "new_true_pairs": 1
+          },
+          "name_prefix_year": {
+            "candidates": 29162,
+            "overlap": 354,
+            "new_candidates": 28808,
+            "true_pairs": 11,
+            "new_true_pairs": 11
+          },
+          "name_province": {
+            "candidates": 21686,
+            "overlap": 21686,
+            "new_candidates": 0,
+            "true_pairs": 729,
+            "new_true_pairs": 0
+          },
+          "phone_suffix_year": {
+            "candidates": 90,
+            "overlap": 2,
+            "new_candidates": 88,
+            "true_pairs": 0,
+            "new_true_pairs": 0
+          },
+          "surname_year": {
+            "candidates": 27848,
+            "overlap": 26837,
+            "new_candidates": 1011,
+            "true_pairs": 0,
+            "new_true_pairs": 0
+          },
+          "tfidf_name": {
+            "candidates": 28179,
+            "overlap": 4412,
+            "new_candidates": 23767,
+            "true_pairs": 3192,
+            "new_true_pairs": 2514
+          },
+          "person_token_full_dob": {
+            "candidates": 4420,
+            "overlap": 2644,
+            "new_candidates": 1776,
+            "true_pairs": 3740,
+            "new_true_pairs": 1211
+          },
+          "person_tokens_month_day": {
+            "candidates": 5595,
+            "overlap": 3843,
+            "new_candidates": 1752,
+            "true_pairs": 4135,
+            "new_true_pairs": 395
+          }
+        },
+        "new_vs_historical": 3528,
+        "lost_vs_historical": 0,
+        "additional_true_vs_historical": 1606,
+        "by_type": {
+          "PERSON": {
+            "tp": 4135,
+            "fp": 76695,
+            "fn": 0,
+            "precision": 0.05115674873190647,
+            "recall": 1.0,
+            "f1": 0.0973341964338257
+          },
+          "ORGANIZATION": {
+            "tp": 729,
+            "fp": 9853,
+            "fn": 0,
+            "precision": 0.0688905688905689,
+            "recall": 1.0,
+            "f1": 0.12890106975510565
+          }
+        },
+        "pair": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 4864,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "cluster_pairwise": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 4864,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "decisions": {
+          "NOT_MERGEABLE": 2244,
+          "REVIEW": 1,
+          "INSUFFICIENT_EVIDENCE": 91411
+        },
+        "truth_decisions": {
+          "INSUFFICIENT_EVIDENCE": 4864
+        },
+        "recovered_truth_decisions": {
+          "INSUFFICIENT_EVIDENCE": 1606
+        },
+        "scope": "offline rule proposals; REVIEW/GOLDEN/HTTP require a separate end-to-end run",
+        "shared_historical_decisions": {
+          "pairs": 90128,
+          "sha256": "92261eb61bbd951e3a9b3818657ac32f995f68c698739806b34a9a94e15e7004"
+        },
+        "source_code_sha256": {
+          "scripts/benchmark_candidate_recall_v2.py": "7e77b7fa5920a1db222d048b010f70e376d466aa518584a7ca845be9cf3a21f5",
+          "backend/src/masterone/mdm/pipeline/candidate_engine.py": "f69703112c86364b3b5bdf6050dad392cd1dd9b87e299df45880f2c92fa5e036",
+          "backend/src/masterone/mdm/pipeline/person_blocking.py": "b4fad57803d10b831d48f87e56f750043f7e037cf015756f1e2bb884772b1fe1",
+          "backend/src/masterone/mdm/pipeline/tfidf_blocking.py": "38634acfc515d1ba07510dc966b98cb571cd7dcb586d1c1db1bb3b11c8291067",
+          "backend/src/masterone/mdm/pipeline/scoring_engine.py": "92b90182c2b4c4ed99527483bb3d648e7d7d29276b3640a5806edff56414e8da",
+          "backend/src/masterone/mdm/pipeline/standardization.py": "03f8d93e1ea46526ba838a0a49217242aacdcdc7a3977f30cdd4856aace162d2",
+          "backend/src/masterone/mdm/resolution_service.py": "983dd2235a864226f11222c0c460a6c3e1b12b81c63aec8e504340a85a8b041f",
+          "backend/src/masterone/mdm/engine_adapter.py": "e8884d24df669bfe24ccade1ae6f0f7adcf4c40878cabfdfe5b8f34925f0ac75"
+        }
+      }
+    },
+    "tc1": {
+      "baseline": {
+        "mode": "baseline",
+        "records": 10022,
+        "truth_kind": "SYNTHETIC_GENERATOR",
+        "truth_scope": "all CERTAIN same-entity combinations; includes policy-out-of-scope ORGANIZATION",
+        "truth_used_during_pipeline": false,
+        "provider_attempts": 0,
+        "flags": {
+          "decision_semantics_v2_enabled": false,
+          "cluster_safety_v2_enabled": false,
+          "generation_staging_enabled": false,
+          "candidate_recall_v2": false
+        },
+        "candidate_count": 83135,
+        "candidate": {
+          "tp": 4894,
+          "fp": 78241,
+          "fn": 0,
+          "precision": 0.05886810609250015,
+          "recall": 1.0,
+          "f1": 0.11119063036044939
+        },
+        "retrieval_seconds": 2.516302017000271,
+        "score_cluster_seconds": 36.48363752299883,
+        "production_seconds": 39.29658991599899,
+        "retrieval_peak_rss_bytes": 420315136,
+        "production_peak_rss_bytes": 781266944,
+        "pairs_per_record": 8.295250449012173,
+        "degree": {
+          "mean": 16.590500898024345,
+          "p95": 38,
+          "max": 84
+        },
+        "passes": {
+          "address_gram": {
+            "candidates": 7803,
+            "overlap": 0,
+            "new_candidates": 7803,
+            "true_pairs": 655,
+            "new_true_pairs": 655
+          },
+          "dob_numbered_street": {
+            "candidates": 4170,
+            "overlap": 563,
+            "new_candidates": 3607,
+            "true_pairs": 4166,
+            "new_true_pairs": 3603
+          },
+          "exact_email": {
+            "candidates": 3656,
+            "overlap": 3028,
+            "new_candidates": 628,
+            "true_pairs": 3656,
+            "new_true_pairs": 628
+          },
+          "exact_gov_id": {
+            "candidates": 4166,
+            "overlap": 4166,
+            "new_candidates": 0,
+            "true_pairs": 4166,
+            "new_true_pairs": 0
+          },
+          "exact_name": {
+            "candidates": 16979,
+            "overlap": 4890,
+            "new_candidates": 12089,
+            "true_pairs": 4894,
+            "new_true_pairs": 8
+          },
+          "exact_phone": {
+            "candidates": 4894,
+            "overlap": 4894,
+            "new_candidates": 0,
+            "true_pairs": 4894,
+            "new_true_pairs": 0
+          },
+          "name_full_dob": {
+            "candidates": 4166,
+            "overlap": 4166,
+            "new_candidates": 0,
+            "true_pairs": 4166,
+            "new_true_pairs": 0
+          },
+          "name_gram": {
+            "candidates": 1519,
+            "overlap": 192,
+            "new_candidates": 1327,
+            "true_pairs": 174,
+            "new_true_pairs": 0
+          },
+          "name_prefix_year": {
+            "candidates": 26579,
+            "overlap": 2483,
+            "new_candidates": 24096,
+            "true_pairs": 2429,
+            "new_true_pairs": 0
+          },
+          "name_province": {
+            "candidates": 15130,
+            "overlap": 15130,
+            "new_candidates": 0,
+            "true_pairs": 4851,
+            "new_true_pairs": 0
+          },
+          "phone_suffix_year": {
+            "candidates": 4242,
+            "overlap": 4166,
+            "new_candidates": 76,
+            "true_pairs": 4166,
+            "new_true_pairs": 0
+          },
+          "surname_year": {
+            "candidates": 25535,
+            "overlap": 11428,
+            "new_candidates": 14107,
+            "true_pairs": 285,
+            "new_true_pairs": 0
+          },
+          "tfidf_name": {
+            "candidates": 26362,
+            "overlap": 6960,
+            "new_candidates": 19402,
+            "true_pairs": 3619,
+            "new_true_pairs": 0
+          }
+        },
+        "new_vs_historical": null,
+        "lost_vs_historical": null,
+        "additional_true_vs_historical": null,
+        "by_type": {
+          "PERSON": {
+            "tp": 4166,
+            "fp": 65982,
+            "fn": 0,
+            "precision": 0.05938872098990705,
+            "recall": 1.0,
+            "f1": 0.11211884705439083
+          },
+          "ORGANIZATION": {
+            "tp": 728,
+            "fp": 9964,
+            "fn": 0,
+            "precision": 0.06808829031051253,
+            "recall": 1.0,
+            "f1": 0.12749562171628723
+          }
+        },
+        "pair": {
+          "tp": 2190,
+          "fp": 0,
+          "fn": 2704,
+          "precision": 1.0,
+          "recall": 0.4474867184307315,
+          "f1": 0.6182947487295314
+        },
+        "cluster_pairwise": {
+          "tp": 2190,
+          "fp": 0,
+          "fn": 2704,
+          "precision": 1.0,
+          "recall": 0.4474867184307315,
+          "f1": 0.6182947487295314
+        },
+        "decisions": {
+          "NOT_MERGEABLE": 68277,
+          "REVIEW": 2704,
+          "MERGEABLE": 2190,
+          "INSUFFICIENT_EVIDENCE": 9964
+        },
+        "truth_decisions": {
+          "REVIEW": 2704,
+          "MERGEABLE": 2190
+        },
+        "recovered_truth_decisions": null,
+        "scope": "offline rule proposals; REVIEW/GOLDEN/HTTP require a separate end-to-end run",
+        "source_code_sha256": {
+          "scripts/benchmark_candidate_recall_v2.py": "7e77b7fa5920a1db222d048b010f70e376d466aa518584a7ca845be9cf3a21f5",
+          "backend/src/masterone/mdm/pipeline/candidate_engine.py": "f69703112c86364b3b5bdf6050dad392cd1dd9b87e299df45880f2c92fa5e036",
+          "backend/src/masterone/mdm/pipeline/person_blocking.py": "b4fad57803d10b831d48f87e56f750043f7e037cf015756f1e2bb884772b1fe1",
+          "backend/src/masterone/mdm/pipeline/tfidf_blocking.py": "38634acfc515d1ba07510dc966b98cb571cd7dcb586d1c1db1bb3b11c8291067",
+          "backend/src/masterone/mdm/pipeline/scoring_engine.py": "92b90182c2b4c4ed99527483bb3d648e7d7d29276b3640a5806edff56414e8da",
+          "backend/src/masterone/mdm/pipeline/standardization.py": "03f8d93e1ea46526ba838a0a49217242aacdcdc7a3977f30cdd4856aace162d2",
+          "backend/src/masterone/mdm/resolution_service.py": "983dd2235a864226f11222c0c460a6c3e1b12b81c63aec8e504340a85a8b041f",
+          "backend/src/masterone/mdm/engine_adapter.py": "e8884d24df669bfe24ccade1ae6f0f7adcf4c40878cabfdfe5b8f34925f0ac75"
+        }
+      },
+      "v2": {
+        "mode": "v2",
+        "records": 10022,
+        "truth_kind": "SYNTHETIC_GENERATOR",
+        "truth_scope": "all CERTAIN same-entity combinations; includes policy-out-of-scope ORGANIZATION",
+        "truth_used_during_pipeline": false,
+        "provider_attempts": 0,
+        "flags": {
+          "decision_semantics_v2_enabled": false,
+          "cluster_safety_v2_enabled": false,
+          "generation_staging_enabled": false,
+          "candidate_recall_v2": true
+        },
+        "candidate_count": 87099,
+        "candidate": {
+          "tp": 4894,
+          "fp": 82205,
+          "fn": 0,
+          "precision": 0.056188934430934916,
+          "recall": 1.0,
+          "f1": 0.10639939995434436
+        },
+        "retrieval_seconds": 2.6278744430001097,
+        "score_cluster_seconds": 54.08756001399888,
+        "production_seconds": 56.96055055800025,
+        "retrieval_peak_rss_bytes": 445898752,
+        "production_peak_rss_bytes": 810037248,
+        "pairs_per_record": 8.690780283376572,
+        "degree": {
+          "mean": 17.381560566753144,
+          "p95": 40,
+          "max": 86
+        },
+        "passes": {
+          "address_gram": {
+            "candidates": 7803,
+            "overlap": 0,
+            "new_candidates": 7803,
+            "true_pairs": 655,
+            "new_true_pairs": 655
+          },
+          "dob_numbered_street": {
+            "candidates": 4170,
+            "overlap": 563,
+            "new_candidates": 3607,
+            "true_pairs": 4166,
+            "new_true_pairs": 3603
+          },
+          "exact_email": {
+            "candidates": 3656,
+            "overlap": 3028,
+            "new_candidates": 628,
+            "true_pairs": 3656,
+            "new_true_pairs": 628
+          },
+          "exact_gov_id": {
+            "candidates": 4166,
+            "overlap": 4166,
+            "new_candidates": 0,
+            "true_pairs": 4166,
+            "new_true_pairs": 0
+          },
+          "exact_name": {
+            "candidates": 16979,
+            "overlap": 4890,
+            "new_candidates": 12089,
+            "true_pairs": 4894,
+            "new_true_pairs": 8
+          },
+          "exact_phone": {
+            "candidates": 4894,
+            "overlap": 4894,
+            "new_candidates": 0,
+            "true_pairs": 4894,
+            "new_true_pairs": 0
+          },
+          "name_full_dob": {
+            "candidates": 4166,
+            "overlap": 4166,
+            "new_candidates": 0,
+            "true_pairs": 4166,
+            "new_true_pairs": 0
+          },
+          "name_gram": {
+            "candidates": 1519,
+            "overlap": 192,
+            "new_candidates": 1327,
+            "true_pairs": 174,
+            "new_true_pairs": 0
+          },
+          "name_prefix_year": {
+            "candidates": 26579,
+            "overlap": 2483,
+            "new_candidates": 24096,
+            "true_pairs": 2429,
+            "new_true_pairs": 0
+          },
+          "name_province": {
+            "candidates": 15130,
+            "overlap": 15130,
+            "new_candidates": 0,
+            "true_pairs": 4851,
+            "new_true_pairs": 0
+          },
+          "phone_suffix_year": {
+            "candidates": 4242,
+            "overlap": 4166,
+            "new_candidates": 76,
+            "true_pairs": 4166,
+            "new_true_pairs": 0
+          },
+          "surname_year": {
+            "candidates": 25535,
+            "overlap": 11428,
+            "new_candidates": 14107,
+            "true_pairs": 285,
+            "new_true_pairs": 0
+          },
+          "tfidf_name": {
+            "candidates": 26362,
+            "overlap": 6960,
+            "new_candidates": 19402,
+            "true_pairs": 3619,
+            "new_true_pairs": 0
+          },
+          "person_token_full_dob": {
+            "candidates": 5040,
+            "overlap": 4319,
+            "new_candidates": 721,
+            "true_pairs": 4166,
+            "new_true_pairs": 0
+          },
+          "person_tokens_month_day": {
+            "candidates": 7507,
+            "overlap": 4264,
+            "new_candidates": 3243,
+            "true_pairs": 4166,
+            "new_true_pairs": 0
+          }
+        },
+        "new_vs_historical": null,
+        "lost_vs_historical": null,
+        "additional_true_vs_historical": null,
+        "by_type": {
+          "PERSON": {
+            "tp": 4166,
+            "fp": 69946,
+            "fn": 0,
+            "precision": 0.05621221934369603,
+            "recall": 1.0,
+            "f1": 0.1064411456603388
+          },
+          "ORGANIZATION": {
+            "tp": 728,
+            "fp": 9964,
+            "fn": 0,
+            "precision": 0.06808829031051253,
+            "recall": 1.0,
+            "f1": 0.12749562171628723
+          }
+        },
+        "pair": {
+          "tp": 2190,
+          "fp": 0,
+          "fn": 2704,
+          "precision": 1.0,
+          "recall": 0.4474867184307315,
+          "f1": 0.6182947487295314
+        },
+        "cluster_pairwise": {
+          "tp": 2190,
+          "fp": 0,
+          "fn": 2704,
+          "precision": 1.0,
+          "recall": 0.4474867184307315,
+          "f1": 0.6182947487295314
+        },
+        "decisions": {
+          "NOT_MERGEABLE": 72241,
+          "REVIEW": 2704,
+          "MERGEABLE": 2190,
+          "INSUFFICIENT_EVIDENCE": 9964
+        },
+        "truth_decisions": {
+          "REVIEW": 2704,
+          "MERGEABLE": 2190
+        },
+        "recovered_truth_decisions": null,
+        "scope": "offline rule proposals; REVIEW/GOLDEN/HTTP require a separate end-to-end run",
+        "source_code_sha256": {
+          "scripts/benchmark_candidate_recall_v2.py": "7e77b7fa5920a1db222d048b010f70e376d466aa518584a7ca845be9cf3a21f5",
+          "backend/src/masterone/mdm/pipeline/candidate_engine.py": "f69703112c86364b3b5bdf6050dad392cd1dd9b87e299df45880f2c92fa5e036",
+          "backend/src/masterone/mdm/pipeline/person_blocking.py": "b4fad57803d10b831d48f87e56f750043f7e037cf015756f1e2bb884772b1fe1",
+          "backend/src/masterone/mdm/pipeline/tfidf_blocking.py": "38634acfc515d1ba07510dc966b98cb571cd7dcb586d1c1db1bb3b11c8291067",
+          "backend/src/masterone/mdm/pipeline/scoring_engine.py": "92b90182c2b4c4ed99527483bb3d648e7d7d29276b3640a5806edff56414e8da",
+          "backend/src/masterone/mdm/pipeline/standardization.py": "03f8d93e1ea46526ba838a0a49217242aacdcdc7a3977f30cdd4856aace162d2",
+          "backend/src/masterone/mdm/resolution_service.py": "983dd2235a864226f11222c0c460a6c3e1b12b81c63aec8e504340a85a8b041f",
+          "backend/src/masterone/mdm/engine_adapter.py": "e8884d24df669bfe24ccade1ae6f0f7adcf4c40878cabfdfe5b8f34925f0ac75"
+        }
+      }
+    }
+  },
+  "full_api": {
+    "run_id": "f58e89ce-efed-4ede-81f3-3cbed8e42aef",
+    "status": "PASS",
+    "fixture": {
+      "dataset": "artifacts/api-multiagent-20261015/datasets/TC3_hard_match/10k/seed-7",
+      "manifest_sha256": "1d70e6176c2ce6b78aa5cfe6ee25a764264b863a9f5f9172e97519e967e224bc",
+      "verified_hashes": 15,
+      "source_sha256": "efa736624471dc8e3ddb86b692cc7c58ca0a905f322f31ba8ebe2aba677cb07a",
+      "records": 9992,
+      "types": {
+        "PERSON": 8498,
+        "ORGANIZATION": 1494
+      },
+      "entities": 5128,
+      "truth_positive_pairs": 4864,
+      "truth_kind": "SYNTHETIC_GENERATOR",
+      "selection": "ALL raw rows, all entity types; canonical source mapping only; no truth columns uploaded"
+    },
+    "stages": {
+      "prepare": {
+        "complete": true,
+        "seconds": 6.0471720695495605
+      },
+      "matching-advice-preview": {
+        "complete": true,
+        "seconds": 86.25887179374695
+      },
+      "posthoc-evaluation": {
+        "complete": true,
+        "seconds": 19.411177396774292
+      },
+      "gemini-explanation-sample": {
+        "complete": true,
+        "seconds": 0.0024805068969726562
+      },
+      "scripted-truth-review": {
+        "complete": true,
+        "seconds": 194.3335039615631
+      },
+      "cluster-and-golden": {
+        "complete": true,
+        "seconds": 280.46176981925964
+      },
+      "scripted-group-review": {
+        "complete": true,
+        "seconds": 87.568039894104
+      },
+      "golden-quality": {
+        "complete": true,
+        "seconds": 1.8497631549835205
+      },
+      "golden-confirm-finalize": {
+        "complete": true,
+        "seconds": 21.73251175880432
+      },
+      "csv-export": {
+        "complete": true,
+        "seconds": 62.24456810951233
+      }
+    },
+    "candidate_quality": {
+      "candidate_count": 93656,
+      "candidate_recall": 1.0,
+      "candidate_reduction_ratio": 0.9981236916267074,
+      "groups": {
+        "C": 80822,
+        "BLOCKED": 12826,
+        "D": 8
+      },
+      "splink_status": {
+        "OUT_OF_SCOPE": 93656
+      },
+      "splink_brier_on_candidates": null,
+      "rule_decisions": {
+        "INSUFFICIENT_EVIDENCE": 80829,
+        "NOT_MERGEABLE": 12826,
+        "REVIEW": 1
+      },
+      "gemini_selected_accuracy": {
+        "accuracy_when_classified": null
+      },
+      "scores": {
+        "rule_A": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 4864,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "rule_mergeable": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 4864,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "splink": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 4864,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "gemini_selected": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 4864,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      },
+      "true_candidates": 4864,
+      "true_candidates_merge_blocked": 729,
+      "by_entity_type": {
+        "ORGANIZATION": {
+          "truth_pairs": 729,
+          "candidate_recall": 1.0,
+          "rule_A": {
+            "tp": 0,
+            "fp": 0,
+            "fn": 729,
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0
+          },
+          "splink": {
+            "tp": 0,
+            "fp": 0,
+            "fn": 729,
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0
+          }
+        },
+        "PERSON": {
+          "truth_pairs": 4135,
+          "candidate_recall": 1.0,
+          "rule_A": {
+            "tp": 0,
+            "fp": 0,
+            "fn": 4135,
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0
+          },
+          "splink": {
+            "tp": 0,
+            "fp": 0,
+            "fn": 4135,
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0
+          }
+        }
+      },
+      "notes": [
+        "Metrics against synthetic generator truth; not independent human labels.",
+        "Recommendation sets do not authorize merges. Splink recall includes missing candidates.",
+        "Gemini is selected, so its recall is not a standalone model evaluation."
+      ]
+    },
+    "after_scripted_truth_review": {
+      "pairwise": {
+        "tp": 4135,
+        "fp": 0,
+        "fn": 729,
+        "precision": 1.0,
+        "recall": 0.8501233552631579,
+        "f1": 0.9189909989998889
+      },
+      "clusters": 5857,
+      "records_preserved": 9992,
+      "overmerge_pairs": 0,
+      "undermerge_pairs": 729,
+      "qualification": "AFTER SCRIPTED TRUTH REVIEW; not autonomous accuracy"
+    },
+    "csv": {
+      "rows": 5857,
+      "records_preserved": 9992,
+      "sha256": "8e5db9f981258f3c827141de8ca8c11d5247fbca68f43e5814a449ab7dd5d410"
+    },
+    "verification": {
+      "status": "PASS",
+      "run_id": "f58e89ce-efed-4ede-81f3-3cbed8e42aef",
+      "baseline_run": "fc2c0187-4aae-41aa-ad66-6e32b652d17c",
+      "records_preserved": 9992,
+      "golden_rows": 5857,
+      "baseline_golden_rows": 7463,
+      "unchanged_membership_groups": 4251,
+      "unchanged_membership_golden_values_equal": true,
+      "false_merge_pairs": 0,
+      "policy_violations": 0,
+      "upload_to_csv_seconds": 673.9985513687134,
+      "runtime": {
+        "backend": {
+          "peak_sampled_process_rss_mib": 667.9765625,
+          "peak_sampled_sum_rss_mib": 668.66015625
+        },
+        "worker": {
+          "peak_sampled_process_rss_mib": 2364.94921875,
+          "peak_sampled_sum_rss_mib": 2525.20703125
+        }
+      },
+      "audit_counts": {
+        "CSV_EXPORTED": 1,
+        "FEEDBACK_CAPTURED": 93656,
+        "MATCH_PROFILE_BOUND": 3,
+        "PREVIEW_EXECUTED": 1,
+        "SESSION_CREATED": 1,
+        "WORKFLOW_BULK_DECISIONS": 6,
+        "WORKFLOW_BULK_GROUP_APPROVAL": 81,
+        "WORKFLOW_CONFIRM_SELECTED": 1,
+        "WORKFLOW_DECIDE": 1,
+        "WORKFLOW_FINALIZE_DECISIONS": 2,
+        "WORKFLOW_FINALIZE_GOLDEN": 1,
+        "WORKFLOW_GROUP_APPROVAL": 4001,
+        "WORKFLOW_PAIR_ACCEPTED": 4135,
+        "WORKFLOW_PAIR_REJECTED": 89521,
+        "WORKFLOW_PREVIEW_CREATED": 1
+      },
+      "advisory": {
+        "status": "SKIPPED",
+        "error_code": "DEMO_ADVISORY_EMBEDDING_SKIPPED",
+        "coverage": {
+          "expected_pairs": 93656,
+          "rule_pairs": 0,
+          "embedding_pairs": 0
+        },
+        "runtime": {}
+      },
+      "csv_history_and_replay": "PASS",
+      "old_finalized_export_with_flag_enabled": "UNCHANGED",
+      "operation_statuses": {
+        "COMPLETED": 4097
+      }
+    }
+  },
+  "tests": {
+    "targeted_passed": 108,
+    "new_tests": 17,
+    "scope": "targeted; full repository suite not run"
+  },
+  "qualifications": [
+    "Synthetic generator labels, not independent human gold.",
+    "TC1 is supplementary validation, not a new unseen seed; prior recovery existed before this task.",
+    "Full-DOB ablation is a provenance projection after both passes; pass-specific latency not isolated.",
+    "Three timing repeats; host load and OS/file cache not fully controlled; not p95.",
+    "End-to-end post-review quality uses scripted truth review through API, not autonomous decisions.",
+    "Backend RSS sampled about every three seconds; worker has its existing 8 GiB cap.",
+    "Failed exploratory baseline SCORE at 1 GiB OOMed (137); candidate-only at 1 GiB passed.",
+    "Initial QA attempt advice_limit=0 was rejected by API validation before matching; final timing is a fresh run.",
+    "QA stack restored to original image after measurement; flag remains off by default."
+  ]
+}

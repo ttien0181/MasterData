@@ -14,6 +14,11 @@ from hashlib import sha256
 from itertools import combinations
 
 from masterone.mdm.pipeline.candidate_planner import WorkloadPolicy, plan_workload
+from masterone.mdm.pipeline.person_blocking import (
+    PERSON_RECOVERY_BLOCK_SIZE,
+    PERSON_RECOVERY_SOURCES,
+    person_recovery_keys,
+)
 from masterone.mdm.pipeline.tfidf_blocking import GlobalTfidfIndex, SparseTfidfConfig, fold_text, tfidf_candidates
 
 
@@ -81,6 +86,11 @@ DEFAULT_COMPOSITES = (
 )
 
 
+def _recall_v2_enabled():
+    from masterone.mdm.engine_adapter import feature
+    return feature('candidate_recall_v2')
+
+
 @dataclass(frozen=True)
 class CandidateConfig:
     max_block_size: int = 60
@@ -96,8 +106,12 @@ class CandidateConfig:
     tfidf: SparseTfidfConfig = field(default_factory=SparseTfidfConfig)
     workload: WorkloadPolicy = field(default_factory=WorkloadPolicy)
     approved_plan_id: str | None = None
+    recall_v2: bool = field(default_factory=_recall_v2_enabled)
+    recall_v2_pair_budget: int = 200_000
 
     def __post_init__(self):
+        if type(self.recall_v2) is not bool or type(self.recall_v2_pair_budget) is not int or self.recall_v2_pair_budget < 1:
+            raise ValueError('Recall v2 needs a boolean flag and a positive pair budget')
         for value in (self.max_block_size, self.name_block_size, self.contact_block_size, self.gram_block_size, self.max_pairs_per_block):
             if type(value) is not int or value < 1:
                 raise ValueError("Candidate limits must be positive integers")
@@ -105,6 +119,7 @@ class CandidateConfig:
             raise ValueError("Global pair limit must be positive or None")
         sources = [rule.source for rule in self.composites]
         reserved = {"exact_phone", "exact_email", "exact_gov_id", "exact_name", "name_gram", "address_gram", "tfidf_name", "tfidf_address"}
+        reserved.update(PERSON_RECOVERY_SOURCES)
         if len(set(sources)) != len(sources) or reserved.intersection(sources):
             raise ValueError("Composite sources must be distinct from every other pass")
 
@@ -215,12 +230,23 @@ class CandidateEngine:
                     self.blocks[(rule.source, key)].add(record_id)
                 else:
                     self.excluded[rule.source] += 1
+            if self.config.recall_v2:
+                keys = list(person_recovery_keys(record))
+                if not keys:
+                    for source in PERSON_RECOVERY_SOURCES:
+                        self.excluded[source] += 1
+                for source, key in keys:
+                    self.blocks[(source, key)].add(record_id)
 
     def finalize(self) -> CandidateResult:
         config = self.config
         limits = {rule.source: rule.max_block_size for rule in config.composites}
         limits.update({source: config.contact_block_size for source in ("exact_phone", "exact_email", "exact_gov_id")})
         limits.update(exact_name=config.name_block_size, name_gram=config.gram_block_size, address_gram=config.gram_block_size)
+        limits.update({source: PERSON_RECOVERY_BLOCK_SIZE for source in PERSON_RECOVERY_SOURCES})
+        pair_budget = config.max_unique_pairs
+        if config.recall_v2:
+            pair_budget = min(pair_budget, config.recall_v2_pair_budget) if pair_budget is not None else config.recall_v2_pair_budget
         # canonical pair -> bitmask of the sources that generated it; sets per pair cost several times more memory.
         pairs: dict[tuple[str, str], int] = {}
         source_bits: dict[str, int] = {}
@@ -273,7 +299,7 @@ class CandidateEngine:
                     metrics["duplicate_observations"] += 1
                 pairs[pair] = mask | bit
             metrics["candidate_count"] = len(pairs)
-            if config.max_unique_pairs is not None and len(pairs) > config.max_unique_pairs:
+            if pair_budget is not None and len(pairs) > pair_budget:
                 metrics["failure_reason"] = "global_pair_limit_exceeded"
                 logging.getLogger(__name__).error("candidate_workload %s", json.dumps(metrics, sort_keys=True))
                 raise CandidateWorkloadExceededError(metrics)
@@ -319,6 +345,12 @@ class CandidateEngine:
             else:
                 for (left, right), sources in sorted(tfidf_candidates(snapshot).items()):
                     merge(left, right, sources)
+        if config.recall_v2:
+            metrics['recall_v2'] = {'enabled': True, 'version': 'person_name_dob_v1',
+                'pair_budget': pair_budget, 'max_block_size': PERSON_RECOVERY_BLOCK_SIZE,
+                'oversized_blocks': sum(log['source'] in PERSON_RECOVERY_SOURCES and
+                    log['reason'] in {'max_block_size', 'max_pairs_per_block'} for log in block_log),
+                'warning': 'CANDIDATE_PAIR_WARNING' if len(pairs) >= pair_budget * .8 else None}
         metrics["union_collapsed_observations"] = metrics["generated_observations"] - len(pairs)
         logging.getLogger(__name__).info("candidate_workload %s", json.dumps(metrics, sort_keys=True))
         return CandidateResult(_PairSources(pairs, source_bits), metrics, block_log)

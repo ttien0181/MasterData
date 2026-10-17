@@ -56,14 +56,17 @@ def baseline_config(engine_flags=None):
     flags.update({f: True for f in STREAMING_FEATURES if getattr(settings, f)})
     if settings.pipeline_resume_enabled:
         flags[RESUME_FEATURE] = True
+    if settings.candidate_recall_v2:
+        flags['candidate_recall_v2'] = True
     if engine_flags is not None:
         flags = deepcopy(engine_flags)
     with engine_context(flags):
         identity = config_identity('rule-only-registry-v1')
+        blocking = asdict(CandidateConfig())
     config = {'config_schema_version': 'matching_profile_rule_v1', 'kind': 'RULE_ONLY',
         'score_unit': 'p119_rule_v1', 'encoder_identity': None,
         'feature_schema_identity': FEATURE_SCHEMA_ID, 'engine_flags': flags,
-        'blocking': asdict(CandidateConfig()), 'scoring': asdict(ScoringConfig()),
+        'blocking': blocking, 'scoring': asdict(ScoringConfig()),
         'thresholds': {'mode': 'EXISTING_RULE_POLICY', 'policy_hashes': {
             p: h for p, h in identity['code'].items() if p.startswith('config/')}},
         'runtime_identity': identity, 'fallback_mode': 'RULE_ONLY',

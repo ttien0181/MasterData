@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     cluster_safety_v2_enabled: bool = False
     generation_staging_enabled: bool = False
     mdm_engine_v2_enabled: bool = False
+    candidate_recall_v2: bool = False
     pipeline_resume_enabled: bool = False
     stream_prepare_normalize_enabled: bool = False
     stream_normalize_build_enabled: bool = False

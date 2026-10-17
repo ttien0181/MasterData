@@ -17,7 +17,8 @@ CORE_FEATURES = ("decision_semantics_v2_enabled", "cluster_safety_v2_enabled", "
 STREAMING_FEATURES = tuple("stream_" + boundary + "_enabled" for boundary in (
     "prepare_normalize", "normalize_build", "build_score", "score_decide", "decide_materialize"))
 RESUME_FEATURE = "pipeline_resume_enabled"
-FEATURES = (*CORE_FEATURES, *STREAMING_FEATURES, RESUME_FEATURE)
+RECALL_FEATURE = "candidate_recall_v2"
+FEATURES = (*CORE_FEATURES, *STREAMING_FEATURES, RESUME_FEATURE, RECALL_FEATURE)
 
 
 class FrontendJSONRoute(APIRoute):
@@ -40,7 +41,7 @@ def feature(name):
     profile = _profile.get()
     if profile is None:
         return getattr(get_settings(), name)
-    if name in (*STREAMING_FEATURES, RESUME_FEATURE):
+    if name in (*STREAMING_FEATURES, RESUME_FEATURE, RECALL_FEATURE):
         return profile.get(name, False)
     return profile[name]
 
@@ -72,6 +73,8 @@ def select_engine(factory, run_id):
             configuration.update({f: True for f in STREAMING_FEATURES if getattr(settings, f)})
             if settings.pipeline_resume_enabled:
                 configuration[RESUME_FEATURE] = True
+            if settings.candidate_recall_v2:
+                configuration[RECALL_FEATURE] = True
             selection = ResolutionEngineSelection(run_id=run_id,
                 engine_version="p119_person_v2" if new else "p119_current", configuration=configuration)
             db.add(selection)

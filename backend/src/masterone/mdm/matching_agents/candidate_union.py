@@ -25,7 +25,7 @@ def _person_recovery(records, emit, meter):
     Policy v1 uses the existing composite block ceiling of 30. Oversized
     blocks fail closed, and unusually long names cannot create quadratic keys.
     """
-    from masterone.mdm.pipeline.standardization import fold_text, parse_dob
+    from masterone.mdm.pipeline.person_blocking import person_recovery_keys
 
     blocks = defaultdict(set)
     counts = defaultdict(int)
@@ -49,19 +49,12 @@ def _person_recovery(records, emit, meter):
 
     for row in records:
         meter.reserve(workspace=workspace)
-        nf = row['normalized_fields']
-        quality = nf.get('_field_quality', {})
-        dob = parse_dob(nf.get('dob', ''))
-        tokens = sorted({t for t in fold_text(nf.get('name', '')).split() if len(t) >= 2 and t.isalpha()})
-        if (row.get('entity_type', 'PERSON') != 'PERSON' or quality.get('name') != 'VALID'
-                or quality.get('dob') != 'VALID' or dob['quality'] != 'VALID'
-                or not dob['month'] or not dob['day'] or not 2 <= len(tokens) <= 12):
+        keys = list(person_recovery_keys(row))
+        if not keys:
             excluded += 1
             continue
-        for token in tokens:
-            add(('person_token_full_dob', dob['canonical'], token), row['id'])
-        for a, b in combinations(tokens, 2):
-            add(('person_tokens_month_day', dob['month'], dob['day'], a, b), row['id'])
+        for source, values in keys:
+            add((source, *values), row['id'])
     logs = []
     observation_bytes = 0
     for key, size in sorted(counts.items()):
@@ -217,6 +210,7 @@ def build_union(records: list[dict], config: dict, field_vectors: dict | None,
         emit('retained_history', pair['left_id'], pair['right_id'], {'historical_pair_id': pair['id']})
     legacy_order = sorted({s for reasons in (legacy.pairs.values() if legacy else []) for s in reasons})
     order = legacy_order + [s for s in ('person_token_full_dob', 'person_tokens_month_day', 'tfidf_fallback_name', 'tfidf_fallback_address', 'tfidf_global_name', 'tfidf_global_address', 'embedding_name', 'embedding_address', 'retained_history') if s in passes]
+    order = list(dict.fromkeys(order))
     seen = set()
     for source in order:
         passes[source]['new_unique'] = len(pass_keys[source] - seen)
