@@ -211,7 +211,8 @@ def execute_workflow(operation_id, factory, progress):
             with timed_stage('embedding-evidence'):
                 agents_result = run_agents(factory, run_id, operation_id, records, payload['pairs'],
                     payload['scoring_metrics'], progress, source_artifact_id=artifact_id,
-                    effective_pairs=assessed_payload['pairs'] if assessed_payload else None)
+                    effective_pairs=assessed_payload['pairs'] if assessed_payload else None,
+                    skip_advisory=bool(op.payload.get('demo_fast_mode')))
             if agents_result and agents_config['kind'] == 'RULE_HYBRID_DETERMINISTIC':
                 from masterone.mdm.matching_agents.workflow_agents import coordinated_payload
                 if assessed_payload is None:

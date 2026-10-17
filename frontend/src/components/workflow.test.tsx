@@ -35,7 +35,53 @@ it('shows incomplete embedding coverage and automation disabled in degraded runs
   expect(screen.getByRole('alert')).toHaveTextContent('tự động gộp đã bị tắt');
 });
 const golden: GoldenRead = { cluster_id: 'c', cluster_revision: 1, golden_revision: 2, revision: 0, status: 'DRAFT', fields: { name: { value: 'Server', provenance: 'SURVIVORSHIP' }, phone: { value: '090', values: [{ value: '090' }, { value: '091' }] } }, alternatives: { name: [{ source_record_id: 'member', source_system: 'CRM', value: 'Source', auto_rule_available: true }] }, selections: {} };
+it('labels skipped demo evidence explicitly', async () => {
+  vi.mocked(api.getWorkflow).mockResolvedValue({...w, matching_agents:{status:'SKIPPED',warning:'Demo',coverage:{expected_pairs:2,embedding_pairs:0},artifact_id:'evidence',automation_allowed:false}});
+  render(<SessionCacheProvider userId="test"><SessionWorkspace runId="r"><span>Workspace</span></SessionWorkspace></SessionCacheProvider>);
+  expect(await screen.findByText(/Demo fast mode: Embedding chưa được tính/)).toHaveAttribute('role', 'status');
+});
 function workspace(ui: React.ReactNode, workflow = w) { return render(<SessionCacheProvider userId="test"><WorkflowContext.Provider value={{ workflow, refresh: vi.fn().mockResolvedValue(undefined) }}>{ui}</WorkflowContext.Provider></SessionCacheProvider>); }
+
+it('shows accurate group ranges, returns to the previous cursor and preserves page selection',async()=>{
+ const group=(id:string)=>({cluster_id:id,display_name:id,member_record_ids:[id],member_count:1,singleton:true,status:'SINGLETON',evidence:{items:[],total:0,next_cursor:null}});
+ vi.mocked(api.getClusters).mockImplementation(async(_run,query)=>query?.get('cursor')==='after-c1'
+  ?{items:[group('c2')],total:2,next_cursor:null}
+  :{items:[group('c1')],total:2,next_cursor:'after-c1'});
+ workspace(<ClusterWorkspace/>,{...w,workflow_state:'GOLDEN_REVIEW',cluster_revision:1});
+ await screen.findByRole('table',{name:'Danh sách nhóm bản ghi'});
+ expect(screen.getByText('Hiển thị 1–1 / 2 nhóm')).toBeVisible();
+ expect(screen.getByRole('button',{name:'Trang trước'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('checkbox',{name:'Chọn trang hiện tại'}));
+ fireEvent.click(screen.getByRole('button',{name:'Trang tiếp'}));
+ await screen.findByRole('checkbox',{name:'Chọn nhóm c2'});
+ expect(screen.getByText('Hiển thị 2–2 / 2 nhóm')).toBeVisible();
+ expect(screen.getByText('Đã chọn 1 nhóm')).toBeVisible();
+ expect(screen.getByRole('button',{name:'Trang tiếp'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('button',{name:'Trang trước'}));
+ expect(await screen.findByRole('checkbox',{name:'Chọn nhóm c1'})).toBeChecked();
+ expect(screen.getByText('Hiển thị 1–1 / 2 nhóm')).toBeVisible();
+ fireEvent.click(screen.getByRole('button',{name:'Chọn tất cả 2 nhóm'}));
+ expect(screen.getByText('Đã chọn 2 nhóm')).toBeVisible();
+ fireEvent.click(screen.getByRole('checkbox',{name:'Chọn nhóm c1'}));
+ expect(screen.getByText('Đã chọn 1 nhóm')).toBeVisible();
+});
+
+it('can return to a cached group page after the next page fails without selecting stale rows',async()=>{
+ const group={cluster_id:'c',member_record_ids:['a'],member_count:1,singleton:true,status:'SINGLETON',evidence:{items:[],total:0,next_cursor:null}};
+ vi.mocked(api.getClusters).mockImplementation(async(_run,query)=>{
+  if(query?.get('cursor'))throw new Error('Page unavailable');
+  return {items:[group],total:2,next_cursor:'opaque-next'};
+ });
+ workspace(<ClusterWorkspace/>,{...w,workflow_state:'GOLDEN_REVIEW',cluster_revision:1});
+ await screen.findByRole('table',{name:'Danh sách nhóm bản ghi'});
+ fireEvent.click(screen.getByRole('button',{name:'Trang tiếp'}));
+ await screen.findByText('Page unavailable');
+ expect(screen.getByRole('checkbox',{name:'Chọn nhóm c'})).toBeDisabled();
+ expect(screen.getByRole('button',{name:'Trang trước'})).toBeEnabled();
+ fireEvent.click(screen.getByRole('button',{name:'Trang trước'}));
+ await waitFor(()=>expect(screen.getByRole('checkbox',{name:'Chọn nhóm c'})).toBeEnabled());
+ expect(screen.getByText('Hiển thị 1–1 / 2 nhóm')).toBeVisible();
+});
 
 it('opens published groups by name and compares member fields without raw JSON',async()=>{
  const group={cluster_id:'c',member_record_ids:['a','b'],member_count:2,singleton:false,status:'REVIEW_APPROVED',display_name:'Nguyễn Văn An',evidence:{items:[],total:0,next_cursor:null}};
@@ -45,8 +91,35 @@ it('opens published groups by name and compares member fields without raw JSON',
  vi.mocked(api.getClusterGolden).mockResolvedValue(golden);
  workspace(<ClusterWorkspace initialClusterId="c"/>,{...w,workflow_state:'GOLDEN_REVIEW',cluster_revision:1});
  expect(await screen.findByRole('table',{name:'Đối chiếu thành viên nhóm'})).toBeVisible();
- expect(screen.getByRole('button',{name:/Nhóm Nguyễn Văn An/})).toBeVisible();
+ expect(screen.getByRole('button',{name:/Đối chiếu nhóm Nguyễn Văn An/})).toBeVisible();
  expect(screen.getByText('1990-05-15')).toBeVisible();expect(screen.getByText('1990-05-16')).toBeVisible();
+});
+
+it('opens group details in a dialog and preserves the Golden draft when closing and reopening',async()=>{
+ const group={cluster_id:'c',display_name:'An',member_record_ids:['a'],member_count:1,singleton:true,status:'SINGLETON',evidence:{items:[],total:0,next_cursor:null}};
+ vi.mocked(api.getClusters).mockResolvedValue({items:[group],total:1,next_cursor:null});
+ vi.mocked(api.getCluster).mockResolvedValue({...group,members:{items:[],total:0,next_cursor:null},pair_evidence:{items:[],total:0,next_cursor:null},llm_stats:{},workflow_context:{}});
+ vi.mocked(api.getClusterGolden).mockResolvedValue(golden);
+ workspace(<ClusterWorkspace/>,{...w,workflow_state:'GOLDEN_REVIEW',cluster_revision:1,allowed_actions:['save-golden','confirm-golden']});
+ fireEvent.click(await screen.findByRole('checkbox',{name:'Chọn trang hiện tại'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Đối chiếu nhóm An'}));
+ expect(await screen.findByRole('dialog',{name:'Chi tiết nhóm An'})).toBeVisible();
+ fireEvent.change(await screen.findByRole('textbox',{name:'Chỉnh tay name'}),{target:{value:'Draft in popup'}});
+ const confirm=vi.spyOn(window,'confirm').mockReturnValue(false);
+ try{
+  fireEvent.click(screen.getByRole('button',{name:'Đóng chi tiết nhóm'}));
+  expect(screen.getByRole('dialog')).toBeVisible();
+  confirm.mockReturnValue(true);
+  fireEvent.click(screen.getByRole('button',{name:'Đóng chi tiết nhóm'}));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(window.location.search).not.toContain('cluster=');
+  expect(screen.getByRole('button',{name:'Xác nhận Golden đã chọn'})).toBeDisabled();
+  fireEvent.click(screen.getByRole('button',{name:'Đối chiếu nhóm An'}));
+  expect(await screen.findByRole('textbox',{name:'Chỉnh tay name'})).toHaveValue('Draft in popup');
+  fireEvent.click(screen.getByRole('button',{name:'Bỏ bản nháp'}));
+  fireEvent.click(screen.getByRole('button',{name:'Đóng chi tiết nhóm'}));
+  expect(screen.getByRole('button',{name:'Xác nhận Golden đã chọn'})).toBeEnabled();
+ }finally{confirm.mockRestore();}
 });
 
 it('keeps separate groups with identical names keyed by their identities',async()=>{
@@ -56,7 +129,7 @@ it('keeps separate groups with identical names keyed by their identities',async(
    status:'DRAFT',display_name:'Same customer name',evidence:{items:[],total:0,next_cursor:null}}));
   vi.mocked(api.getClusters).mockResolvedValue({items:groups,total:2,next_cursor:null});
   workspace(<ClusterWorkspace/>,{...w,workflow_state:'GOLDEN_REVIEW',cluster_revision:1});
-  expect(await screen.findAllByRole('button',{name:/Singleton Same customer name/})).toHaveLength(2);
+  expect(await screen.findAllByRole('button',{name:/Đối chiếu nhóm Same customer name/})).toHaveLength(2);
   expect(error.mock.calls.flat().join(' ')).not.toContain('same key');
  }finally{error.mockRestore();}
 });
@@ -68,6 +141,7 @@ it('requests optional enrichment only after published groups and keeps publicati
  try{
   workspace(<ClusterWorkspace/>,{...w,workflow_state:'GOLDEN_REVIEW',cluster_revision:2,
    allowed_actions:['annotate-groups']});
+  fireEvent.click(screen.getByText('Xử lý nhóm và Golden'));
   fireEvent.click(await screen.findByRole('button',{name:'Bổ sung đối chiếu địa chỉ'}));
   await waitFor(()=>expect(request).toHaveBeenCalledWith('r',expect.objectContaining({expected_cluster_revision:2})));
   expect(api.finalizeDecisions).not.toHaveBeenCalled();
@@ -136,9 +210,10 @@ it('preserves unsaved Golden intent across server revision and blocks silent reb
   expect(screen.getByRole('textbox', { name: 'Chỉnh tay name' })).toHaveValue('');
 });
 it('zero candidate still exposes explicit finalize without guessing an empty result', async () => {
+  vi.mocked(api.getPairSummary).mockResolvedValueOnce({decision_revision:2,total:0,needs_review:0,accepted:0,denied:0,kept_separate:0,deferred:0,blocked:0,manual_available:0,auto_available:0,groups:[]});
   vi.mocked(api.getPairs).mockResolvedValue({ items: [], total: 0, next_cursor: null });
   workspace(<DecisionWorkspace />);
-  expect(await screen.findByText(/Phiên không có candidate vẫn cần/)).toBeInTheDocument();
+  expect(await screen.findByText('Không còn cặp cần duyệt.')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Sang Bước 3' })).toHaveAttribute('href','/app/sessions/r/clusters');
   expect(api.finalizeDecisions).not.toHaveBeenCalled();
 });

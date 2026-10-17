@@ -1,4 +1,5 @@
 from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -174,8 +175,8 @@ def read_pairs(run_id: str, limit: int = Query(10, ge=1, le=100), cursor: str | 
                taxonomy: Literal['actions_v1'] | None = None,
                db: Session = Depends(get_session), auth: CurrentSession = Depends(require_capability('read'))):
     run = owned_run(db, run_id, auth.user.id)
-    from masterone.mdm.workflow_pair_reads import pair_page
     from masterone.mdm.pair_read_cache import cached_read
+    from masterone.mdm.workflow_pair_reads import pair_page
     filters = dict(group=group, subgroup=subgroup, resolution=resolution, visibility=visibility,taxonomy=taxonomy)
     return cached_read(db, run, 'page', [limit, cursor, offset, filters],
                        lambda: pair_page(db, run_id, limit, cursor, offset, filters))
@@ -185,8 +186,8 @@ def read_pairs(run_id: str, limit: int = Query(10, ge=1, le=100), cursor: str | 
 def read_pair_summary(run_id: str, visibility: Literal['review'] | None = None, taxonomy: Literal['actions_v1'] | None = None, db: Session = Depends(get_session),
                       auth: CurrentSession = Depends(require_capability('read'))):
     run = owned_run(db, run_id, auth.user.id)
-    from masterone.mdm.workflow_pair_reads import pair_summary
     from masterone.mdm.pair_read_cache import cached_read
+    from masterone.mdm.workflow_pair_reads import pair_summary
     filters = dict(visibility=visibility,taxonomy=taxonomy)
     return cached_read(db, run, 'summary', filters, lambda: pair_summary(db, run, filters))
 
@@ -211,8 +212,8 @@ def preview_bulk_decisions(run_id: str, body: BulkRequest, db: Session = Depends
     check_revision(run, {'expected_assessment_id': body.expected_assessment_id})
     if run.workflow_state not in ('DECIDE_REVIEW', 'GOLDEN_REVIEW') or (op and op.operation_type != 'BULK_DECISIONS'):
         conflict('DECISIONS_LOCKED')
-    from masterone.mdm.workflow_pair_reads import bulk_preview
     from masterone.mdm.pair_read_cache import cached_read
+    from masterone.mdm.workflow_pair_reads import bulk_preview
     params = body.model_dump(exclude={'request_id', 'preview_token', 'reason'})
     return cached_read(db, run, 'bulk-preview', params, lambda: bulk_preview(db, run, body))
 
@@ -374,6 +375,15 @@ def read_golden(run_id: str, limit: int = Query(25, ge=1, le=100), cursor: str |
     reader = GenerationReader(db, run, generation)
     return {**reader.group_page(limit, cursor,
                     lambda c: golden_read(db, run, c, metadata=metadata, reader=reader)), 'generation': metadata}
+
+
+@router.get('/golden/index')
+def read_golden_index(run_id: str, limit: int = Query(25, ge=1, le=100), cursor: str | None = None,
+                      status: Literal['all', 'review', 'confirmed'] = 'all', q: str = Query('', max_length=200),
+                      db: Session = Depends(get_session), auth: CurrentSession = Depends(require_capability('read'))):
+    run = owned_run(db, run_id, auth.user.id)
+    from masterone.mdm.workflow_golden_index import golden_index
+    return golden_index(db, run, limit, cursor, status, q)
 
 
 @router.put('/clusters/{cluster_id}/golden')

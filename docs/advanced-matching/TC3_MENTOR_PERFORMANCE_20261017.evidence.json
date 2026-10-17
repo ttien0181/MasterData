@@ -1,0 +1,298 @@
+{
+  "run_id": "fefc96c3-e932-4b57-ba8d-3965accb3f27",
+  "captured_at_utc": "2026-10-17T05:07:09.244318+00:00",
+  "method": "PostgreSQL SET TRANSACTION READ ONLY; sizes computed server-side; no JSON payload downloaded",
+  "size_definition": "octet_length(JSON::text); logical serialized bytes, not physical disk size or Python RSS",
+  "generations": [
+    {
+      "revision": 1,
+      "storage_version": "workflow_virtual_v2",
+      "finalized_json_bytes": null,
+      "final_keys": null
+    },
+    {
+      "revision": 2,
+      "storage_version": "workflow_virtual_v2",
+      "finalized_json_bytes": 69396606,
+      "final_keys": [
+        "cluster_revision",
+        "golden_revision",
+        "clusters",
+        "records",
+        "master_id_version"
+      ]
+    }
+  ],
+  "artifact_sizes": [
+    {
+      "phase": "ARTIFACT_PART",
+      "artifacts": 2068,
+      "json_bytes": 1624498302
+    },
+    {
+      "phase": "PAIR_ASSESSMENT",
+      "artifacts": 1,
+      "json_bytes": 264604932
+    },
+    {
+      "phase": "DECIDE",
+      "artifacts": 1,
+      "json_bytes": 248399834
+    },
+    {
+      "phase": "AGENT_VECTOR_CACHE",
+      "artifacts": 173,
+      "json_bytes": 170722701
+    },
+    {
+      "phase": "PREPARE",
+      "artifacts": 1,
+      "json_bytes": 18899592
+    },
+    {
+      "phase": "CLUSTER",
+      "artifacts": 2,
+      "json_bytes": 2059462
+    },
+    {
+      "phase": "DECISION_SNAPSHOT",
+      "artifacts": 3,
+      "json_bytes": 208110
+    },
+    {
+      "phase": "AGENT_ENCODER_USAGE",
+      "artifacts": 692,
+      "json_bytes": 199461
+    },
+    {
+      "phase": "CLUSTER_PREVIEW",
+      "artifacts": 1,
+      "json_bytes": 151818
+    },
+    {
+      "phase": "CLUSTER_PLAN",
+      "artifacts": 1,
+      "json_bytes": 69927
+    },
+    {
+      "phase": "MATCHING_AGENTS",
+      "artifacts": 1,
+      "json_bytes": 34152
+    },
+    {
+      "phase": "PAIR_ADVICE",
+      "artifacts": 1,
+      "json_bytes": 12272
+    },
+    {
+      "phase": "SINGLETON_SOURCE",
+      "artifacts": 2,
+      "json_bytes": 5696
+    },
+    {
+      "phase": "WORKFLOW_TIMING",
+      "artifacts": 10,
+      "json_bytes": 4691
+    },
+    {
+      "phase": "PROFILE",
+      "artifacts": 1,
+      "json_bytes": 937
+    }
+  ],
+  "source_formats": [
+    {
+      "phase": "DECISION_SNAPSHOT",
+      "format": null,
+      "artifacts": 3
+    },
+    {
+      "phase": "SINGLETON_SOURCE",
+      "format": null,
+      "artifacts": 2
+    }
+  ],
+  "deployed_code_sha256": {
+    "workflow_exports.py": "12a9369f6d4fc2dfb58b5abb651b13b1c445faa38b1077ed9792e480bd94f7f3",
+    "workflow_finalization.py": "725f666310417b3db60793b1424ccefb37bd08e381867d38d8a366bf26ff96f2",
+    "workflow_finalize.py": "f9db9fd96a96972f3e2fadff510de8414f341161a5bc0540c0c633cea39de279",
+    "golden_service.py": "0f8c37dd0e6d1f03f17e98ebe138676ef847871a8b7b5fcf094d7b465cb46fdf",
+    "workflow_artifacts.py": "a875f7eecf5c16194baa05f00c3cb106b259badc477229be574840cde917bc91",
+    "workflow_jobs.py": "462ee5fc23305482a0370341c12305c8aa8c97ec7e6dbd91b59e1899fa8845f3",
+    "workflow_cluster_reads.py": "7b338dd91d455ae6890b6601fec70a60dd89ff81d47723f04398c3e6ab041f76",
+    "generation_staging.py": "fec04fdda15cc728fc070d0118672625201dc91a4c4fb8850fb225ef4e6c7fd9",
+    "matching_agents/workflow_agents.py": "0e8946b317ca0c2d0f536998435a32275d07b413750d56b7daabecc9c3e1a5cc",
+    "matching_agents/embedding_agent.py": "db61d289a59a2f7a4c1f873412c3c09aeca9f1cb62dabb786c48cb34f145049b",
+    "matching_agents/openrouter_embedding.py": "acf10bcb4d26ed1b2c95ce05da52952531d87ce26eb63bd6feeb757708a15ee7"
+  },
+  "workspace_matches_deployed": {
+    "workflow_exports.py": true,
+    "workflow_finalization.py": true,
+    "workflow_finalize.py": true,
+    "golden_service.py": true,
+    "workflow_artifacts.py": true,
+    "workflow_jobs.py": true,
+    "workflow_cluster_reads.py": true,
+    "generation_staging.py": true,
+    "matching_agents/workflow_agents.py": true,
+    "matching_agents/embedding_agent.py": true,
+    "matching_agents/openrouter_embedding.py": true
+  },
+  "worker_operations": [
+    {
+      "type": "PREPARE",
+      "attempts": [
+        {
+          "total_seconds": 3.907974118999846,
+          "queue_wait_seconds": 0.087144,
+          "worker_startup_seconds": 0.886508,
+          "stages": {
+            "worker-setup": 0.12573468099981255,
+            "prepare-read": 0.9731754070003262,
+            "prepare-normalize": 2.769912892999855,
+            "prepare-publish": 0.039151137999851926
+          }
+        }
+      ]
+    },
+    {
+      "type": "DECIDE",
+      "attempts": [
+        {
+          "total_seconds": 707.7489718390002,
+          "queue_wait_seconds": 0.325075,
+          "worker_startup_seconds": 0.854562,
+          "stages": {
+            "worker-setup": 1.5777795760000117,
+            "decide": 0.020429176000106963,
+            "candidate-generation": 1.1891972290000012,
+            "candidate-rule-scoring": 15.042787934999978,
+            "seal-decisions": 27.6936632310003,
+            "rule-assessment": 11.410562811999625,
+            "embedding-evidence": 594.9333825809999,
+            "seal-assessment": 25.487812257000314,
+            "publish-decisions": 30.393357041999934
+          }
+        }
+      ]
+    },
+    {
+      "type": "PAIR_ADVICE",
+      "attempts": [
+        {
+          "total_seconds": 91.49483148200034,
+          "queue_wait_seconds": 0.304596,
+          "worker_startup_seconds": 1.014128,
+          "stages": {
+            "worker-setup": 17.345317824000176,
+            "pair_advice": 0.10154618800015669,
+            "gemini-pair-advice": 74.04796747
+          }
+        }
+      ]
+    },
+    {
+      "type": "CLUSTER_PREVIEW",
+      "attempts": [
+        {
+          "total_seconds": 251.73882612199986,
+          "queue_wait_seconds": 0.959318,
+          "worker_startup_seconds": 1.009496,
+          "stages": {
+            "worker-setup": 0.21224373199993352,
+            "snapshot": 100.17430959100011,
+            "preview-groups": 151.35227279899982
+          }
+        }
+      ]
+    },
+    {
+      "type": "BULK_DECISIONS",
+      "attempts": [
+        {
+          "total_seconds": 2.791597832000207,
+          "queue_wait_seconds": 0.01936,
+          "worker_startup_seconds": 1.066919,
+          "stages": {
+            "worker-setup": 0.4978974300001937,
+            "review": 2.293700402000013
+          }
+        }
+      ]
+    },
+    {
+      "type": "BULK_DECISIONS",
+      "attempts": [
+        {
+          "total_seconds": 2.5579361439999957,
+          "queue_wait_seconds": 0.098675,
+          "worker_startup_seconds": 1.20726,
+          "stages": {
+            "worker-setup": 0.3918067509998764,
+            "review": 2.1661293930001193
+          }
+        }
+      ]
+    },
+    {
+      "type": "BULK_DECISIONS",
+      "attempts": [
+        {
+          "total_seconds": 1.5162263760003043,
+          "queue_wait_seconds": 0.167762,
+          "worker_startup_seconds": 0.980764,
+          "stages": {
+            "worker-setup": 0.37238008700023784,
+            "review": 1.1438462890000665
+          }
+        }
+      ]
+    },
+    {
+      "type": "BULK_DECISIONS",
+      "attempts": [
+        {
+          "total_seconds": 172.24138873499987,
+          "queue_wait_seconds": 0.151772,
+          "worker_startup_seconds": 1.148557,
+          "stages": {
+            "worker-setup": 0.6158342710000397,
+            "review": 171.62555446399983
+          }
+        }
+      ]
+    },
+    {
+      "type": "CLUSTER",
+      "attempts": [
+        {
+          "total_seconds": 163.6893117590007,
+          "queue_wait_seconds": 0.088817,
+          "worker_startup_seconds": 1.47559,
+          "stages": {
+            "worker-setup": 0.13455255900043994,
+            "snapshot": 113.54848769399996,
+            "cluster": 46.14653400000043,
+            "publish-groups": 3.859737505999874
+          }
+        }
+      ]
+    },
+    {
+      "type": "CLUSTER",
+      "attempts": [
+        {
+          "total_seconds": 237.64057245799995,
+          "queue_wait_seconds": 0.062654,
+          "worker_startup_seconds": 1.645776,
+          "stages": {
+            "worker-setup": 0.14834547099962947,
+            "snapshot": 119.92401811500076,
+            "cluster": 103.12640495699998,
+            "publish-groups": 14.441803914999582
+          }
+        }
+      ]
+    }
+  ]
+}

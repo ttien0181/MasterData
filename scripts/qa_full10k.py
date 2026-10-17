@@ -6,6 +6,7 @@ resuming a long run; no business decisions are written directly to the database.
 import argparse
 import csv
 import hashlib
+import io
 import json
 import math
 import secrets
@@ -65,7 +66,7 @@ def projection(run, final=False):
     code='''
 import json
 from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 from masterone.config import get_settings
 from masterone.mdm.models import ResolutionRecord, ResolutionRun
 from masterone.mdm.workflow_models import WorkflowPair, WorkflowGeneration, WorkflowMember
@@ -77,19 +78,21 @@ with Session(create_engine(s.active_mdm_database_url)) as db:
     records=[list(r) for r in db.execute(select(ResolutionRecord.id,ResolutionRecord.source_system,ResolutionRecord.external_id,ResolutionRecord.entity_type).where(ResolutionRecord.run_id==RUN))]
     e=effective_column()
     pairs=[list(r) for r in db.execute(select(WorkflowPair.id,WorkflowPair.baseline['left_id'].as_string(),WorkflowPair.baseline['right_id'].as_string(),e['primary_group'].as_string(),e['rule_conclusion'].as_string(),e['soft_evaluation'],WorkflowPair.decision,e['decision'].as_string(),WorkflowPair.advice).where(WorkflowPair.run_id==RUN))] if not FINAL else []
-    generation=db.query(WorkflowGeneration).filter_by(run_id=RUN).order_by(WorkflowGeneration.revision.desc()).first()
+    generation=db.query(WorkflowGeneration).options(defer(WorkflowGeneration.finalized_result)).filter_by(run_id=RUN).order_by(WorkflowGeneration.revision.desc()).first() if FINAL else None
     members=[list(r) for r in db.execute(select(WorkflowMember.cluster_id,WorkflowMember.record_id).where(WorkflowMember.generation_id==generation.id))] if FINAL and generation else []
     if FINAL and generation:
         from masterone.mdm.workflow_generation_reads import GenerationReader,virtual_cluster_id
         reader=GenerationReader(db,db.get(ResolutionRun,RUN),generation)
         if reader.virtual:
             covered={rid for cid,rid in members}
-            frozen_ids={r['id'] for r in reader.records()}
+            frozen_ids=set()
+            for record in reader.records():
+                frozen_ids.add(record['id'])
             assert frozen_ids=={r[0] for r in records}, 'FROZEN_SOURCE_COVERAGE'
             members.extend([virtual_cluster_id(generation.id,rid),rid] for rid in sorted(frozen_ids-covered))
     print(json.dumps(dict(records=records,pairs=pairs,members=members)))
 '''.replace('RUN',repr(run)).replace('FINAL',repr(final))
-    return docker_python(code)
+    return docker_python(code, service='worker')
 
 
 def evaluate(run, out, truth, positives, external):
@@ -163,7 +166,7 @@ with Session(create_engine(get_settings().active_mdm_database_url)) as db:
     return result
 
 
-def run_case(client,dataset,out):
+def run_case(client,dataset,out, *, model_scope=None, advice_limit=20, explanation_samples=10):
     out.mkdir(exist_ok=True)
     source,receipt,truth,positive,external=fixture(dataset,out)
     path=out/'report.json'
@@ -213,7 +216,7 @@ def run_case(client,dataset,out):
         def process():
             s=state()
             if s['workflow_state']=='DATA_READY' and not s.get('active_operation'):
-                mutate('/process',model_scope='synthetic-benchmark',include_advice=True,advice_limit=20)
+                mutate('/process',model_scope=model_scope,include_advice=True,advice_limit=advice_limit)
             return idle('DECIDE_REVIEW')
         stage('matching-advice-preview',process)
         def eval_stage():
@@ -223,13 +226,13 @@ def run_case(client,dataset,out):
         evaluation=json.loads((out/'evaluation.json').read_text(encoding='utf8'))
         def explanations():
             calls=[]
-            for pid in evaluation['explanation_samples']:
+            for pid in evaluation['explanation_samples'][:explanation_samples]:
                 start=time.perf_counter()
                 value=mutate(f'/pairs/{pid}/explanation')
                 calls.append({'pair_id':pid,'seconds':time.perf_counter()-start,'response':value})
                 save(out/'explanation-sample.json',calls)
             return {'measured_logical_requests':len(calls),'required_at_30_percent_all_candidates':math.ceil(.3*evaluation['quality']['candidate_count']),
-                    'mean_seconds':statistics.mean(c['seconds'] for c in calls),
+                    'mean_seconds':statistics.mean(c['seconds'] for c in calls) if calls else None,
                     'sample_wall_seconds':sum(c['seconds'] for c in calls)}
         stage('gemini-explanation-sample',explanations)
         def replay():
@@ -328,6 +331,17 @@ with Session(create_engine(get_settings().active_mdm_database_url)) as db:
                 mutate('/finalize-golden',expected_golden_revision=state()['golden_revision'])
             return idle('FINALIZED')
         stage('golden-confirm-finalize',confirm)
+        def export():
+            base=f"/api/v1/mdm/runs/{report['run_id']}"
+            preview=checked(client.post(base+'/previews',json={'choices':{},'acknowledge_unreviewed':False}))
+            response=client.post(base+f"/previews/{preview['preview_id']}/execute",json={'execute_request_id':str(uuid4())})
+            assert response.status_code==200,'EXPORT_FAILED'
+            rows=list(csv.DictReader(io.StringIO(response.content.decode('utf-8-sig'))))
+            assert sum(int(row['record_count']) for row in rows)==len(truth),'EXPORT_LOST_RECORDS'
+            assert all(row['master_record_id'] for row in rows),'EXPORT_ID_MISSING'
+            (out/'export.csv').write_bytes(response.content)
+            return {'rows':len(rows),'records_preserved':len(truth),'sha256':sha(out/'export.csv')}
+        stage('csv-export',export)
         report['status']='PASS'
     except Exception as error:
         report.update(status='FAIL',error={'type':type(error).__name__,'code':str(error)[:600]})
@@ -343,6 +357,9 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--dataset',type=Path,action='append',required=True)
+    parser.add_argument('--model-scope',choices=['none','synthetic-benchmark'],default='none')
+    parser.add_argument('--advice-limit',type=int,choices=range(0,21),default=20)
+    parser.add_argument('--explanation-samples',type=int,choices=range(0,11),default=10)
     args=parser.parse_args()
     out=args.output.resolve()
     assert out.is_relative_to((ROOT/'artifacts/full10k-20261016').resolve())
@@ -365,7 +382,9 @@ def main():
         reports=[]
         for dataset in args.dataset:
             dataset=dataset.resolve()
-            reports.append(run_case(client,dataset,out/dataset.parts[-3]))
+            reports.append(run_case(client,dataset,out/dataset.parts[-3],
+                model_scope=None if args.model_scope=='none' else args.model_scope,
+                advice_limit=args.advice_limit,explanation_samples=args.explanation_samples))
             save(out/'summary.json',{'runs':reports})
 
 

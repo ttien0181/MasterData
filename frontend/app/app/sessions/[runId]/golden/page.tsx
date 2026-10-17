@@ -1,2 +1,2 @@
-import GoldenRecords from '@/components/GoldenRecords';
-export default function Page() { return <GoldenRecords />; }
+import GoldenOverview from '@/components/GoldenOverview';
+export default function Page() { return <GoldenOverview />; }

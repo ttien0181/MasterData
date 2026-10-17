@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     gemini_thinking_budget: int | None = Field(default=0, ge=0, le=32768)
     semantic_address_enabled: bool = False
     session_workflow_enabled: bool = False
+    demo_fast_mode: bool = False
     matching_profile_registry_enabled: bool = False
     steward_feedback_capture_enabled: bool = False
     advanced_evaluation_registry_enabled: bool = False

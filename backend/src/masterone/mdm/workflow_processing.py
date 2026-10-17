@@ -5,7 +5,7 @@ from masterone.mdm.workflow_contracts import transition
 
 def begin_processing(db, run_id, request, actor):
     from masterone.mdm.workflow_service import begin_operation
-    payload = {**request.model_dump(), 'processing': True}
+    payload = {**request.model_dump(), 'processing': True, 'demo_fast_mode': get_settings().demo_fast_mode}
     return begin_operation(db, run_id, 'DECIDE', request.request_id, payload,
                            request.expected_workflow_revision, actor)
 
@@ -19,6 +19,12 @@ def continue_processing(db, run, op):
     if not op.payload.get('processing') or op.status != 'COMPLETED':
         return
     if op.operation_type not in ('DECIDE', 'PAIR_ADVICE'):
+        return
+    if op.payload.get('demo_fast_mode'):
+        # Review only needs the published assessment. Explicit preview/cluster
+        # commands still run their normal snapshot, revision and safety guards.
+        op.result = {**op.result, 'processing': {'review_ready': True,
+            'optional_advice': 'NOT_REQUESTED', 'optional_preview': 'NOT_REQUESTED', 'demo_fast_mode': True}}
         return
     from masterone.mdm.workflow_jobs import authorize_job
     from masterone.mdm.workflow_service import audit, enqueue, new_operation

@@ -129,11 +129,17 @@ class FinalizedView:
 
 
 @contextmanager
-def open_finalized_generation(db, run):
+def open_finalized_generation(db, run, *, state=None, budget=None):
     from masterone.mdm.workflow_cluster_reads import current_generation
     from masterone.mdm.workflow_models import WorkflowArtifact
     from masterone.mdm.workflow_snapshot_storage import open_snapshot
     generation = current_generation(db, run)
+    if state is not None:
+        version = db.query(WorkflowGeneration.finalized_result['version']).filter_by(id=generation.id).scalar()
+        if version != VERSION:
+            from masterone.mdm.workflow_export_spool import spool_result
+            yield spool_result(db, generation.id, generation.result_hash, run.golden_revision, state, budget)
+            return
     result = generation.finalized_result
     if (not result or digest(result) != generation.result_hash or result.get('golden_revision') != run.golden_revision):
         conflict('FINAL_RESULT_INVALID')

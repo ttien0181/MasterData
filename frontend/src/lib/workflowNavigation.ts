@@ -14,9 +14,9 @@ export const sessionSections: Record<SessionTab, { id: string; label: string; pa
     { id: 'clusters-list', label: 'Danh sách nhóm', path: '/records' },
   ],
   golden: [
-    { id: 'golden-overview', label: 'Tổng quan Golden' },
-    { id: 'golden-records', label: 'Giá trị và nguồn gốc' },
-    { id: 'golden-export', label: 'Chốt và xuất dữ liệu' },
+    { id: 'golden-overview', label: 'Tổng quan & tiến độ', path: '' },
+    { id: 'golden-records', label: 'Duyệt Golden', path: '/records' },
+    { id: 'golden-export', label: 'Chốt & xuất dữ liệu', path: '/export' },
   ],
 };
 export const sessionPath = (run: string, tab: SessionTab = 'data') => `/app/sessions/${encodeURIComponent(run)}/${tab}`;

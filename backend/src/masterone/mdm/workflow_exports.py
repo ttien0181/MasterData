@@ -13,12 +13,18 @@ from masterone.mdm.workflow_cluster_reads import current_generation
 from masterone.mdm.workflow_service import audit, conflict
 
 
-def final_result(db, run, choices=None):
+def final_result(db, run, choices=None, *, metadata_only=False):
     if choices:
         raise HTTPException(422, {'code': 'SERVER_GOLDEN_CHOICES_REQUIRED'})
     if run.workflow_state != 'FINALIZED':
         conflict('WORKFLOW_NOT_FINALIZED')
     generation = current_generation(db, run)
+    if metadata_only:
+        from masterone.mdm.workflow_models import WorkflowGeneration
+        revision = db.query(WorkflowGeneration.finalized_result['golden_revision']).filter_by(id=generation.id).scalar()
+        if not generation.result_hash or revision != run.golden_revision:
+            conflict('FINAL_RESULT_INVALID')
+        return generation
     result = generation.finalized_result
     if not result or digest(result) != generation.result_hash or result['golden_revision'] != run.golden_revision:
         conflict('FINAL_RESULT_INVALID')
@@ -27,8 +33,7 @@ def final_result(db, run, choices=None):
 
 def readiness(db, run_id, choices=None):
     run = lock_run(db, run_id)
-    generation = final_result(db, run, choices)
-    counts = final_counts(generation.finalized_result)
+    generation, counts = final_summary(db, run, choices)
     return {'can_export': True, 'pending_review_count': 0,
             'merge_count': counts['multi_record_groups'],
             'separate_count': counts['singletons'],
@@ -37,8 +42,7 @@ def readiness(db, run_id, choices=None):
 
 def prepare_preview(db, run_id, actor, choices, acknowledge):
     run = lock_run(db, run_id)
-    generation = final_result(db, run, choices)
-    counts = final_counts(generation.finalized_result)
+    generation, counts = final_summary(db, run, choices)
     preview = ResolutionPreview(run_id=run_id, actor_user_id=actor, policy_version=run.policy_version,
         pair_set_hash=generation.result_hash, proposal_revisions={'cluster_revision': run.cluster_revision, 'golden_revision': run.golden_revision},
         choices={}, acknowledge_unreviewed=False, expires_at=now_utc() + timedelta(minutes=15))
@@ -51,6 +55,15 @@ def prepare_preview(db, run_id, actor, choices, acknowledge):
         'result_hash': generation.result_hash}
     db.commit()
     return response
+
+
+def final_summary(db, run, choices=None):
+    from masterone.mdm.export_stream import index
+    from masterone.mdm.workflow_finalization import open_finalized_generation
+    generation = final_result(db, run, choices, metadata_only=True)
+    with index(get_settings()) as (state, budget, _), open_finalized_generation(db, run, state=state, budget=budget) as final:
+        counts = final.coverage or final_counts(final.receipt)
+    return generation, counts
 
 
 def final_counts(result):
@@ -89,13 +102,15 @@ def create_export(db, run_id, actor, acknowledge, choices=None, *, commit=True, 
         if prior.run_id != run_id or prior.actor_user_id != actor:
             conflict('EXPORT_IDENTITY_CONFLICT')
         return prior
-    generation = final_result(db, run, choices)
-    result, result_hash = generation.finalized_result, generation.result_hash
+    generation = final_result(db, run, choices, metadata_only=True)
+    result_hash = generation.result_hash
     cluster_revision, golden_revision = run.cluster_revision, run.golden_revision
     export_id = export_id or str(uuid4())
     db.rollback()  # File/upload/verification never hold the run lock.
     from masterone.mdm.workflow_finalization import open_finalized_generation
-    with index(settings) as (state, budget, directory), open_finalized_generation(db, run) as final:
+    with index(settings) as (state, budget, directory), open_finalized_generation(db, run, state=state, budget=budget) as final:
+        result = {key: final.receipt[key] for key in ('master_id_version',) if key in final.receipt}
+        counts = final.coverage or final_counts(final.receipt)
         path = directory / 'snapshot.csv'
         state.executescript('CREATE TABLE covered(id TEXT PRIMARY KEY); CREATE TABLE expected(id TEXT PRIMARY KEY);')
         state.executemany('INSERT INTO expected VALUES (?)', ((rid,) for rid in final.record_ids()))
@@ -112,13 +127,13 @@ def create_export(db, run_id, actor, acknowledge, choices=None, *, commit=True, 
                         conflict('EXPORT_COVERAGE_INVALID')
                     raise
                 fields = cluster['golden_fields'].get('fields', {})
-                sources = [final.record(rid) for rid in members]
+                source_systems = {final.record(rid)['source_system'] for rid in members}
                 writer.writerow(dict(master_record_id=master_record_id(cluster, result),
                     full_name=field_value('name', fields.get('name', {})),
                     phone_number=field_value('phone', fields.get('phone', {})),
                     email_address=field_value('email', fields.get('email', {})),
                     raw_address=field_value('address', fields.get('address', {})),
-                    source_record_ids=';'.join(members), source_systems=';'.join(sorted({r['source_system'] for r in sources})),
+                    source_record_ids=';'.join(members), source_systems=';'.join(sorted(source_systems)),
                     record_count=len(members), resolution_status='UNMERGED' if len(members) == 1 else 'MERGED', review_pending='false'))
                 budget.check()
         if (state.execute('SELECT id FROM expected EXCEPT SELECT id FROM covered LIMIT 1').fetchone()
@@ -134,15 +149,15 @@ def create_export(db, run_id, actor, acknowledge, choices=None, *, commit=True, 
         if remote_hash != checksum or remote_size != size:
             conflict('EXPORT_ARTIFACT_INVALID')
         budget.check()
+    db.expire_all()  # Re-read publication fences after IO, not cached ORM values.
     run = lock_run(db, run_id)
-    current = final_result(db, run)
+    current = final_result(db, run, metadata_only=True)
     if current.result_hash != result_hash or run.cluster_revision != cluster_revision or run.golden_revision != golden_revision:
         conflict('STALE_EXPORT_REVISION')
     if prior := db.get(ResolutionExport, export_id):
         if prior.run_id != run_id or prior.actor_user_id != actor:
             conflict('EXPORT_IDENTITY_CONFLICT')
         return prior
-    counts = final_counts(result)
     snapshot = ResolutionExport(id=export_id, run_id=run_id, actor_user_id=actor,
         r2_key=('local:' if local else '') + key, csv_bytes=None,
         row_count=counts['clusters'], merged_group_count=counts['multi_record_groups'], pending_review_count=0)
@@ -166,7 +181,7 @@ def execute_preview(db, run_id, preview_id, request_id, actor):
         if preview.execute_request_id != request_id:
             conflict('PREVIEW_ALREADY_EXECUTED')
         return db.get(ResolutionExport, preview.export_id)
-    generation = final_result(db, run)
+    generation = final_result(db, run, metadata_only=True)
     if preview.expires_at.replace(tzinfo=None) <= now_utc().replace(tzinfo=None) or preview.pair_set_hash != generation.result_hash:
         conflict('STALE_PREVIEW')
     snapshot = create_export(db, run_id, actor, False, {}, commit=False, export_id=preview_id)

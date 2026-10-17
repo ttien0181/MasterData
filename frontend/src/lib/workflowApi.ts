@@ -18,6 +18,7 @@ export const getClusters = (run: string, query = new URLSearchParams(), signal?:
 export const getCluster = (run: string, id: string, query = new URLSearchParams(), signal?: AbortSignal) => get<ClusterDetail>(run, `/clusters/${encodeURIComponent(id)}?${query}`, signal);
 export const getClusterGolden = (run: string, id: string, signal?: AbortSignal) => get<GoldenRead>(run, `/clusters/${encodeURIComponent(id)}/golden`, signal);
 export const getGoldenRecords = (run: string, query = new URLSearchParams(), signal?: AbortSignal) => get<GenerationPage<GoldenRead>>(run, `/golden?${query}`, signal);
+export const getGoldenIndex = (run:string, query=new URLSearchParams(), signal?:AbortSignal) => get<import('./workflowContracts').GoldenIndex>(run,`/golden/index?${query}`,signal);
 export const getOperation = (run: string, id: string, signal?: AbortSignal) => get<OperationRead>(run, `/operations/${encodeURIComponent(id)}`, signal);
 export const startDecide = (run: string, body: Mutation) => write<OperationRead>(run, '/start-decide', body);
 export const processData = (run: string, body: Mutation & { include_advice?: boolean; advice_limit?: number; model_scope?: 'synthetic-benchmark' }) => write<OperationRead>(run, '/process', body);
@@ -49,7 +50,7 @@ export const explainWorkflowPair = (run: string, id: string, body: Mutation, sig
 export const finalizeGolden = (run: string, body: Mutation & { expected_golden_revision: number }) => write<{ result_hash: string } | OperationRead>(run, '/finalize-golden', body);
 export const reopenDecisions = (run: string, body: Mutation & { reason: string }) => write<WorkflowRead>(run, '/reopen-decisions', body);
 export const retryOperation = (run: string, id: string, body: Mutation) => write<OperationRead>(run, `/operations/${encodeURIComponent(id)}/retry`, body);
-export const prepareWorkflowExport = (run: string) => request<{ preview_id: string; estimated_output_rows: number; result_hash: string }>(`/runs/${encodeURIComponent(run)}/previews`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ choices: {}, acknowledge_unreviewed: false }) });
+export const prepareWorkflowExport = (run: string) => request<{ preview_id: string; estimated_output_rows: number; result_hash: string; expires_at?:string }>(`/runs/${encodeURIComponent(run)}/previews`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ choices: {}, acknowledge_unreviewed: false }) });
 
 export const reassessPairs = (run:string,body:Mutation & {model_scope?:'synthetic-benchmark'}) => write<OperationRead>(run,'/reassess',body);
 export const requestPairAdvice = (run:string,body:Mutation & {pair_ids?:string[];limit?:number}) => write<OperationRead>(run,'/pair-advice',body);

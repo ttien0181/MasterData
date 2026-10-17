@@ -235,7 +235,10 @@ def _parse(provider, body, model):
         candidate = body["candidates"][0]
         if candidate.get("finishReason", "STOP") != "STOP":
             raise _InvalidError("FINISH_REASON")
-        text = ''.join(part['text'] for part in candidate['content']['parts']
+        parts = candidate['content']['parts']
+        if not isinstance(parts, list) or any(not isinstance(part, dict) for part in parts):
+            raise _InvalidError('OUTPUT_PARTS_INVALID')
+        text = ''.join(part['text'] for part in parts
                        if not part.get('thought', False) and isinstance(part.get('text'), str))
         model_version = body.get("modelVersion", model)
     else:

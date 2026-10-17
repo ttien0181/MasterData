@@ -60,7 +60,7 @@ def seal_agent(factory, run_id, op_id, phase, payload):
 
 
 def run_agents(factory, run_id, op_id, records, pairs, scoring_identity, progress, *, source_artifact_id,
-               effective_pairs=None):
+               effective_pairs=None, skip_advisory=False):
     from masterone.mdm.pipeline import matching, standardization
     from masterone.mdm.pipeline.scoring_engine import file_hash
     from masterone.mdm.workflow_jobs import job_identity
@@ -75,7 +75,22 @@ def run_agents(factory, run_id, op_id, records, pairs, scoring_identity, progres
         binding_identity = {'profile_id': binding.profile_id, 'profile_digest': binding.profile_digest,
                             'binding_id': binding.id, 'binding_revision': binding.revision}
         from masterone.mdm.pipeline.decision_semantics import load_cannot_links
-        cannot_links = load_cannot_links(db, run_id)
+        skip_evidence = skip_advisory and config['kind'] == 'RULE_WITH_EMBEDDING_EVIDENCE'
+        cannot_links = set() if skip_evidence else load_cannot_links(db, run_id)
+    if skip_advisory and config['kind'] == 'RULE_WITH_EMBEDDING_EVIDENCE':
+        warning = 'Demo fast mode: advisory embedding was not computed; rule assessment is unchanged.'
+        report = {**binding_identity, 'contract_version': 'matching_agents_v1', 'status': 'SKIPPED',
+            'warning': warning, 'error_code': 'DEMO_ADVISORY_EMBEDDING_SKIPPED',
+            'input_hash': digest(records), 'candidate_hash': digest([
+                asdict(PairKey(owner, run_id, p['left_id'], p['right_id'])) for p in pairs]),
+            'rule_identity': scoring_identity, 'encoder_identity': config['encoder_identity'],
+            'preprocessing_identity': digest(config['preprocessing']), 'runtime': {},
+            'runtime_seconds': time.monotonic() - started, 'coverage': {
+                'expected_pairs': len(pairs), 'rule_pairs': 0, 'embedding_pairs': 0},
+            'field_coverage': {}, 'automation_allowed': False, 'pairs': []}
+        artifact_id = seal_agent(factory, run_id, op_id, 'MATCHING_AGENTS', report)
+        return {'artifact_id': artifact_id, 'status': 'SKIPPED', 'warning': warning,
+                'coverage': report['coverage'], 'profile_digest': binding.profile_digest, 'automation_allowed': False}
     input_hash = digest(records)
     frequencies = {'phone': Counter(), 'email': Counter()}
     for record in records:

@@ -42,8 +42,9 @@ export default function SessionWorkspace({ runId, children }: { runId: string; c
     <SessionTabs runId={runId} state={workflow.workflow_state} clusterRevision={workflow.cluster_revision} collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(value => !value)} />
     <div className="workflow-session-content">
     <header className="workflow-session-header workflow-session-status"><h1 title={runId}>{labels[workflow.workflow_state]}</h1><Link href="/app">Lịch sử phiên</Link></header>
-    {!/\/(?:data|decisions)(?:\/|$)/.test(pathname) && <div className="workflow-counters">{Object.entries(workflow.counts).map(([key, counter]) => <span key={key}>{counterLabels[key] || key}: {counter.value.toLocaleString('vi-VN')} {units[counter.unit] || counter.unit}</span>)}</div>}
+    {!/\/(?:data|decisions|golden)(?:\/|$)/.test(pathname) && <div className="workflow-counters">{Object.entries(workflow.counts).map(([key, counter]) => <span key={key}>{counterLabels[key] || key}: {counter.value.toLocaleString('vi-VN')} {units[counter.unit] || counter.unit}</span>)}</div>}
     {workflow.matching_agents?.status === 'DEGRADED' && <p role="alert">Đối chiếu tên và địa chỉ chưa đầy đủ. Kết quả quy tắc được giữ để bạn duyệt; tự động gộp đã bị tắt.</p>}
+    {workflow.matching_agents?.status === 'SKIPPED' && <p role="status">Demo fast mode: Embedding chưa được tính. Bạn đang duyệt kết quả quy tắc; tự động gộp đã bị tắt. Advice và preview có thể chạy riêng khi cần.</p>}
     {error && <p role="alert">{error} <button onClick={() => void refresh().catch(() => undefined)}>Đọc lại phiên</button></p>}
     <DataLoadProgress workflow={workflow} />
     {(/\/decisions$/.test(pathname) || workflow.active_operation?.operation_type === 'DECIDE') && <DecisionProgress workflow={workflow} />}

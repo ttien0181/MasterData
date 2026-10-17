@@ -143,7 +143,7 @@ def checked(response):
 
 
 def run_case(client, output, source, manifest, gold, positives, external, *, variant, advice_limit,
-             model_scope='synthetic-benchmark', explanation_samples=0):
+             model_scope=None, explanation_samples=0):
     case_started = time.perf_counter()
     models = variant != 'rule'
     report = {'status': 'RUNNING', 'variant': variant, 'fixture': manifest,
@@ -326,7 +326,7 @@ def main():
     parser.add_argument('--advice-limit', type=int, default=8)
     parser.add_argument('--explanation-samples', type=int, choices=range(0, 4), default=0)
     parser.add_argument('--variants', nargs='+', choices=['rule','evidence','hybrid'], default=['rule','hybrid'])
-    parser.add_argument('--model-scope', choices=['synthetic-benchmark','none'], default='synthetic-benchmark')
+    parser.add_argument('--model-scope', choices=['synthetic-benchmark','none'], default='none')
     args=parser.parse_args()
     if not 1 <= args.entities <= 20 or not 0 <= args.negative_controls <= 10 or not 0 <= args.advice_limit <= 8:
         parser.error('Small QA requires entities 1..20, negative controls 0..10, advice limit 0..8')

@@ -4,8 +4,11 @@ MasterOne là MVP khử trùng dữ liệu khách hàng. Data Steward nạp nhi�
 
 - Frontend: Next.js trong `frontend/`
 - Backend: FastAPI trong `backend/src/masterone/`
-- Lưu trữ local: SQLite qua SQLAlchemy, quản lý schema bằng Alembic
-- Gemini: giải thích hồ sơ theo yêu cầu; đối chiếu địa chỉ chỉ khi bật cấu hình
+- Lưu trữ ứng dụng: PostgreSQL local hoặc Neon qua SQLAlchemy, quản lý schema bằng Alembic; SQLite dùng cho test cô lập.
+- AI qua API: embedding OpenRouter `openai/text-embedding-3-small`; Gemini cho advice cặp mơ hồ và giải thích; OpenRouter chat dự phòng theo policy.
+- Compose hiện hữu bật `AI_API_ONLY=true`: chặn E5/Splink local. Rule, retrieval, Coordinator và clustering chạy bằng thuật toán local, không gọi LLM.
+
+Thiết kế, giới hạn tự động hóa và lệnh nghiệm thu nhỏ: [API-only 16/10/2026](docs/advanced-matching/API_ONLY_IMPLEMENTATION_20261016.vi.md).
 
 Xem [sơ đồ components và luồng dữ liệu](docs/architecture_diagram.md), [bằng chứng 5 ca manual](eval/results/report.md) và [hướng dẫn phát triển chi tiết](MDM_DEV.md).
 
@@ -149,7 +152,7 @@ Bản kiểm thử chất lượng nhóm/Golden và singleton ảo trên `Nam_Ba
 Nhánh Parquet hiện được giữ sau cờ `WORKFLOW_PARQUET_ENABLED=false`; đọc phạm vi
 trong báo cáo trước khi bật thử. Benchmark phiên này chỉ dùng TC1/10k theo yêu cầu.
 
-Các run không so khớp chéo nhau. Điểm matching là trọng số rule có điều chỉnh tần suất, **không phải xác suất đã hiệu chỉnh** và pipeline không dùng Splink. Gemini không tự quyết định gộp. MVP local dùng SQLite và một worker backend; trước khi triển khai Internet công khai cần bổ sung xác minh email, khôi phục mật khẩu, MFA và chính sách chống đăng ký tự động. Không nạp dữ liệu khách hàng thật vào bản demo.
+Các run không so khớp chéo nhau. Điểm matching là trọng số rule có điều chỉnh tần suất, **không phải xác suất đã hiệu chỉnh**. Compose API-only tắt inference Splink; benchmark local cũ chỉ được chạy khi chủ động tắt API-only. Gemini không tự quyết định gộp. MVP local dùng PostgreSQL và một worker backend; trước khi triển khai Internet công khai cần bổ sung xác minh email, khôi phục mật khẩu, MFA và chính sách chống đăng ký tự động. Không nạp dữ liệu khách hàng thật vào bản demo.
 
 ## Cấu trúc repo và log phát triển
 

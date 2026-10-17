@@ -1,0 +1,301 @@
+{
+  "status": "PASS",
+  "runs": [
+    {
+      "case": "TC3_hard_match",
+      "variant": "evidence",
+      "run_id": "ac030908-9a94-40d0-8c9e-c458d02ab7e3",
+      "workflow_status": "PASS",
+      "records": 78,
+      "configured_ai_execution_mode": "api_only",
+      "candidate_count": 1179,
+      "machine_candidate_recall": 1.0,
+      "machine_quality": {
+        "candidate_recall": 1.0,
+        "candidate_count": 1179,
+        "all_pairs": 3003,
+        "candidate_reduction_ratio": 0.6073926073926075,
+        "rule_recommendations": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 38,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "splink_recommendations": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 38,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "rule_clear_group_A": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 38,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "rule_conclusion_counts": {
+          "INSUFFICIENT_EVIDENCE": 1179
+        },
+        "gemini_selected_positive_recommendations": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 38,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "groups": {
+          "C": 1179
+        },
+        "truth_positive_manual_merge_blocked": 0,
+        "automatic_decisions": 0,
+        "notes": [
+          "Recommendation metrics are diagnostic; none of these sets authorizes a merge.",
+          "Splink and Gemini raw recommendations may contradict constraints; final routing still enforces them.",
+          "Gemini sees only selected ambiguous pairs, so its full-universe recall is not a standalone model score."
+        ]
+      },
+      "final_after_truth_review": {
+        "pairwise": {
+          "tp": 38,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "clusters": 40,
+        "records_preserved": 78,
+        "overmerge_pairs": 0,
+        "undermerge_pairs": 0
+      },
+      "ai_http_attempts": 10,
+      "embedding_http_attempts": 6,
+      "llm_http_attempts": 4,
+      "llm_successes": 2,
+      "llm_failures": 2,
+      "embedding_by_model_field": [
+        {
+          "position": "evidence",
+          "provider": "openrouter",
+          "model": "openai/text-embedding-3-small",
+          "field": "address",
+          "http_attempts": 3,
+          "responses": 3,
+          "failed_responses": 0,
+          "unresolved_intents": 0,
+          "known_input_tokens": 1800,
+          "unknown_usage_attempts": 0,
+          "known_api_cost_usd": 3.5999999999999994e-05,
+          "unknown_cost_attempts": 0,
+          "known_estimated_cost_usd": 3.5999999999999994e-05,
+          "latency_seconds": 6.976034613000138,
+          "input_tokens": 1800,
+          "api_cost_usd": 3.5999999999999994e-05
+        },
+        {
+          "position": "evidence",
+          "provider": "openrouter",
+          "model": "openai/text-embedding-3-small",
+          "field": "name",
+          "http_attempts": 3,
+          "responses": 3,
+          "failed_responses": 0,
+          "unresolved_intents": 0,
+          "known_input_tokens": 432,
+          "unknown_usage_attempts": 0,
+          "known_api_cost_usd": 8.64e-06,
+          "unknown_cost_attempts": 0,
+          "known_estimated_cost_usd": 8.64e-06,
+          "latency_seconds": 8.163810840999759,
+          "input_tokens": 432,
+          "api_cost_usd": 8.64e-06
+        }
+      ],
+      "embedding_by_position": {
+        "retrieval": {
+          "http_attempts": 0,
+          "responses": 0,
+          "failed_responses": 0,
+          "unresolved_intents": 0,
+          "known_input_tokens": 0,
+          "unknown_usage_attempts": 0,
+          "known_api_cost_usd": 0.0,
+          "unknown_cost_attempts": 0,
+          "known_estimated_cost_usd": 0.0,
+          "latency_seconds": 0.0,
+          "input_tokens": 0,
+          "api_cost_usd": 0.0
+        },
+        "evidence": {
+          "http_attempts": 6,
+          "responses": 6,
+          "failed_responses": 0,
+          "unresolved_intents": 0,
+          "known_input_tokens": 2232,
+          "unknown_usage_attempts": 0,
+          "known_api_cost_usd": 4.4640000000000006e-05,
+          "unknown_cost_attempts": 0,
+          "known_estimated_cost_usd": 4.4640000000000006e-05,
+          "latency_seconds": 15.139845453999897,
+          "input_tokens": 2232,
+          "api_cost_usd": 4.4640000000000006e-05
+        }
+      },
+      "llm_by_purpose": [
+        {
+          "purpose": "PAIR_ASSESSMENT",
+          "provider": "gemini",
+          "model": "gemini-3.5-flash-lite",
+          "http_attempts": 3,
+          "successes": 2,
+          "known_input_tokens": 1196,
+          "known_output_tokens": 470,
+          "unknown_usage_attempts": 1,
+          "latency_seconds": 48.435,
+          "statuses": {
+            "SUCCESS": 2,
+            "TIMEOUT": 1
+          },
+          "logical_requests": 3,
+          "input_tokens": null,
+          "output_tokens": null
+        },
+        {
+          "purpose": "EXPLANATION",
+          "provider": "gemini",
+          "model": "gemini-3.5-flash-lite",
+          "http_attempts": 1,
+          "successes": 0,
+          "known_input_tokens": 0,
+          "known_output_tokens": 0,
+          "unknown_usage_attempts": 1,
+          "latency_seconds": 2.521,
+          "statuses": {
+            "HTTP_ERROR": 1
+          },
+          "logical_requests": 1,
+          "input_tokens": null,
+          "output_tokens": null
+        }
+      ],
+      "client_total_seconds": 105.02609669999947,
+      "client_stages": [
+        {
+          "stage": "upload",
+          "seconds": 0.08240660000046773
+        },
+        {
+          "stage": "prepare-worker-wait",
+          "seconds": 1.6675427000000127
+        },
+        {
+          "stage": "one-command-matching-advice-preview",
+          "seconds": 77.58141559999967
+        },
+        {
+          "stage": "offline-quality-evaluation",
+          "seconds": 1.8692604999996547
+        },
+        {
+          "stage": "api-explanation-samples",
+          "seconds": 2.6218487999994977
+        },
+        {
+          "stage": "scripted-truth-review-http",
+          "seconds": 15.268510899999455
+        },
+        {
+          "stage": "cluster-worker-wait",
+          "seconds": 4.4359294999994745
+        },
+        {
+          "stage": "golden-confirm-finalize-export",
+          "seconds": 1.1801895999997214
+        }
+      ],
+      "worker_seconds": 78.90345098000034,
+      "worker_stages": {
+        "worker-setup": 1.592277779000142,
+        "prepare-read": 0.04613405000009152,
+        "prepare-normalize": 0.03201873899979546,
+        "prepare-publish": 0.03365023500009556,
+        "decide": 0.020560824999847682,
+        "candidate-generation": 0.020928109000124095,
+        "candidate-rule-scoring": 1.0363963639997564,
+        "seal-decisions": 0.3478684810006598,
+        "rule-assessment": 0.12312373699978707,
+        "embedding-evidence": 17.734672575999866,
+        "seal-assessment": 0.3418032449999373,
+        "publish-decisions": 0.720762306999859,
+        "pair_advice": 0.04611663299965585,
+        "gemini-pair-advice": 48.50500582700033,
+        "snapshot": 2.768084710000039,
+        "preview-groups": 1.833960812999976,
+        "review": 2.4512259220000487,
+        "cluster": 1.0711941520003165,
+        "publish-groups": 0.17766647600001306
+      },
+      "local_model_evaluations": [
+        {
+          "operation_id": "f09ebb2f-30c6-44b2-9032-266a9bc94570",
+          "model": "splink",
+          "external_requests": 0,
+          "status": "OUT_OF_SCOPE",
+          "scope": null,
+          "evaluated_pairs": 0
+        }
+      ],
+      "worker_attempts": [
+        {
+          "attempt_id": "e222c592-4bd6-4783-a78b-b6100dc212c7",
+          "status": "SUCCEEDED",
+          "started_at": "2026-10-16T16:56:22.377247+00:00",
+          "finished_at": "2026-10-16T16:56:23.697413+00:00"
+        },
+        {
+          "attempt_id": "62737913-6324-4128-b027-6d86252391e7",
+          "status": "SUCCEEDED",
+          "started_at": "2026-10-16T16:56:24.437744+00:00",
+          "finished_at": "2026-10-16T16:56:45.905059+00:00"
+        },
+        {
+          "attempt_id": "66e15b97-e9d4-4549-8f45-cacdc38710e3",
+          "status": "SUCCEEDED",
+          "started_at": "2026-10-16T16:56:46.643676+00:00",
+          "finished_at": "2026-10-16T16:57:36.539778+00:00"
+        },
+        {
+          "attempt_id": "65df8c0e-bd0b-4638-b159-37d4bbbe7265",
+          "status": "SUCCEEDED",
+          "started_at": "2026-10-16T16:57:37.088537+00:00",
+          "finished_at": "2026-10-16T16:57:41.364253+00:00"
+        },
+        {
+          "attempt_id": "46ac28c7-3fe8-4d7a-aee9-d68dfa7e8b3d",
+          "status": "SUCCEEDED",
+          "started_at": "2026-10-16T16:57:50.183965+00:00",
+          "finished_at": "2026-10-16T16:57:54.065533+00:00"
+        },
+        {
+          "attempt_id": "c45fc14e-ea78-4df0-ab39-8087e889f9be",
+          "status": "SUCCEEDED",
+          "started_at": "2026-10-16T16:57:54.600175+00:00",
+          "finished_at": "2026-10-16T16:57:56.033264+00:00"
+        },
+        {
+          "attempt_id": "cf7905f5-1b03-4368-aef2-6a4f5e5554b3",
+          "status": "SUCCEEDED",
+          "started_at": "2026-10-16T16:58:01.613099+00:00",
+          "finished_at": "2026-10-16T16:58:05.389371+00:00"
+        }
+      ]
+    }
+  ]
+}

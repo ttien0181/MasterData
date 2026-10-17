@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import path from 'node:path';
 
 async function fixture(page: Page,readOnly=false) {
   const reads:string[]=[],writes:{path:string;body:any}[]=[],errors:string[]=[];
@@ -42,17 +43,19 @@ test('two windows retain list page, open group and Golden draft without refetchi
   expect(mock.reads.filter(path=>path.endsWith('/structure'))).toHaveLength(0);
   await nav(page).getByRole('link',{name:'Danh sách nhóm',exact:true}).click();
   await expect(page).toHaveURL(/\/clusters\/records$/);
-  await page.getByRole('button',{name:/^Nhóm c1 ·/}).click();
-  await page.getByRole('textbox',{name:'Chỉnh tay name'}).fill('Draft preserved');
   await page.getByRole('button',{name:'Trang tiếp',exact:true}).first().click();
-  await expect(page.getByRole('button',{name:/^Nhóm c2 ·/})).toBeVisible();
+  await expect(page.getByRole('button',{name:/^Đối chiếu nhóm c2$/})).toBeVisible();
+  await page.getByRole('button',{name:'Đối chiếu nhóm c2',exact:true}).click();
+  await page.getByRole('textbox',{name:'Chỉnh tay name'}).fill('Draft preserved');
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'Đóng chi tiết nhóm'}).click();
   const before=resourceReads(mock.reads);
   await nav(page).getByRole('link',{name:'Tổng quan nhóm',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Danh sách nhóm',exact:true})).toHaveCount(0);
   await page.clock.fastForward(180000);
   await nav(page).getByRole('link',{name:'Danh sách nhóm',exact:true}).click();
+  await page.getByRole('button',{name:'Đối chiếu nhóm c2',exact:true}).click();
   await expect(page.getByRole('textbox',{name:'Chỉnh tay name'})).toHaveValue('Draft preserved');
-  await expect(page.getByRole('button',{name:/^Nhóm c2 ·/})).toBeVisible();
   expect(resourceReads(mock.reads)).toEqual(before);
   expect(mock.writes).toEqual([]);expect(mock.errors).toEqual([]);
 });
@@ -61,7 +64,7 @@ test('structure controls open inside the selected group and retain preview guard
   const mock=await fixture(page);
   await page.goto('/app/sessions/r/clusters/records');
   await expect(page.getByRole('button',{name:'Tách/Gộp nhóm',exact:true})).toHaveCount(0);
-  await page.getByRole('button',{name:/^Nhóm c1 ·/}).click();
+  await page.getByRole('button',{name:/^Đối chiếu nhóm c1$/}).click();
   await page.getByRole('button',{name:'Tách/Gộp nhóm',exact:true}).click();
   const structure=page.getByRole('region',{name:'Tách và gộp nhóm',exact:true});
   await expect(structure).toBeVisible();
@@ -83,12 +86,13 @@ test('old group links redirect to the list and a new generation resets the old c
   await page.goto('/app/sessions/r/clusters?cluster=c1');
   await expect(page).toHaveURL(/\/clusters\/records\?cluster=c1$/);
   await expect(page.getByRole('heading',{name:'Chi tiết nhóm c1',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Đóng chi tiết nhóm'}).click();
   await page.getByRole('button',{name:'Trang tiếp',exact:true}).first().click();
-  await expect(page.getByRole('button',{name:/^Nhóm c2 ·/})).toBeVisible();
+  await expect(page.getByRole('button',{name:/^Đối chiếu nhóm c2$/})).toBeVisible();
   mock.nextGeneration();
   await page.clock.fastForward(31000);
   await expect(page.getByRole('heading',{name:'Chi tiết nhóm c1',exact:true})).toHaveCount(0);
-  await expect(page.getByRole('button',{name:/^Nhóm c1 ·/})).toBeVisible();
+  await expect(page.getByRole('button',{name:/^Đối chiếu nhóm c1$/})).toBeVisible();
   await expect(page).toHaveURL(/\/clusters\/records$/);
   expect(mock.writes).toEqual([]);expect(mock.errors).toEqual([]);
 });
@@ -100,5 +104,66 @@ test('a read-only session keeps group details readable without structure mutatio
   await expect(page.getByRole('table',{name:'Đối chiếu thành viên nhóm'})).toBeVisible();
   await expect(page.getByRole('button',{name:'Tách/Gộp nhóm',exact:true})).toHaveCount(0);
   expect(mock.reads.filter(path=>path.endsWith('/structure'))).toHaveLength(0);
+  expect(mock.writes).toEqual([]);expect(mock.errors).toEqual([]);
+});
+
+test('group list stays readable at scale, preserves selection and highlights comparison fields',async({page})=>{
+  const mock=await fixture(page);
+  await page.route(/\/runs\/r\/workflow\/clusters\?/,async route=>{
+    const second=new URL(route.request().url()).searchParams.has('cursor');
+    await route.fulfill({json:{items:Array.from({length:25},(_,i)=>({cluster_id:`c${i+1+(second?25:0)}`,display_name:`Nguyễn Văn An ${i+1+(second?25:0)}`,member_count:2,singleton:false,status:'REVIEW_APPROVED',member_record_ids:[],evidence:{items:[],total:0,next_cursor:null}})),total:1721,next_cursor:second?null:'next'}});
+  });
+  await page.setViewportSize({width:1440,height:1000});
+  await page.goto('/app/sessions/r/clusters/records');
+  const table=page.getByRole('table',{name:'Danh sách nhóm bản ghi'});
+  await expect(table.getByRole('row')).toHaveCount(26);
+  await expect(page.getByText('Hiển thị 1–25 / 1.721 nhóm')).toBeVisible();
+  await page.getByRole('checkbox',{name:'Chọn trang hiện tại'}).check();
+  await expect(page.getByText('Đã chọn 25 nhóm')).toBeVisible();
+  await page.screenshot({path:path.resolve('../artifacts/cluster-ui-20261017/list-desktop.png'),fullPage:true});
+  const pager=page.getByRole('navigation',{name:'Phân trang nhóm'});
+  await pager.getByRole('button',{name:'Trang tiếp',exact:true}).click();
+  await expect(page.getByText('Hiển thị 26–50 / 1.721 nhóm')).toBeVisible();
+  await pager.getByRole('button',{name:'Trang trước',exact:true}).click();
+  await expect(page.getByRole('checkbox',{name:'Chọn nhóm Nguyễn Văn An 1',exact:true})).toBeChecked();
+  await page.getByRole('button',{name:'Đối chiếu nhóm Nguyễn Văn An 1',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Chi tiết nhóm c1',exact:true})).toBeFocused();
+  const comparison=page.getByRole('table',{name:'Đối chiếu thành viên nhóm'});
+  const nameRow=comparison.getByRole('rowheader',{name:/Họ tên/}).locator('..');
+  const phoneRow=comparison.getByRole('rowheader',{name:/Điện thoại/}).locator('..');
+  const diffColor=await nameRow.getByRole('cell').first().evaluate(cell=>getComputedStyle(cell).backgroundColor);
+  const sameColor=await phoneRow.getByRole('cell').first().evaluate(cell=>getComputedStyle(cell).backgroundColor);
+  expect(diffColor).not.toBe(sameColor);
+  await page.getByRole('checkbox',{name:'Chỉ hiện trường khác nhau'}).check();
+  await expect(comparison.getByRole('rowheader',{name:/Điện thoại/})).toHaveCount(0);
+  await page.screenshot({path:path.resolve('../artifacts/cluster-ui-20261017/comparison-desktop.png'),fullPage:true});
+  await page.getByRole('textbox',{name:'Chỉnh tay name'}).fill('Unsaved draft');
+  page.once('dialog',dialog=>dialog.dismiss());
+  await page.getByRole('button',{name:'Đóng chi tiết nhóm'}).click();
+  await expect(page.getByRole('textbox',{name:'Chỉnh tay name'})).toHaveValue('Unsaved draft');
+  await expect(page).toHaveURL(/cluster=c1$/);
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.getByRole('dialog',{name:'Chi tiết nhóm c1'})).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+  await page.screenshot({path:path.resolve('../artifacts/cluster-ui-20261017/list-mobile.png'),fullPage:true});
+  expect(mock.writes).toEqual([]);expect(mock.errors).toEqual([]);
+});
+
+test('popup traps keyboard focus, closes with Escape and returns focus to the selected group',async({page})=>{
+  const mock=await fixture(page);
+  await page.goto('/app/sessions/r/clusters/records');
+  const trigger=page.getByRole('button',{name:'Đối chiếu nhóm c1',exact:true});
+  await trigger.click();
+  const dialog=page.getByRole('dialog',{name:'Chi tiết nhóm c1'});
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveJSProperty('open',true);
+  for(let i=0;i<12;i++){
+    await page.keyboard.press('Tab');
+    expect(await dialog.evaluate(element=>element.contains(document.activeElement))).toBe(true);
+  }
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(page).toHaveURL(/\/clusters\/records$/);
   expect(mock.writes).toEqual([]);expect(mock.errors).toEqual([]);
 });

@@ -1,4 +1,4 @@
-"""Read-only PostgreSQL checks on the two runs named by completed QA receipts."""
+"""Read-only checks on named finalized runs; export failure remains a separate failure."""
 import argparse
 import json
 import subprocess
@@ -18,9 +18,16 @@ def main():
     from pathlib import Path
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--input', type=Path, required=True)
+    parser.add_argument('--allow-failed-export', action='store_true',
+                        help='Audit a finalized workflow even when the later CSV transport failed; does not change its FAIL status')
     args = parser.parse_args()
     reports = {p.parent.name: json.loads(p.read_text(encoding='utf8')) for p in args.input.glob('TC*/report.json')}
-    assert len(reports) == 2 and all(r['status'] == 'PASS' for r in reports.values())
+    assert reports and all(r['status'] == 'PASS' or (
+        args.allow_failed_export and r.get('status') == 'FAIL'
+        and r.get('stages', {}).get('golden-confirm-finalize', {}).get('complete')
+        and r['stages']['golden-confirm-finalize']['result']['workflow_state'] == 'FINALIZED'
+        and 'csv-export' in r['stages'] and not r['stages']['csv-export'].get('complete'))
+        for r in reports.values())
     ids = {name: report['run_id'] for name, report in reports.items()}
     result = audit_python('''
 import json,resource

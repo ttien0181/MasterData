@@ -1,4 +1,6 @@
 
+from sqlalchemy.orm import defer
+
 from masterone.mdm.workflow_models import WorkflowGeneration, WorkflowMember
 from masterone.mdm.workflow_service import conflict
 
@@ -7,7 +9,7 @@ def current_generation(db, run, *, allow_stale=False):
     states = ('GOLDEN_REVIEW', 'FINALIZED', 'DECIDE_REVIEW', 'CLUSTER_QUEUED', 'CLUSTER_RUNNING') if allow_stale else ('GOLDEN_REVIEW', 'FINALIZED', 'DECIDE_REVIEW')
     if run.workflow_state not in states or not run.cluster_revision:
         conflict('CLUSTERS_NOT_READY', state=run.workflow_state)
-    generation = db.query(WorkflowGeneration).filter_by(run_id=run.id, revision=run.cluster_revision).one()
+    generation = db.query(WorkflowGeneration).options(defer(WorkflowGeneration.finalized_result)).filter_by(run_id=run.id, revision=run.cluster_revision).one()
     if not allow_stale and generation_context(db, run, generation)['stale']:
         conflict('CLUSTERS_NOT_READY', state=run.workflow_state)
     return generation

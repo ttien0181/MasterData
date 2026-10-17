@@ -40,5 +40,7 @@ export type PendingSelection = Selection & {ancestor_cluster_id?:string;ancestor
 export type DiscardedPendingSelection = {field:string;reason:string;actor_user_id:string;created_at:string;candidates:PendingSelection[]};
 export type GoldenRead = { read_only?:boolean; generation?:ClusterGeneration; cluster_id: string; cluster_revision: number; golden_revision: number; revision: number; status: 'DRAFT' | 'CONFIRMED' | 'FINALIZED'; fields: Record<string, GoldenField>; alternatives: Record<string, { source_record_id: string; source_system: string; value: unknown; auto_rule_available: boolean }[]>; selections: Record<string, Selection>; requires_manual_review?: string[];pending_selections?:Record<string,PendingSelection[]>;discarded_pending_selections?:DiscardedPendingSelection[];entity_id?:string };
 export type GoldenRevision = Mutation & { expected_cluster_revision: number; expected_golden_revision: number };
+export type GoldenIndexItem = {cluster_id:string;display_name:string;member_count:number;phone:unknown;email:unknown;status:GoldenRead['status'];review_fields:string[]};
+export type GoldenIndex = GenerationPage<GoldenIndexItem> & {summary:{total:number;confirmed:number;needs_review:number}};
 export type GoldenRequest = GoldenRevision & { selections: Record<string, Selection> };
 export type GoldenResult = { items: GoldenRead[]; workflow_revision: number; golden_revision: number };

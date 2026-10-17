@@ -89,6 +89,14 @@ def test_gemini_parse_skips_thought_and_joins_output_parts():
     assert usage == {'input': 4, 'output': 11}
 
 
+@pytest.mark.parametrize('parts', [[None], [42], {'text': '{}'}, None, []])
+def test_gemini_parse_rejects_malformed_or_missing_parts(parts):
+    from masterone.llm.gateway import _InvalidError, _parse
+    body = {'candidates': [{'content': {'parts': parts}, 'finishReason': 'STOP'}]}
+    with pytest.raises(_InvalidError):
+        _parse('gemini', body, 'test-model')
+
+
 def test_predispatch_denial_can_resume_without_replaying_a_dispatched_request(llm_factory, llm_settings, monkeypatch):
     from masterone.llm.policy import PolicyEnforcer
 
