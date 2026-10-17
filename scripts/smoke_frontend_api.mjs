@@ -5,8 +5,13 @@ import assert from 'node:assert/strict';
 
 const toURL = (source) => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
 const choices = toURL(stripTypeScriptTypes(readFileSync('frontend/src/lib/resolutionChoices.ts', 'utf8'), { mode: 'transform' }));
+const headers = toURL(stripTypeScriptTypes(readFileSync('frontend/src/lib/backendHeaders.ts', 'utf8'), { mode: 'transform' }));
+const base = toURL(stripTypeScriptTypes(readFileSync('frontend/src/lib/apiBase.ts', 'utf8'), { mode: 'transform' }));
 const source = stripTypeScriptTypes(readFileSync('frontend/src/lib/api.ts', 'utf8'), { mode: 'transform' });
-const api = await import(toURL(source.replaceAll('"./resolutionChoices"', JSON.stringify(choices))));
+const api = await import(toURL(source
+  .replaceAll('"./resolutionChoices"', JSON.stringify(choices))
+  .replaceAll('"./backendHeaders"', JSON.stringify(headers))
+  .replaceAll('"./apiBase"', JSON.stringify(base))));
 api.setCsrfToken(process.env.SMOKE_CSRF);
 const run = process.env.SMOKE_RUN;
 assert.equal((await api.getBackendHealth()).status, 'ok');

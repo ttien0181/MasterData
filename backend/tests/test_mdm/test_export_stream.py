@@ -16,7 +16,7 @@ from fastapi import HTTPException
 from masterone.auth.models import User
 from masterone.config import get_settings
 from masterone.db.base import Base
-from masterone.mdm.export_stream import COLUMNS, create_export, rss_peak
+from masterone.mdm.export_stream import COLUMNS, create_export, export_readiness, rss_peak
 from masterone.mdm.models import (
     ResolutionAuditEvent,
     ResolutionExport,
@@ -27,7 +27,7 @@ from masterone.mdm.models import (
     ResolutionRun,
 )
 from masterone.storage.object_store import LocalObjectStore
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from tests.test_mdm.test_resolution_items import seed_run
@@ -73,6 +73,34 @@ def test_batches_schema_coverage_and_resources(prepared, monkeypatch, batch):
         assert metrics["upload_duration_seconds"] >= 0
         assert set(metrics["stage_duration_seconds"]) == {"readiness", "write_validate", "upload_verify", "total"}
     assert not list(Path(get_settings().export_artifact_dir).glob("build-*"))
+
+
+def test_readiness_fetches_source_rows_by_batch(prepared, monkeypatch):
+    client, run_id, _ = prepared
+    monkeypatch.setattr(get_settings(), "export_batch_rows", 100)
+    with client.session_factory.begin() as db:
+        for index in range(20):
+            member_ids = [f"batch-{index}-a", f"batch-{index}-b"]
+            for record_id in member_ids:
+                db.add(ResolutionRecord(id=record_id, run_id=run_id, file_id="file-items",
+                    external_id=record_id, source_system="CRM",
+                    raw_fields={"name": "An", "phone": "", "email": "", "address": ""},
+                    normalized_fields={}))
+            db.add(ResolutionProposal(id=f"batch-proposal-{index}", run_id=run_id,
+                member_record_ids=member_ids, golden_fields={"fields": {"name": {"value": "An"}}},
+                status="AUTO_READY", origin="AUTO"))
+    source_selects = []
+    with client.session_factory() as db:
+        def count_source_selects(_connection, _cursor, statement, _parameters, _context, _executemany):
+            if statement.lstrip().lower().startswith("select") and "from mdm_resolution_records" in statement.lower():
+                source_selects.append(statement)
+
+        event.listen(db.bind, "before_cursor_execute", count_source_selects)
+        try:
+            assert export_readiness(db, run_id)["can_export"] is True
+        finally:
+            event.remove(db.bind, "before_cursor_execute", count_source_selects)
+    assert len(source_selects) <= 2
 
 
 def test_overrides_win_over_selected_source(prepared):

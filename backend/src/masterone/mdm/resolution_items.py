@@ -148,14 +148,23 @@ def list_items(db: Session, run_id: str, bucket: str, offset: int, limit: int,
     if bucket == "merge":
         query = db.query(ResolutionProposal).filter(ResolutionProposal.run_id == run_id,
                                                      ResolutionProposal.status.in_((*ELIGIBLE, STAGED_CONFLICT)))
+        staged = db.query(ResolutionPair).filter_by(run_id=run_id, staged_for_merge=True)
         if origin:
             if origin not in {"AUTO", "REVIEW"}:
                 raise HTTPException(422, "Nguồn item không hợp lệ")
             query = query.filter_by(origin=origin)
-        total = query.count()
+        staged_count = 0 if origin == "AUTO" else staged.count()
+        total = staged_count + query.count()
+        staged_rows = ([] if origin == "AUTO" else staged.order_by(ResolutionPair.id)
+                       .offset(offset).limit(limit).all()) if offset < staged_count else []
+        entries = [{"id": f"staged:{row.id}", "bucket": bucket, "kind": "pair", "origin": "REVIEW",
+                    "member_record_ids": [row.left_record_id, row.right_record_id], "pair_count": 1,
+                    "status": "STAGED_FOR_MERGE"} for row in staged_rows]
+        remaining = limit - len(entries)
+        proposal_offset = max(0, offset - staged_count)
         rows = query.order_by(sql_case((ResolutionProposal.status == STAGED_CONFLICT, 0), else_=1),
-                              ResolutionProposal.id).offset(offset).limit(limit).all()
-        entries = [{"id": row.id, "bucket": bucket, "kind": "proposal", "origin": row.origin,
+                              ResolutionProposal.id).offset(proposal_offset).limit(remaining).all() if remaining else []
+        entries += [{"id": row.id, "bucket": bucket, "kind": "proposal", "origin": row.origin,
                     "member_record_ids": row.member_record_ids, "pair_count": 0,
                     "label": row.golden_fields.get("fields", {}).get("name", {}).get("value", ""),
                     "status": row.status}
@@ -237,13 +246,20 @@ def get_item(db: Session, run_id: str, bucket: str, item_id: str, signature_hash
                 "merge_blocked_reason": "Nhóm liên quan có cặp Không gộp."
                 if any(_is_blocked(pair) for pair in _internal_pairs(db, run_id, related)) else None}
     elif bucket == "merge":
-        row = db.get(ResolutionProposal, item_id)
-        if row is None or row.run_id != run_id or row.status not in (*ELIGIBLE, STAGED_CONFLICT):
-            raise HTTPException(404, "Item không còn ở tab Gộp")
-        members, kind, origin = row.member_record_ids, "proposal", row.origin
-        meta = {"reason": row.decision_reason, "status": row.status,
-                "merge_blocked_reason": "Cụm còn cặp Không gộp; cần tách trước khi xuất CSV."
-                if row.status == STAGED_CONFLICT else None}
+        if item_id.startswith("staged:"):
+            row = db.get(ResolutionPair, item_id.removeprefix("staged:"))
+            if row is None or row.run_id != run_id or not row.staged_for_merge:
+                raise HTTPException(404, "Cặp không còn chờ kiểm tra")
+            members, kind, origin = [row.left_record_id, row.right_record_id], "pair", "REVIEW"
+            meta = {"status": "STAGED_FOR_MERGE", "reason": row.triage_reason}
+        else:
+            row = db.get(ResolutionProposal, item_id)
+            if row is None or row.run_id != run_id or row.status not in (*ELIGIBLE, STAGED_CONFLICT):
+                raise HTTPException(404, "Item không còn ở tab Gộp")
+            members, kind, origin = row.member_record_ids, "proposal", row.origin
+            meta = {"reason": row.decision_reason, "status": row.status,
+                    "merge_blocked_reason": "Cụm còn cặp Không gộp; cần tách trước khi xuất CSV."
+                    if row.status == STAGED_CONFLICT else None}
     elif bucket == "no_merge":
         row = db.get(ResolutionPair, item_id)
         if row is None or row.run_id != run_id or not (row.pair_decision in {"NON_MATCH", "NOT_MERGEABLE"}
@@ -514,10 +530,12 @@ def export_readiness(db: Session, run_id: str, submitted_choices: dict | None = 
 
 
 def create_export(db: Session, run_id: str, actor_user_id: str, acknowledge_unreviewed: bool,
-                  submitted_choices: dict | None = None, *, commit: bool = True, export_id=None):
+                  submitted_choices: dict | None = None, *, commit: bool = True, export_id=None,
+                  verified_readiness=None):
     from masterone.mdm.export_stream import create_export as streamed_export
     return streamed_export(db, run_id, actor_user_id, acknowledge_unreviewed,
-                           submitted_choices, commit=commit, export_id=export_id)
+                           submitted_choices, commit=commit, export_id=export_id,
+                           verified_readiness=verified_readiness)
 
 
 def source_csv(db: Session, run_id: str):

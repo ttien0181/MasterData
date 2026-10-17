@@ -115,5 +115,5 @@ export type ResolutionSplitPreview = {
 };
 export type ResolutionPreview = {
   preview_id: string; status: string; eligible_count: number; review_required_count: number;
-  separate_record_count: number; estimated_output_rows: number; policy_version: string; expires_at: string;
+    accepted_pair_count?: number; separate_record_count: number; estimated_output_rows: number; policy_version: string; expires_at: string;
 };

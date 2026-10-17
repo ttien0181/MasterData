@@ -45,6 +45,7 @@ def compute_payload(db: Session, run: ResolutionRun) -> dict:
         "review_cases": len(_review_groups(db, run_id)),
         "manual": db.query(ResolutionProposal).filter_by(run_id=run_id, status="REVIEW_REQUIRED").count(),
     }
+    counts["auto"] += db.query(ResolutionPair).filter_by(run_id=run_id, staged_for_merge=True).count()
     counts["review"] = counts["review_cases"] + counts["manual"]
     counts["review_pairs"] = pending_pairs(db, run_id).count()
     counts["hard_blocked"] = db.query(ResolutionPair).filter_by(run_id=run_id, pair_decision="NOT_MERGEABLE").count()

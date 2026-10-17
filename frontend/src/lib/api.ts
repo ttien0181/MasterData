@@ -18,7 +18,15 @@ export class ApiError extends Error {
 }
 
 function errorMessage(detail: unknown, status: number) {
-  return typeof detail === "string" ? detail : `Yêu cầu thất bại (${status})`;
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object" && "reason" in detail) {
+    const conflict = detail as { reason: string; blocked_pair_ids?: string[]; examples?: string[][] };
+    if (conflict.reason === "MERGE_CONFLICT")
+      return `Nhóm đã chọn chứa cặp không được gộp${conflict.blocked_pair_ids?.length ? `: ${conflict.blocked_pair_ids.slice(0, 5).join(", ")}` : ""}. Hãy đưa cặp liên quan trở lại Cần xem xét.`;
+    if (conflict.reason === "GROUP_TOO_LARGE") return "Nhóm gộp vượt giới hạn số bản ghi. Hãy giảm số cặp được chọn.";
+    if (conflict.reason === "CLUSTER_GUARD_FAILED") return "Nhóm gộp chứa liên kết không được gộp. Hãy kiểm tra lại trước khi xuất CSV.";
+  }
+  return `Yêu cầu thất bại (${status})`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -189,6 +197,14 @@ export const getPairCategories = (runId: string) => request<PairCategory[]>(`/ru
 export const decideReviewPair = (runId: string, pairId: string, decision: "merge" | "no_merge", revision: number) =>
   request<{ pair_id: string; proposal_id: string | null; affected_record_count: number }>(
     `/runs/${runId}/review-pairs/${pairId}/decision`, { method: "POST", body: JSON.stringify({ decision, revision }) });
+export type StagePairsSelection = { all_matching: boolean; pair_ids: string[]; excluded_ids: string[];
+  primary_group?: string; subgroup?: string };
+export const stageReviewPairs = (runId: string, selection: StagePairsSelection) =>
+  request<{ staged_count: number }>(`/runs/${runId}/review-pairs/stage`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(selection),
+  });
+export const unstageReviewPair = (runId: string, pairId: string) =>
+  request<{ pair_id: string }>(`/runs/${runId}/review-pairs/${pairId}/unstage`, { method: "POST" });
 export function getResolutionItems(runId: string, bucket: ItemBucket, options: { offset?: number; limit?: number; origin?: string; primary_group?: string; subgroup?: string; signature_hash?: string } = {}) {
   const query = new URLSearchParams();
   Object.entries(options).forEach(([key, value]) => { if (value !== undefined) query.set(key, String(value)); });

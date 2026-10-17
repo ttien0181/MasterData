@@ -100,6 +100,35 @@ def batches(query, size, budget=None):
             budget.check()
 
 
+def proposal_record_batches(db, query, size, budget=None):
+    """Load source rows once per bounded proposal batch instead of once per group."""
+    proposals = batches(query, size, budget)
+    while True:
+        page = []
+        source_count = 0
+        for proposal in proposals:
+            page.append(proposal)
+            source_count += len(proposal.member_record_ids)
+            if source_count >= size:
+                break
+        if not page:
+            break
+        member_ids = {rid for proposal in page for rid in proposal.member_record_ids}
+        records = {}
+        ordered_ids = sorted(member_ids)
+        for start in range(0, len(ordered_ids), 500):
+            for row in db.query(ResolutionRecord).filter(
+                    ResolutionRecord.id.in_(ordered_ids[start:start + 500])).all():
+                records[row.id] = row
+        for proposal in page:
+            members = proposal.member_record_ids
+            if (len(set(members)) != len(members) or
+                    any(rid not in records or records[rid].run_id != proposal.run_id for rid in members)):
+                raise HTTPException(409, "Nguồn bị thiếu hoặc trùng trong nhóm sẽ gộp")
+            yield proposal, sorted((records[rid] for rid in members),
+                                   key=lambda row: (row.source_system, row.external_id, row.id))
+
+
 @contextmanager
 def index(settings):
     root = Path(settings.export_artifact_dir)
@@ -159,7 +188,7 @@ def review_index(db, run_id, state, budget):
 
 
 def readiness(db, run_id, choices, state, budget):
-    from masterone.mdm.resolution_items import _choice_state, _is_blocked, _options, _records, _valid_choices
+    from masterone.mdm.resolution_items import _choice_state, _is_blocked, _options, _valid_choices
     choices = choices or {}
     blockers, missing = [], []
     count = 0
@@ -172,7 +201,7 @@ def readiness(db, run_id, choices, state, budget):
             result["fields"] = fields
         return result
 
-    for proposal in batches(db.query(ResolutionProposal).filter(
+    for proposal, source_rows in proposal_record_batches(db, db.query(ResolutionProposal).filter(
             ResolutionProposal.run_id == run_id, ResolutionProposal.status.in_(("AUTO_READY", "REVIEW_APPROVED"))), size, budget):
         count += 1
         if len(proposal.member_record_ids) > budget.settings.export_max_group_records:
@@ -185,11 +214,12 @@ def readiness(db, run_id, choices, state, budget):
                 overlap = True
         if overlap:
             blockers.append(blocker(proposal, "OVERLAP", "Cụm có bản ghi trùng với cụm khác; cần kiểm tra lại."))
-        options = _options(_records(db, proposal.member_record_ids))
+        options = _options(source_rows)
         selected = choices.get(proposal.id, {})
         if not isinstance(selected, dict) or _valid_choices(selected, options) != selected:
             raise HTTPException(422, "Lựa chọn nguồn của item không hợp lệ")
-        _, fields = _choice_state(options, proposal.origin, selected)
+        _, fields = _choice_state(options, "AUTO" if proposal.golden_fields.get("_default_unselected")
+                                  else proposal.origin, selected)
         fields = [f for f in fields if f not in proposal.golden_fields.get("_golden_override", {})]
         if fields:
             missing.append({"item_id": proposal.id, "fields": fields})
@@ -247,7 +277,7 @@ def file_chunks(path, budget):
 
 
 def create_export(db, run_id, actor_user_id, acknowledge_unreviewed,
-                  submitted_choices=None, *, commit=True, export_id=None):
+                  submitted_choices=None, *, commit=True, export_id=None, verified_readiness=None):
     settings = get_settings()
     started = time.monotonic()
     # Same run lock is held through verification/publication, including preview execution.
@@ -268,7 +298,8 @@ def create_export(db, run_id, actor_user_id, acknowledge_unreviewed,
     export_id = export_id or str(uuid4())
     with index(settings) as (state, budget, directory):
         try:
-            ready = readiness(db, run_id, submitted_choices, state, budget)
+            ready = verified_readiness if verified_readiness is not None else readiness(
+                db, run_id, submitted_choices, state, budget)
             budget.metrics["stage_duration_seconds"]["readiness"] = time.monotonic() - started
             if not ready["can_export"] or (ready["pending_review_count"] and not acknowledge_unreviewed):
                 raise HTTPException(409, "Còn cụm cần xử lý hoặc xác nhận trước khi xuất CSV")
@@ -312,12 +343,12 @@ def create_export(db, run_id, actor_user_id, acknowledge_unreviewed,
                             stream.flush()
                             budget.check()
 
-                    from masterone.mdm.resolution_items import FIELDS, _records
-                    for proposal in batches(db.query(ResolutionProposal).filter(
+                    from masterone.mdm.resolution_items import FIELDS
+                    for proposal, records in proposal_record_batches(db, db.query(ResolutionProposal).filter(
                             ResolutionProposal.run_id == run_id,
-                            ResolutionProposal.status.in_(("AUTO_READY", "REVIEW_APPROVED"))), settings.export_batch_rows, budget):
-                        records = _records(db, proposal.member_record_ids)
-                        if any(r.run_id != run_id for r in records) or not records:
+                            ResolutionProposal.status.in_(("AUTO_READY", "REVIEW_APPROVED"))),
+                            settings.export_batch_rows, budget):
+                        if not records:
                             raise HTTPException(409, "Nguồn bị thiếu trong bản xuất")
                         by_id = {r.id: r for r in records}
                         gf = EngineResultAdapter.golden(proposal.golden_fields)["fields"]

@@ -156,6 +156,11 @@ def load_cannot_links(db, run_id):
 
 def require_manual_merge(db, run_id, members):
     """Re-evaluate even absent candidate edges; reviewer may override soft policy."""
+    require_manual_merges(db, run_id, [members])
+
+
+def require_manual_merges(db, run_id, member_groups):
+    """Share run-wide evidence when several groups are checked in one preview."""
     if not enabled():
         return
     from fastapi import HTTPException
@@ -166,16 +171,17 @@ def require_manual_merge(db, run_id, members):
     records = {r.id: {"id": r.id, "entity_type": r.entity_type, "raw_fields": r.raw_fields,
                      "normalized_fields": r.normalized_fields, "quality_flags": r.quality_flags}
                for r in rows}
-    if not set(members) <= records.keys():
-        raise HTTPException(409, "Missing merge members")
     frequencies = value_frequencies(list(records.values()))
     links = load_cannot_links(db, run_id)
     saved = {tuple(sorted((p.left_record_id, p.right_record_id))): p for p in
              db.query(ResolutionPair).filter_by(run_id=run_id).all()}
-    for a, b in combinations(sorted(members), 2):
-        review = ReviewDecision(saved[(a, b)].user_decision) if (a, b) in saved else ReviewDecision()
-        result = compare_and_score_rule(records[a], records[b], set(), frequencies, links)
-        _, _, eligibility = evaluate_prepared(result, records[a], records[b], review=review,
-                                              negative_pairs=links)
-        if not eligibility.manual_allowed:
-            raise HTTPException(409, "Merge forbidden by current constraints or saved review decision")
+    for members in member_groups:
+        if not set(members) <= records.keys():
+            raise HTTPException(409, "Missing merge members")
+        for a, b in combinations(sorted(members), 2):
+            review = ReviewDecision(saved[(a, b)].user_decision) if (a, b) in saved else ReviewDecision()
+            result = compare_and_score_rule(records[a], records[b], set(), frequencies, links)
+            _, _, eligibility = evaluate_prepared(result, records[a], records[b], review=review,
+                                                  negative_pairs=links)
+            if not eligibility.manual_allowed:
+                raise HTTPException(409, "Merge forbidden by current constraints or saved review decision")

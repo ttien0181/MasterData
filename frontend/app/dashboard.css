@@ -591,6 +591,9 @@ button:focus-visible, input:focus-visible, select:focus-visible,
 .review-detail-dialog .review-golden-summary dd small { font-size: 12px; line-height: 1.6; }
 .review-detail-dialog .review-close-button { width: 40px; height: 40px; }
 .pair-filters label { flex-basis: 300px; }
+.resolution-review-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; padding: 14px 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.resolution-select-all { display: inline-flex; align-items: center; gap: 10px; font-weight: 650; }
+.resolution-select-all input { width: 18px; height: 18px; accent-color: var(--primary); }
 .pair-comparison-dialog { display: flex; flex-direction: column; width: min(1100px, 100%); max-height: calc(100dvh - 40px); overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-md); }
 .pair-comparison-heading { display: flex; flex: none; justify-content: space-between; align-items: start; gap: 20px; padding: 22px 26px; border-bottom: 1px solid var(--line); }
 .pair-comparison-heading h2 { margin: 5px 0; font-size: 23px; }
