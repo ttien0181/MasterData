@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     semantic_address_enabled: bool = False
     session_workflow_enabled: bool = False
     demo_fast_mode: bool = False
+    workflow_bulk_batch_rows: int = Field(default=500, ge=100, le=1000)
     matching_profile_registry_enabled: bool = False
     steward_feedback_capture_enabled: bool = False
     advanced_evaluation_registry_enabled: bool = False

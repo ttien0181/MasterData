@@ -51,12 +51,24 @@ def decision_snapshot(db, run, *, allow_partial=False):
         if baseline.get('execution_identity') != digest(config_identity(run.policy_version)):
             if not assessed or baseline.get('execution_identity') != digest(config_identity(baseline['policy_version'])):
                 conflict('WORKFLOW_CONFIG_CHANGED')
+    from sqlalchemy import Text, case, cast
+
     from masterone.mdm.pipeline.decision_semantics import load_cannot_links
-    from masterone.mdm.workflow_assessment_reads import effective_result
-    pair_rows = db.query(WorkflowPair).filter_by(run_id=run_id).order_by(WorkflowPair.id).all()
-    snapshot = {'records': assessed['records'] if assessed else records, 'pairs': [effective_result(p) for p in pair_rows], 'profile': effective_profile,
-        'overlays': {p.id: p.decision for p in pair_rows},
-        'review_reasons': {p.id: p.review_reason for p in pair_rows if p.review_reason},
+    from masterone.mdm.workflow_assessment_reads import effective_column
+    # A frozen snapshot consumes only the effective JSON, not baseline +
+    # assessment + advice ORM payloads for every candidate at the same time.
+    pairs, overlays, reasons = [], {}, {}
+    effective_json = case((cast(WorkflowPair.assessment, Text) == 'null', WorkflowPair.baseline), else_=effective_column())
+    rows = db.query(WorkflowPair.id, effective_json, WorkflowPair.decision, WorkflowPair.review_reason).filter(
+        WorkflowPair.run_id == run_id).order_by(WorkflowPair.id).yield_per(512)
+    for pair_id, effective, decision, reason in rows:
+        pairs.append(effective)
+        overlays[pair_id] = decision
+        if reason:
+            reasons[pair_id] = reason
+    snapshot = {'records': assessed['records'] if assessed else records, 'pairs': pairs, 'profile': effective_profile,
+        'overlays': overlays,
+        'review_reasons': reasons,
         'negative_pairs': sorted(load_cannot_links(db, run_id)), 'policy_version': baseline['policy_version'] if assessed else run.policy_version,
         'workflow_revision': revision, 'decision_revision': run.decision_revision,
         'input_hash': baseline['input_hash'], 'profile_identity': baseline['profile_identity']}

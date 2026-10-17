@@ -111,6 +111,19 @@ class GroupApprovalRequest(Mutation):
     preview_operation_id: str | None = Field(default=None, min_length=1, max_length=36)
 
 
+class GroupApprovalItem(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    record_ids: list[str] = Field(min_length=2, max_length=100)
+    reason: str = Field(min_length=1, max_length=500)
+    fingerprint: str | None = Field(default=None, min_length=64, max_length=64)
+    preview_operation_id: str | None = Field(default=None, min_length=1, max_length=36)
+
+
+class BulkGroupApprovalRequest(Mutation):
+    expected_decision_revision: int = Field(ge=0)
+    groups: list[GroupApprovalItem] = Field(min_length=1, max_length=50)
+
+
 class Selection(BaseModel):
     model_config = ConfigDict(extra='forbid')
     selection_mode: Literal['SOURCE_CHOICE', 'MANUAL_OVERRIDE', 'DISCARD_PENDING']

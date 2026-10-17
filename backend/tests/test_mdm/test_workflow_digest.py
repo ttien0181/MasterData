@@ -97,3 +97,11 @@ def test_sequence_digest_matches_array_without_materialization():
     values = [{'name': 'Nguyễn An', 'empty': None}, [0, 1.25, False], 'quote"']
     for items in ([], values):
         assert digest_sequence(iter(items)) == digest(items)
+
+
+def test_canonical_chunks_encode_small_subtrees_in_bounded_blocks():
+    value = [{'id': str(i), 'fields': {'name': 'Nguyễn\n"', 'score': 1.25}} for i in range(1100)]
+    chunks = list(generation_staging._canonical_chunks(value))
+    assert b''.join(chunks) == encode(value)
+    assert len(chunks) < 4 * len(value)
+    assert max(map(len, chunks)) <= 32768

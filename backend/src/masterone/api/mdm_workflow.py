@@ -13,6 +13,7 @@ from masterone.mdm.workflow_contracts import (
     AutomationApplyRequest,
     AutomationShadowRequest,
     AutoRequest,
+    BulkGroupApprovalRequest,
     BulkRequest,
     ClusterScopeRequest,
     DecisionRequest,
@@ -300,6 +301,13 @@ def approve_group(run_id: str, body: GroupApprovalRequest, db: Session = Depends
                   auth: CurrentSession = Depends(require_mutation_capability('approve_pair'))):
     from masterone.mdm.workflow_group_approvals import approve_group as approve
     return approve(db, run_id, body, auth.user.id)
+
+
+@router.post('/group-approvals/bulk', response_model=OperationRead)
+def approve_group_batch(run_id: str, body: BulkGroupApprovalRequest, db: Session = Depends(get_session),
+                        auth: CurrentSession = Depends(require_mutation_capability('approve_pair'))):
+    from masterone.mdm.workflow_group_approvals import approve_groups
+    return approve_groups(db, run_id, body, auth.user.id)
 
 
 @router.get('/cluster-preview/{operation_id}/groups')

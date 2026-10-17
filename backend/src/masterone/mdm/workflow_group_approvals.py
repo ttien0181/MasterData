@@ -68,7 +68,7 @@ def validate_group(snapshot, record_ids, *, review_reason=None, frequencies=None
                                allow_missing_evidence=True)
 
 
-def group_snapshot(db, run, record_ids):
+def group_snapshot(db, run, record_ids, *, _context=None):
     """Read bounded reviewed members and internal evidence, using current profile."""
     from masterone.mdm.generation_staging import config_identity
     from masterone.mdm.models import ResolutionEngineSelection, ResolutionNegativeEdge, ResolutionPair, ResolutionRecord
@@ -79,16 +79,29 @@ def group_snapshot(db, run, record_ids):
     from masterone.mdm.workflow_models import WorkflowPair
     from masterone.mdm.workflow_service import conflict
 
-    assessment = active_assessment(db, run.id)
-    selected = db.get(ResolutionEngineSelection, run.id)
-    if selected is None:
-        conflict('WORKFLOW_PROFILE_CHANGED')
-    configuration = assessment.configuration if assessment else {}
-    if assessment and (configuration['source_profile_identity'] != digest(selected.configuration)
-                       or configuration['assessment_code_identity'] != assessment_code_identity()):
-        conflict('WORKFLOW_CONFIG_CHANGED')
-    profile = configuration['profile'] if assessment else selected.configuration
-    policy_version = configuration['policy_version'] if assessment else run.policy_version
+    if _context:
+        if (_context['session'] is not db or _context['transaction'] is not db.get_transaction()
+                or _context['run_id'] != run.id):
+            raise ValueError('GROUP_BATCH_CONTEXT_CHANGED')
+        assessment, profile, policy_version, execution_identity = (_context[k] for k in
+            ('assessment', 'profile', 'policy_version', 'execution_identity'))
+    else:
+        assessment = active_assessment(db, run.id)
+        selected = db.get(ResolutionEngineSelection, run.id)
+        if selected is None:
+            conflict('WORKFLOW_PROFILE_CHANGED')
+        configuration = assessment.configuration if assessment else {}
+        if assessment and (configuration['source_profile_identity'] != digest(selected.configuration)
+                           or configuration['assessment_code_identity'] != assessment_code_identity()):
+            conflict('WORKFLOW_CONFIG_CHANGED')
+        profile = configuration['profile'] if assessment else selected.configuration
+        policy_version = configuration['policy_version'] if assessment else run.policy_version
+        from masterone.mdm.engine_adapter import engine_context
+        with engine_context(profile):
+            execution_identity = digest(config_identity(policy_version))
+        if _context is not None:
+            _context.update(session=db, transaction=db.get_transaction(), run_id=run.id,
+                assessment=assessment, profile=profile, policy_version=policy_version, execution_identity=execution_identity)
     rows = db.query(ResolutionRecord).filter(ResolutionRecord.run_id == run.id, ResolutionRecord.id.in_(record_ids)).order_by(ResolutionRecord.id).all()
     records = [assessment_record(record_payload(r)) if assessment else record_payload(r) for r in rows]
     pairs = db.query(WorkflowPair).filter(WorkflowPair.run_id == run.id,
@@ -100,9 +113,6 @@ def group_snapshot(db, run, record_ids):
     legacy_links = db.query(ResolutionPair).filter(ResolutionPair.run_id == run.id,
         ResolutionPair.user_decision == 'NON_MATCH', ResolutionPair.left_record_id.in_(record_ids),
         ResolutionPair.right_record_id.in_(record_ids)).all()
-    from masterone.mdm.engine_adapter import engine_context
-    with engine_context(profile):
-        execution_identity = digest(config_identity(policy_version))
     from masterone.mdm.workflow_structure import structure_links
     scoped_structure_links = {p for p in structure_links(db, run.id) if set(p) <= set(record_ids)}
     return {'records': records, 'pairs': [effective_result(p) for p in pairs],
@@ -114,7 +124,7 @@ def group_snapshot(db, run, record_ids):
             'execution_identity': execution_identity, 'policy_version': policy_version}
 
 
-def approve_group(db, run_id, request, actor):
+def approve_group(db, run_id, request, actor, *, commit=True, _run=None, _context=None):
     started = perf_counter()
     performance = {}
     from masterone.mdm.engine_adapter import engine_context
@@ -135,7 +145,7 @@ def approve_group(db, run_id, request, actor):
     payload = request.model_dump(exclude=excluded)
     if not request.reason.strip():
         conflict('GROUP_APPROVAL_REASON_REQUIRED')
-    run = enabled_run(db, run_id, actor)
+    run = _run if _run is not None else enabled_run(db, run_id, actor)
     prior = replay(db, run_id, 'GROUP_APPROVAL', request.request_id, payload)
     if prior:
         return operation_read(prior)
@@ -143,7 +153,7 @@ def approve_group(db, run_id, request, actor):
     if run.workflow_state != 'DECIDE_REVIEW' or active_operation(db, run_id):
         conflict('DECISIONS_LOCKED')
     ids = sorted(request.record_ids)
-    snapshot = group_snapshot(db, run, ids)
+    snapshot = group_snapshot(db, run, ids, _context=_context)
     performance['snapshot_seconds'] = perf_counter() - started
     if bool(request.fingerprint) != bool(request.preview_operation_id):
         conflict('GROUP_REVIEW_RECEIPT_REQUIRED')
@@ -203,5 +213,41 @@ def approve_group(db, run_id, request, actor):
     run.decision_revision += 1
     run.workflow_revision += 1
     audit(db, run, actor, 'WORKFLOW_GROUP_APPROVAL', op.result)
-    db.commit()
+    db.commit() if commit else db.flush()
     return operation_read(op)
+
+
+def approve_groups(db, run_id, request, actor):
+    """Atomic bounded batch; each group retains its normal receipt and audit."""
+    from uuid import NAMESPACE_URL, uuid5
+
+    from masterone.mdm.matching_foundation_service import authorize
+    from masterone.mdm.workflow_contracts import GroupApprovalRequest
+    from masterone.mdm.workflow_service import audit, check_revision, enabled_run, new_operation, operation_read, replay
+    payload = request.model_dump()
+    run = enabled_run(db, run_id, actor)
+    prior = replay(db, run_id, 'BULK_GROUP_APPROVAL', request.request_id, payload)
+    if prior:
+        return operation_read(prior)
+    authorize(db, actor, 'approve_pair', owner=run.owner_user_id)
+    check_revision(run, payload)
+    try:
+        op = new_operation(db, run, 'BULK_GROUP_APPROVAL', request.request_id, payload, actor)
+        # Synchronous receipt is invisible until the whole transaction commits;
+        # it must not look like a queued worker that blocks its own children.
+        op.status, op.stage = 'COMPLETED', 'completed'
+        context, items = {}, []
+        for index, item in enumerate(request.groups):
+            child = GroupApprovalRequest(**item.model_dump(),
+                request_id=str(uuid5(NAMESPACE_URL, op.id + ':' + str(index))),
+                expected_workflow_revision=run.workflow_revision, expected_decision_revision=run.decision_revision)
+            items.append(approve_group(db, run_id, child, actor, commit=False, _run=run, _context=context))
+        op.status, op.stage = 'COMPLETED', 'completed'
+        op.result = {'approved_count': len(items), 'items': items,
+                     'workflow_revision': run.workflow_revision, 'decision_revision': run.decision_revision}
+        audit(db, run, actor, 'WORKFLOW_BULK_GROUP_APPROVAL', {'operation_id': op.id, 'approved_count': len(items)})
+        db.commit()
+        return operation_read(op)
+    except Exception:
+        db.rollback()
+        raise

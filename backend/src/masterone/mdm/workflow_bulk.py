@@ -45,6 +45,7 @@ def validate_soft_group(db, run, payload):
 
 def run_bulk_decisions(operation_id, factory, progress):
     """Persist each bounded batch and its cursor together; retry never repeats writes."""
+    from masterone.config import get_settings
     from masterone.mdm.job_queue import guard
     from masterone.mdm.workflow_jobs import finish, job_identity
     from masterone.mdm.workflow_models import WorkflowConflict, WorkflowPair
@@ -61,7 +62,7 @@ def run_bulk_decisions(operation_id, factory, progress):
                 applied=0, accepted=0, skipped=0, blocked=0, unit='pairs')
             if checkpoint.get('last_pair_id'):
                 query = query.filter(WorkflowPair.id > checkpoint['last_pair_id'])
-            rows = query.limit(100).all()
+            rows = query.limit(get_settings().workflow_bulk_batch_rows).all()
             if not rows:
                 finish(db, run, op, task, 'DECIDE_REVIEW')
                 done = True

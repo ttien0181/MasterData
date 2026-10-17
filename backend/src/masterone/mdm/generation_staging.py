@@ -93,6 +93,42 @@ def digest_sequence(values):
     return result.hexdigest()
 
 
+def _fits_json_chunk(value):
+    """Conservative upper bound before using the C JSON encoder on a subtree.
+
+    Bound traversal, nesting and escaped bytes; oversized leaves and containers
+    continue through the original streaming encoder. No large encoding is tried.
+    """
+    remaining, nodes = 32768, 1024
+    pending = [(value, 0)]
+    while pending:
+        current, depth = pending.pop()
+        nodes -= 1
+        if nodes < 0 or depth > 48:
+            return False
+        if isinstance(current, str):
+            remaining -= 6 * len(current) + 2
+        elif isinstance(current, (dict, list, tuple)):
+            if len(current) > nodes:
+                return False
+            remaining -= 4 * len(current) + 2
+            if isinstance(current, dict):
+                for key, item in current.items():
+                    pending.append((key, depth + 1))
+                    pending.append((item, depth + 1))
+            else:
+                pending.extend((item, depth + 1) for item in current)
+        elif isinstance(current, int):
+            remaining -= current.bit_length() // 3 + 8
+        elif current is None or isinstance(current, float):
+            remaining -= 32
+        else:
+            return False
+        if remaining < 0:
+            return False
+    return True
+
+
 def _canonical_chunks(value):
     """The encode() byte contract, emitted with bounded leaf/container traversal.
 
@@ -129,6 +165,10 @@ def _canonical_chunks(value):
         else:
             current = event[1]
             if isinstance(current, (dict, list, tuple)):
+                if _fits_json_chunk(current):
+                    yield json.dumps(current, sort_keys=True, ensure_ascii=False,
+                                     separators=(',', ':'), allow_nan=False).encode('utf-8')
+                    continue
                 identity = id(current)
                 if identity in active:
                     raise ValueError('Circular reference detected')

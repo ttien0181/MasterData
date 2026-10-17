@@ -20,8 +20,7 @@ from uuid import uuid4
 import httpx
 import pyarrow.parquet as pq
 import yaml
-
-from qa_api_multiagent import ROOT, FIELDS, checked, docker_python, metrics, provision, save, sha
+from qa_api_multiagent import FIELDS, ROOT, checked, docker_python, metrics, provision, save, sha
 
 
 def fixture(dataset, out):
@@ -166,7 +165,7 @@ with Session(create_engine(get_settings().active_mdm_database_url)) as db:
     return result
 
 
-def run_case(client,dataset,out, *, model_scope=None, advice_limit=20, explanation_samples=10):
+def run_case(client,dataset,out, *, model_scope=None, advice_limit=20, explanation_samples=10, group_batch_size=50):
     out.mkdir(exist_ok=True)
     source,receipt,truth,positive,external=fixture(dataset,out)
     path=out/'report.json'
@@ -288,17 +287,25 @@ with Session(create_engine(get_settings().active_mdm_database_url)) as db:
                     assert tuple(sorted(conflict['record_ids'])) in eligible, 'NO_NON_TRUTH_GROUP_APPROVAL'
                 s=state()
                 workflow_revision,decision_revision=s['workflow_revision'],s['decision_revision']
-                for index,conflict in enumerate(conflicts):
-                    checked(client.post(workflow+'/group-approvals',json={
-                        'request_id':str(uuid4()),'expected_workflow_revision':workflow_revision,
-                        'expected_decision_revision':decision_revision,'record_ids':sorted(conflict['record_ids']),
-                        'reason':'Explicit scripted synthetic QA truth group approval; existing reviewed exception flow'}))
-                    workflow_revision+=1
-                    decision_revision+=1
-                    if index%10==0:
-                        print('GROUP review',index+1,'/',len(conflicts),flush=True)
-                        save(out/'group-review-progress.json',{'approved_this_attempt':index+1,'total_this_attempt':len(conflicts),'epoch':time.time()})
-                return {'approved_this_attempt':len(conflicts),'reason':'CLUSTER_BRIDGE_MISSING_EVIDENCE'}
+                requests = 0
+                for start in range(0,len(conflicts),group_batch_size):
+                    batch = conflicts[start:start+group_batch_size]
+                    body = {'request_id':str(uuid4()), 'expected_workflow_revision':workflow_revision,
+                        'expected_decision_revision':decision_revision, 'groups':[
+                            {'record_ids':sorted(conflict['record_ids']),
+                             'reason':'Explicit scripted synthetic QA truth group approval; existing reviewed exception flow'}
+                            for conflict in batch]}
+                    result = checked(client.post(workflow+'/group-approvals/bulk',json=body))
+                    # Reuse the exact request identity to test durable batch replay.
+                    assert checked(client.post(workflow+'/group-approvals/bulk',json=body)) == result, 'GROUP_BATCH_REPLAY'
+                    workflow_revision=result['result']['workflow_revision']
+                    decision_revision=result['result']['decision_revision']
+                    requests += 1
+                    approved = start + len(batch)
+                    print('GROUP review',approved,'/',len(conflicts),flush=True)
+                    save(out/'group-review-progress.json',{'approved_this_attempt':approved,'total_this_attempt':len(conflicts),'epoch':time.time()})
+                return {'approved_this_attempt':len(conflicts),'reason':'CLUSTER_BRIDGE_MISSING_EVIDENCE',
+                        'batch_requests':requests,'replay_requests':requests,'batch_size':group_batch_size}
             if state()['workflow_state']=='DECIDE_REVIEW' and state().get('cluster_revision',0)>0:
                 stage('scripted-group-review',groups)
             if state()['workflow_state']=='DECIDE_REVIEW':
@@ -360,6 +367,7 @@ def main():
     parser.add_argument('--model-scope',choices=['none','synthetic-benchmark'],default='none')
     parser.add_argument('--advice-limit',type=int,choices=range(0,21),default=20)
     parser.add_argument('--explanation-samples',type=int,choices=range(0,11),default=10)
+    parser.add_argument('--group-batch-size',type=int,choices=range(1,51),default=50)
     args=parser.parse_args()
     out=args.output.resolve()
     assert out.is_relative_to((ROOT/'artifacts/full10k-20261016').resolve())
@@ -384,7 +392,7 @@ def main():
             dataset=dataset.resolve()
             reports.append(run_case(client,dataset,out/dataset.parts[-3],
                 model_scope=None if args.model_scope=='none' else args.model_scope,
-                advice_limit=args.advice_limit,explanation_samples=args.explanation_samples))
+                advice_limit=args.advice_limit,explanation_samples=args.explanation_samples,group_batch_size=args.group_batch_size))
             save(out/'summary.json',{'runs':reports})
 
 
