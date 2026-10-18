@@ -4,7 +4,7 @@
 
 **Không** mở public issue cho lỗ hổng bảo mật.
 
-Dùng [GitHub Security Advisories](https://github.com/AI20K-Build-Phase/starter-code-template/security/advisories/new)
+Dùng [GitHub Security Advisories](https://github.com/AI20K-Build-Phase-Cohort-4/P-119/security/advisories/new)
 để báo cáo riêng tư. Vui lòng mô tả: loại lỗ hổng, file/dòng liên quan, các bước
 tái hiện, và tác động bạn đánh giá.
 
@@ -25,15 +25,14 @@ Làm theo thứ tự này:
    Lưu ý việc này viết lại history, mọi người phải re-clone.
 4. Báo maintainer để kiểm tra fork và cache của GitHub.
 
-## Bảo mật khi dùng template này
+## Bảo mật khi phát triển và vận hành
 
-- **Không bao giờ** đặt key thật vào `.env.example` — file đó được commit.
-  Key thật đặt trong `.env` (đã có trong `.gitignore`).
-- `AI_LOG_API_KEY` là key **riêng của từng đội**, lấy từ link mời của BTC.
-  Không chia sẻ, không commit.
+- **Không bao giờ** đặt key thật vào `.env.example`, `.env.qa.example` hay `.env.production.example` — các file này được commit. Key thật đặt trong `.env`, `.env.qa`, `.env.production` (đã có trong `.gitignore`).
+- `AI_LOG_API_KEY` là key **riêng của từng đội/thành viên** để ghi log dùng công cụ AI cho chương trình; khác với `GEMINI_API_KEY`, `OPENROUTER_API_KEY` và `EMBEDDING_OPENROUTER_API_KEY` của ứng dụng. Không chia sẻ, không commit.
+- Dữ liệu khách hàng thật không được nạp vào bản demo và không được commit. Dữ liệu trong repo (`masterone_test/`, `eval/data/`, dữ liệu demo) là dữ liệu giả lập.
+- Ứng dụng chưa có xác minh email, khôi phục mật khẩu, MFA và chống đăng ký tự động; không mở Internet công khai khi chưa bổ sung (xem [docs/OPERATIONS.md](docs/OPERATIONS.md#4-triển-khai-production)).
 - Trước khi push, tự kiểm tra nhanh:
   ```bash
   git diff --cached | grep -iE "api[_-]?key|secret|token|password"
   ```
-- Thư mục `.ai-log/` chứa nội dung prompt của bạn. Kiểm tra trước khi public
-  một repo có sẵn log — prompt có thể vô tình chứa dữ liệu nhạy cảm.
+- Thư mục `.ai-log/` chứa nội dung prompt của bạn. Kiểm tra trước khi public một repo có sẵn log — prompt có thể vô tình chứa dữ liệu nhạy cảm.

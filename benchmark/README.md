@@ -19,7 +19,13 @@ CRLF conversion currently makes the checked-in local test sources differ from
 the manifest's LF byte hashes; this is reported as an integrity failure, not
 silently bypassed.
 
-For the production-pipeline diagnostic E0 and its data/label limitations, see
-[M0 protocol](../docs/advanced-matching/evaluation-protocol.md) and
-[E0 report](../docs/advanced-matching/baseline-e0.md). These diagnostics use a
-fresh isolated application sandbox and do not change the standalone CLI scope.
+For measurements of the production MasterOne pipeline (candidate recall, rule/embedding
+evidence, TC1/TC3 end-to-end runs) and their data/label limitations, see
+[docs/EVALUATION.md](../docs/EVALUATION.md). Those diagnostics use an isolated
+application sandbox and do not change the standalone CLI scope.
+
+Protocol and metric definitions: [evaluation_protocol.md](docs/evaluation_protocol.md),
+[metrics_spec.md](docs/metrics_spec.md); baselines and algorithms:
+[baselines_G2.md](docs/baselines_G2.md), [algorithms_G3.md](docs/algorithms_G3.md);
+architecture: [architecture_G0.md](docs/architecture_G0.md); frozen dataset audit:
+[dataset_audit.md](docs/dataset_audit.md).

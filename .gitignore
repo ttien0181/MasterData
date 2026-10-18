@@ -68,11 +68,11 @@ out/
 
 sandbox/
 
-# Local perf scratch (PERFORMANCE_PLAN: không commit)
+# Local perf scratch (không commit)
 scratch/
 /perf_baseline.json
 
-# Local perf scratch (PERFORMANCE_PLAN: không commit)
+# Local perf scratch (không commit)
 scratch/
 /perf_baseline.json
 
@@ -206,23 +206,9 @@ backend/data/export-artifacts/
 !CONTRIBUTING.md
 !CODE_OF_CONDUCT.md
 !SECURITY.md
-!docs/superpowers/specs/2026-10-13-cluster-handoff-design.md
-!docs/superpowers/plans/2026-10-13-cluster-handoff.md
-!docs/benchmark/cluster-handoff-20261013.md
-!docs/benchmark/cluster-handoff-20261013-validation.md
-!docs/benchmark/cluster-calibration-20261013.md
-!docs/superpowers/specs/2026-10-13-pair-correctness-design.md
-!docs/superpowers/plans/2026-10-13-pair-correctness.md
-!docs/benchmark/pair-correctness-stage1-20261013.md
-!docs/superpowers/specs/2026-10-13-review-effort-design.md
-!docs/superpowers/plans/2026-10-13-review-effort.md
-!docs/benchmark/review-effort-stage2-20261013.md
-!docs/superpowers/specs/2026-10-13-pair-quality-design.md
-!docs/superpowers/plans/2026-10-13-pair-quality.md
-!docs/benchmark/pair-quality-stage3-20261013.md
-!docs/superpowers/specs/2026-10-13-pair-automation-design.md
-!docs/superpowers/plans/2026-10-13-pair-automation.md
-!docs/benchmark/pair-automation-stage4-20261013.md
+!ARCHITECTURE.md
+!docs/*.md
+!docs/reference/*.md
 
 # Local patch exports and SQLite scratch databases
 /backend/encoder/wheels/*.whl
@@ -235,25 +221,11 @@ backend/data/export-artifacts/
 
 # Reproducible review reports; local browser caches remain untracked.
 /frontend/artifacts/
-!docs/superpowers/specs/2026-10-13-cluster-quality-scale-design.md
-!docs/superpowers/plans/2026-10-13-cluster-quality-scale.md
-!docs/benchmark/cluster-quality-scale-20261013-baseline.md
-!docs/benchmark/cluster-quality-scale-20261014-review.md
 
-# Review branch: keep plans and generated benchmark reports locally.
-/docs/superpowers/plans/2026-10-13-*.md
-/docs/superpowers/specs/2026-10-13-*.md
-/docs/benchmark/*-20261013*.md
+# Review branch: keep generated benchmark reports locally.
 /docs/benchmark/*.json
-!docs/advanced-matching/FULL10K_TC1_TC3_20261016.vi.md
-!docs/artifact-retention.md
-/docs/benchmark/cluster-quality-scale-20261013-baseline.md
 
 # Disposable local pytest/review workspaces; never track machine-specific pointers.
 /.pytest-tmp*/
 /.tmp-review*/
 
-# Preserve documentation for the workspace cleanup and the original template.
-!docs/project-cleanup.md
-!docs/archive/README_boilerplate.md
-!docs/ONEMASTER_OPTIMIZATION_REPORT.md

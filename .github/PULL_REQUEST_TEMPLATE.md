@@ -1,22 +1,20 @@
 ## Thay đổi gì
 
-<!-- Mô tả ngắn gọn. Nếu sửa Technical Book, ghi rõ chương nào và vì sao. -->
+<!-- Mô tả ngắn gọn: vấn đề, cách giải quyết, phạm vi ảnh hưởng. -->
 
 ## Loại thay đổi
 
 - [ ] `fix` — sửa lỗi
 - [ ] `feat` — tính năng mới
-- [ ] `docs` — **nội dung Technical Book** (`docs/guide/**`) → cần review của @AI20K-Build-Phase/book-maintainers
-- [ ] `chore` / `refactor` / `test`
+- [ ] `perf` / `refactor`
+- [ ] `docs` — chỉ tài liệu
+- [ ] `chore` / `test`
 
 ## Checklist
 
-- [ ] `ruff check .` sạch
-- [ ] `pytest` xanh
-- [ ] **Không có API key / token / credential** trong diff (kể cả `.env.example`)
-- [ ] Nếu đụng `docs/guide/**`: đã kiểm tra nội dung hiển thị đúng và link không chết
-
-<!--
-Nhắc: nội dung docs/guide/ merge vào main sẽ được đồng bộ lên
-https://phoenix.note.transformerlabs.ai/technical-book
--->
+- [ ] `ruff check backend/src backend/tests backend/migrations` sạch
+- [ ] pytest các file liên quan xanh; `npm --prefix frontend test`, `lint`, `build` xanh nếu đụng frontend
+- [ ] Nếu có migration: additive, có test, đã ghi vào PR cách nâng cấp
+- [ ] Nếu đổi hành vi engine: nằm sau cờ cấu hình, ghim theo run, có test hồi quy
+- [ ] Đã cập nhật tài liệu liên quan (`README.md`, `docs/`, `ARCHITECTURE.md`)
+- [ ] **Không có API key / token / credential / dữ liệu khách hàng thật** trong diff

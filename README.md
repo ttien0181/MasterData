@@ -1,172 +1,158 @@
 # MasterOne
 
-MasterOne là MVP khử trùng dữ liệu khách hàng. Data Steward nạp nhiều CSV trong một lần chạy, xem các cụm hệ thống đề xuất gộp hoặc cần người duyệt, chọn giá trị chuẩn, xem trước và xuất một CSV kết quả. Hệ thống tìm trùng **trong cùng nguồn và giữa các nguồn**; mỗi lần nạp là một run độc lập.
+MasterOne là ứng dụng web **khử trùng dữ liệu khách hàng (Entity Resolution) có người duyệt (HITL)**. Data Steward nạp nhiều file CSV từ các hệ thống nguồn (CRM, ERP, BILL, CSV chăm sóc khách hàng); hệ thống tìm các hồ sơ có thể thuộc cùng một khách hàng, **đề xuất** nhưng không tự gộp, để người duyệt quyết định từng cặp, rà soát từng nhóm, chọn giá trị đúng cho **hồ sơ đại diện (Golden Record)** và xuất CSV kết quả.
 
-- Frontend: Next.js trong `frontend/`
-- Backend: FastAPI trong `backend/src/masterone/`
-- Lưu trữ ứng dụng: PostgreSQL local hoặc Neon qua SQLAlchemy, quản lý schema bằng Alembic; SQLite dùng cho test cô lập.
-- AI qua API: embedding OpenRouter `openai/text-embedding-3-small`; Gemini cho advice cặp mơ hồ và giải thích; OpenRouter chat dự phòng theo policy.
-- Compose hiện hữu bật `AI_API_ONLY=true`: chặn E5/Splink local. Rule, retrieval, Coordinator và clustering chạy bằng thuật toán local, không gọi LLM.
+Đề bài gốc: *Entity Resolution cho khách hàng và nhà cung cấp* (DATA-17). Phạm vi sản phẩm hiện tại: **chỉ gộp thực thể loại PERSON**; ORGANIZATION được nhận dạng nhưng bị chặn gộp theo chính sách.
 
-Thiết kế, giới hạn tự động hóa và lệnh nghiệm thu nhỏ: [API-only 16/10/2026](docs/advanced-matching/API_ONLY_IMPLEMENTATION_20261016.vi.md).
+| Thành phần | Công nghệ |
+|---|---|
+| Frontend | Next.js 16, React 19, TanStack Query (`frontend/`) |
+| Backend | FastAPI, SQLAlchemy 2, Alembic (`backend/src/masterone/`) |
+| Worker | Tiến trình riêng `masterone.mdm.resolution_worker`, nhận việc qua hàng đợi trong database |
+| Lưu trữ | PostgreSQL (local hoặc Neon); Cloudflare R2 (tùy chọn) cho file upload và artifact; SQLite chỉ dùng cho test cô lập |
+| AI qua API | Embedding OpenRouter `openai/text-embedding-3-small` (tùy chọn theo phiên); Gemini cho giải thích và tư vấn cặp, OpenRouter chat là dự phòng; mọi lời gọi đi qua cổng chính sách `llm/policy.py` |
 
-Xem [sơ đồ components và luồng dữ liệu](docs/architecture_diagram.md), [bằng chứng 5 ca manual](eval/results/report.md) và [hướng dẫn phát triển chi tiết](MDM_DEV.md).
+Luật và truy hồi ứng viên chạy bằng thuật toán cục bộ, không gọi LLM. AI **không** có quyền gộp: chỉ cung cấp bằng chứng và lời giải thích để người duyệt quyết định.
+
+## Luồng sử dụng
+
+Mỗi lần tải lên tạo một **phiên (run)** độc lập, không đối chiếu với phiên cũ. Mỗi phiên có bốn bước, tương ứng bốn tab trong `/app/sessions/{runId}`:
+
+| Bước | Tab | Việc của người dùng | Hệ thống làm gì |
+|---|---|---|---|
+| 0 | `/app/uploads/new` | Chọn tối đa 10 CSV, xem kiểm tra, bấm tạo phiên (có thể bật tùy chọn embedding) | Tải lên theo phần (resumable), kiểm tra header/ID/nguồn, chuẩn hóa, lưu bản ghi nguồn |
+| 1 | **Hồ sơ khách hàng** (`data`) | Xem tổng quan: hồ sơ theo nguồn, mức độ đầy đủ thông tin, các điểm cần kiểm tra; duyệt danh sách hồ sơ | Chuẩn bị dữ liệu (`PREPARE`) rồi tự chạy phân loại (`DECIDE`) |
+| 2 | **Các cặp hồ sơ khách hàng** (`decisions`) | Duyệt cặp theo nhóm: **Đồng ý gộp** / **Không gộp** / Từ chối ghép cặp (Deny) / Hoãn; duyệt hàng loạt có xem trước | Sinh ứng viên, chấm bằng rule (kèm bằng chứng embedding nếu bật), phân loại cặp thành nhóm A/B/C/BLOCKED; Gemini chỉ giải thích khi người dùng yêu cầu |
+| 3 | **Các nhóm hồ sơ khách hàng** (`clusters`) | Rà soát nhóm đã nối từ các cặp được chấp nhận, xác nhận nhóm 2–20 thành viên (nhóm 21–100 qua luồng riêng) | Tạo nhóm (`CLUSTER`) kiểm tra ràng buộc cứng và liên kết gián tiếp |
+| 4 | **Hồ sơ đại diện** (`golden`) | Chọn giá trị đúng cho từng trường, xác nhận, chọn hồ sơ cần xuất | Đề xuất Golden bằng quy tắc survivorship, xuất CSV |
+
+Tab *Tiện ích* (`utilities`) hiển thị lịch sử xử lý, các lần xuất và quy định áp dụng. Chi tiết thao tác: [Hướng dẫn sử dụng](docs/USER_GUIDE.md).
+
+### Chế độ demo
+
+Màn hình đăng nhập có nút **Demo sản phẩm** (bật bằng `DEMO_ENABLED=true`). Hệ thống tạo tài khoản tạm vai trò Steward, nạp sẵn bộ dữ liệu giả lập `customer-demo-v1` (4 file × 500 hồ sơ, tải được ở trang Tổng quan) và hướng dẫn từng bước kèm trợ lý MasterBot. Phiên demo tự hết hạn (mặc định 2 giờ, nhàn rỗi 1 giờ) và bị dọn bởi tác vụ retention.
 
 ## Chạy local
 
-Quản lý dung lượng benchmark và dọn file tạm: [hướng dẫn artifacts](docs/artifact-retention.md).
-Các file lịch sử đã được sắp xếp lại: [nhật ký dọn workspace](docs/project-cleanup.md).
-
-Cần [uv](https://docs.astral.sh/uv/) (quản lý Python 3.11+, không cần cài Python toàn hệ thống), Node.js 22+ và npm. Mở PowerShell ở **thư mục gốc repo**:
+Cần [uv](https://docs.astral.sh/uv/) (quản lý Python 3.11+), Node.js 22+ và PostgreSQL (local hoặc Neon). Mở PowerShell ở **thư mục gốc repo**:
 
 ```powershell
 uv venv --python 3.11 .venv
 uv pip install --python .venv -r requirements.txt
 npm --prefix frontend ci
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
-uv run --python .venv python -m masterone.mdm.migrate
 ```
 
-Mở hai terminal tại thư mục gốc:
+Sửa `.env` (xem bảng dưới), rồi migrate và chạy ba tiến trình:
 
 ```powershell
+uv run --python .venv python -m masterone.mdm.migrate          # đưa schema lên revision mới nhất
+
 # Terminal 1: API
 uv run --python .venv python -m uvicorn masterone.main:app --reload --port 8001
-```
-
-```powershell
-# Terminal 2: giao diện
+# Terminal 2: worker (bắt buộc, API không tự xử lý pipeline)
+uv run --python .venv python -m masterone.mdm.resolution_worker
+# Terminal 3: giao diện
 npm --prefix frontend run dev
 ```
 
-Mở <http://localhost:3000> (hoặc cổng Next.js in ra), đăng ký/đăng nhập và vào `/app`. API ở <http://localhost:8001>; tài liệu endpoint ở <http://localhost:8001/docs>. Chạy backend từ thư mục gốc để tìm đúng `.env`, migration và database. Khi có migration mới, dừng backend, sao lưu database, rồi chạy lại lệnh migrate trước khi khởi động.
+Mở <http://localhost:3000>, đăng ký, nâng vai trò lên Steward (xem [Vai trò](#vai-trò-và-quyền)), đăng nhập và vào `/app`. Swagger của API ở <http://localhost:8001/docs>. Luôn chạy backend từ thư mục gốc để tìm đúng `.env` và migration; app từ chối khởi động nếu schema chưa ở revision mới nhất (hiện là `0039_optional_embedding`). Dùng `localhost` thống nhất cho cả frontend và API vì cookie phiên bị từ chối khi lẫn `127.0.0.1`.
 
-### Biến môi trường
+### Docker Compose
 
-Tạo `.env` từ `.env.example`; **không commit key hoặc file `.env`**.
+`docker-compose.yml` (project `p119-session-qa`) chạy `backend`, `worker`, `frontend` và tùy chọn `database` (profile `local-db`). Cần file `.env.qa` (mẫu: `.env.qa.example`); backend và worker dùng chung image, mount `./data`. Triển khai thật dùng `docker-compose.production.yml` + Caddy: xem [Vận hành](docs/OPERATIONS.md).
+
+```powershell
+docker compose run --rm backend python -m masterone.mdm.migrate
+docker compose up -d --build
+```
+
+### Biến môi trường chính
+
+Không commit `.env`. Danh sách đầy đủ và các cờ tính năng: [docs/OPERATIONS.md](docs/OPERATIONS.md#cấu hình).
 
 | Biến | Công dụng |
 |---|---|
-| `MDM_DATABASE_PROFILE` | Chọn `local` hoặc `neon`; mặc định là `neon`. Đổi biến này rồi khởi động lại backend để chuyển database. |
-| `MDM_DATABASE_URL_LOCAL` | Chuỗi kết nối PostgreSQL cài trên máy, mặc định cổng 5432. Chỉ dùng với profile `local`. |
-| `MDM_DATABASE_URL` | Chuỗi kết nối PostgreSQL cloud, ví dụ Neon. Chỉ dùng với profile `neon`; không commit thông tin đăng nhập. |
-| `CORS_ORIGINS` | Origin frontend được phép trong production; local development chấp nhận origin loopback. |
-| `AUTH_CSRF_SECRET` | Bắt buộc là bí mật ít nhất 32 ký tự khi `APP_ENV=production`. |
-| `GEMINI_API_KEY` | Chỉ cần khi dùng nút giải thích bằng Gemini hoặc bật đối chiếu địa chỉ. |
-| `GEMINI_MODEL` | Model Gemini; mặc định `gemini-3.5-flash-lite`. |
-| `SEMANTIC_ADDRESS_ENABLED` | Mặc định `false`; khi bật, Gemini hỗ trợ so sánh địa chỉ ở một số cặp Cần review, không tự quyết định gộp. |
-| `SEMANTIC_ADDRESS_MAX_PAIRS_PER_RUN`, `SEMANTIC_ADDRESS_TIMEOUT_SECONDS` | Giới hạn số cặp và thời gian chờ khi dùng đối chiếu địa chỉ. |
-| `AI_LOG_API_KEY` | Key ghi log quá trình dùng công cụ AI cho chương trình; tách biệt với `GEMINI_API_KEY` của ứng dụng. |
+| `MDM_DATABASE_PROFILE`, `MDM_DATABASE_URL_LOCAL`, `MDM_DATABASE_URL` | Chọn `local` hoặc `neon` (mặc định trong code là `neon`) và chuỗi kết nối tương ứng |
+| `AUTH_CSRF_SECRET` | Bí mật ≥ 32 ký tự, bắt buộc khi `APP_ENV=production` |
+| `CORS_ORIGINS` | Origin frontend được phép (development tự chấp nhận loopback) |
+| `SESSION_WORKFLOW_ENABLED` | **Phải là `true`** để dùng luồng phiên bốn bước; mặc định `false`, và `.env.example` chưa đặt biến này |
+| `MATCHING_PROFILE_REGISTRY_ENABLED` | `true` để mỗi phiên được gắn matching profile (cần cho xử lý và demo) |
+| `WORKFLOW_AUTO_PROCESS` | `true` để tự chạy `DECIDE` sau khi chuẩn bị dữ liệu xong |
+| `DEMO_ENABLED` | Bật nút Demo sản phẩm |
+| `AI_API_ONLY` | `true` chặn E5/Splink cục bộ; Compose luôn đặt `true` |
+| `EMBEDDING_OPENROUTER_API_KEY`, `ADVANCED_MATCHING_AGENTS_ENABLED` | Bật tùy chọn embedding khi tạo phiên |
+| `GEMINI_API_KEY`, `LLM_ENABLED`, `LLM_EXPLANATION_ENABLED`, `LLM_APPROVED_PROVIDERS`, `LLM_APPROVED_MODELS` | Cho phép giải thích và tư vấn cặp; mặc định **tắt, từ chối mọi lời gọi** cho đến khi được duyệt tường minh |
+| `R2_ENDPOINT_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | Lưu file upload và artifact trên Cloudflare R2; bỏ trống thì dùng `UPLOAD_STAGING_DIR`/`WORKFLOW_ARTIFACT_DIR` trên đĩa |
+| `NEXT_PUBLIC_API_BASE_URL` | Địa chỉ API cho frontend khi khác `localhost:8001` |
 
-`OPENAI_API_KEY` còn trong file mẫu cho agent template; luồng MDM không cần key này. Nếu frontend phải gọi API ở địa chỉ khác, đặt `NEXT_PUBLIC_API_BASE_URL` cho Next.js trước khi chạy (ví dụ trong `frontend/.env.local`).
+## Dữ liệu đầu vào
 
-#### Chuyển giữa PostgreSQL local và Neon
+CSV UTF-8, tối đa **10 file mỗi phiên**; ứng dụng không đặt giới hạn dòng hay dung lượng (file được tải theo phần 8 MiB và xử lý streaming). Header được ánh xạ qua hợp đồng `p119_input_v1` (`backend/src/masterone/mdm/input_contract_v1.json`):
 
-Tạo database/user local bằng pgAdmin hoặc `psql` (thay mật khẩu bằng mật khẩu riêng):
+| Trường | Bắt buộc | Tên cột chấp nhận (không phân biệt hoa thường) |
+|---|---|---|
+| `source_record_id` | Có | `source_record_id`, `record_id`, `id`, `contact_id`, `debtor_code`, `account_number`, `MA_KH` |
+| `source_system` | Có, giá trị `CRM`/`ERP`/`BILL`/`CSV` | `source_system`, `source` |
+| `name` | Có | `full_name`, `name`, `contact_name`, `legal_name`, `HO_TEN`, … |
+| `phone`, `email`, `dob`, `address`, `government_id` | Không | `phone`/`phone_number`/`mobile`/`DIEN_THOAI`, `email`, `dob`/`date_of_birth`/`NGAY_SINH`, `address`/`raw_address`/`DIA_CHI`, `government_id`/`cccd`/`cmnd` |
+| Metadata xác minh (`government_id_verified`, `phone_verified`, …) | Không | Tên cột đúng như hợp đồng; thiếu metadata nghĩa là **chưa xác minh**, không suy diễn |
+| `entity_id` / `ground_truth` | Không | Chỉ để đánh giá offline; không đi vào thuật toán |
 
-```sql
-CREATE ROLE masterone WITH LOGIN PASSWORD 'YOUR_LOCAL_PASSWORD';
-CREATE DATABASE masterone OWNER masterone;
-```
+Cột ngoài hợp đồng được giữ ở `extra_fields`. ID bản ghi phải duy nhất trong một phiên. Bộ mẫu để thử: `masterone_test/crm.csv`, `erp.csv`, `bill.csv` (7.000 dòng mỗi file, cột kiểu `record_id,entity_id,source,…`) và dữ liệu demo tải từ `/api/v1/mdm/demo/files/masterone-du-lieu-mau.zip`. **Không nạp dữ liệu khách hàng thật vào bản demo.**
 
-Trong `.env`, đặt `MDM_DATABASE_PROFILE=local` và `MDM_DATABASE_URL_LOCAL=postgresql+psycopg://masterone:YOUR_LOCAL_PASSWORD@localhost:5432/masterone`. Chạy migration một lần bằng `.venv\Scripts\python.exe -m masterone.mdm.migrate`, rồi khởi động lại backend.
+## Vai trò và quyền
 
-Để quay lại Neon, đặt `MDM_DATABASE_PROFILE=neon`, giữ URL Neon trong `MDM_DATABASE_URL`, rồi khởi động lại backend. Mỗi database có tài khoản, run và dữ liệu riêng; đổi profile chỉ đổi nơi backend đọc/ghi, không sao chép dữ liệu giữa hai database.
-
-## Dữ liệu mẫu và luồng sử dụng
-
-Bộ CSV của Linh ở `masterone_test/crm.csv`, `erp.csv`, `bill.csv`. Mỗi file có 7.000 dòng; có thể chọn cả ba cùng lúc. Các cột bắt buộc là `record_id,source,name,phone,email,address`; `source` nhận `CRM`, `ERP` hoặc `BILL`. `record_id` phải duy nhất trong một run. Cột `entity_id`, nếu có, chỉ dùng để đánh giá offline; `pairs.csv` không phải đầu vào ứng dụng. Giới hạn hiện tại: tối đa 10 file/run, 5 MiB và 10.000 dòng/file.
-
-1. **Nạp dữ liệu:** chọn một hoặc nhiều CSV; backend kiểm tra, lưu bản ghi nguồn và chuẩn hóa trường.
-2. **Phân giải:** worker sinh cặp ứng viên, so sánh bằng rule/policy và tạo cụm. Tổng quan cho biết số item **Chờ gộp** và **Cần review**.
-3. **Duyệt:** mở item Cần review để so sánh, có thể đưa sang Chờ gộp hoặc đánh dấu Không gộp. Nút Gemini chỉ tạo lời giải thích hỗ trợ.
-4. **Chốt giá trị:** trong Chờ gộp, mở item và chọn nguồn cho các trường khác nhau. Item từ review có thể mang theo lựa chọn đã lưu trong trình duyệt.
-5. **Xuất:** xem trước số dòng, xử lý các item bị chặn, xác nhận cảnh báo nếu còn review chưa duyệt, rồi tải CSV. Bản ghi chưa duyệt được giữ riêng. Lịch sử lưu snapshot để tải lại và xem trước/sau.
-
-## Ví dụ truy vấn API
-
-`GET /health` không cần đăng nhập:
+Đăng ký luôn tạo tài khoản `VIEWER` (chỉ xem). Muốn thao tác, quản trị viên đổi vai trò offline (mặc định dry-run, thêm `--apply` để ghi):
 
 ```powershell
-Invoke-RestMethod http://localhost:8001/health
+uv run --python .venv python -m masterone.auth.manage_role --user-email you@example.com --expected-role VIEWER --role STEWARD
 ```
 
-Các truy vấn sau cần cookie phiên của tài khoản đã đăng nhập; dùng browser/DevTools hoặc <http://localhost:8001/docs> với phiên phù hợp. Thay `{run_id}` bằng ID run của bạn.
-
-| Yêu cầu | Mục đích |
+| Vai trò | Quyền chính |
 |---|---|
-| `GET /api/v1/mdm/runs` | Liệt kê các lần nạp của tài khoản. |
-| `GET /api/v1/mdm/runs/{run_id}/overview` | Lấy trạng thái và số lượng trên Tổng quan. |
-| `GET /api/v1/mdm/runs/{run_id}/categories` | Lấy các nhóm trường hợp Cần review. |
-| `GET /api/v1/mdm/runs/{run_id}/items/review?limit=25` | Xem trang đầu của hàng đợi review. |
-| `GET /api/v1/mdm/runs/{run_id}/items/merge?limit=25` | Xem trang đầu của Chờ gộp. |
-| `GET /api/v1/mdm/runs/{run_id}/exports` | Xem các CSV snapshot trong Lịch sử. |
+| `VIEWER` | `read` |
+| `AUDITOR` | `read`, `read_audit` |
+| `STEWARD` | tạo/chạy phiên, duyệt (`approve_pair`, `reject_pair`), sửa Golden, giải thích AI, xuất dữ liệu, quản lý phiên, profile matching và ràng buộc cấu trúc |
+| `SENIOR_STEWARD` | Như Steward, thêm duyệt nhóm con D và tách bản ghi đã gộp (`selective_unmerge`) |
+| `POLICY_ADMIN` | `read`, `read_audit`, sửa/mô phỏng policy; **không** có quyền steward |
 
-Các request thay đổi dữ liệu cần cookie phiên, `Origin` hợp lệ và `X-CSRF-Token`; giao diện thực hiện các bước này. Hợp đồng request/response đầy đủ ở Swagger UI.
+Quyền luôn được kiểm tra ở backend; frontend chỉ ẩn/hiện nút. Phiên demo bị giới hạn ở tập quyền thao tác của Steward.
 
-## Kiểm thử và bằng chứng
+## Kiểm thử
 
 ```powershell
-uv run --python .venv python -m pytest backend/tests/ -q
+uv run --python .venv python -m pytest backend/tests/<file> -q   # nên chạy từng file; gom cả bộ rất chậm
 uv run --python .venv python -m ruff check backend/src backend/tests backend/migrations
-npm --prefix frontend test
-npm --prefix frontend run lint
+npm --prefix frontend test       # vitest
+npm --prefix frontend run lint   # tsc --noEmit
 npm --prefix frontend run build
+npm --prefix frontend run test:e2e   # Playwright, cần stack đang chạy
 ```
 
-[Báo cáo manual MVP](eval/results/report.md) liên kết ảnh chụp và CSV kết quả thực tế. Đây là bằng chứng thao tác sản phẩm; test tự động trong `backend/tests/` và `frontend/` kiểm tra hành vi code. Script `scripts/evaluate_linh_resolution.py` dùng để đo thuật toán offline, không thay thế 5 ca manual.
+CI (`.github/workflows/ci.yml`) chạy ruff, pytest `backend/tests/` và các lệnh frontend. Hướng dẫn chi tiết, bản đồ test và script: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
-### Phân loại cặp và tạo nhóm
+## Giới hạn hiện tại
 
-Accept cặp có xung đột mềm thuộc Group D cần lý do đối chiếu. `Không gộp` giữ riêng theo quyết định hiện tại; `Deny` xác nhận khác thực thể và tạo ràng buộc lâu dài. Cả hai đều ngăn nhóm chứa hai bản ghi trong lần tạo nhóm, kể cả qua liên kết gián tiếp.
+- Điểm matching là trọng số rule có điều chỉnh tần suất, **không phải xác suất đã hiệu chỉnh**. Gemini/embedding không tự quyết định gộp.
+- Chỉ PERSON được gộp; ORGANIZATION bị chặn theo chính sách. Nhóm gộp tối đa 20 thành viên (luồng riêng đến 100); nhóm lớn hơn bị chặn, không tự chia nhỏ.
+- Chất lượng đo trên dữ liệu **synthetic** của mentor (TC1/TC3), chưa phải nhãn người độc lập. Tự động gộp (`PAIR_AUTOMATION_ENABLED`) tắt mặc định; trên TC3 pipeline chưa tạo đề xuất gộp mức cao, chất lượng cuối phụ thuộc người duyệt. Xem [Đánh giá và bằng chứng](docs/EVALUATION.md).
+- Một worker và các tác vụ nặng được tuần tự hóa (`HEAVY_JOBS_SERIALIZED`); chưa chứng nhận tải đồng thời hoặc dữ liệu hàng trăm nghìn dòng.
+- Trước khi mở Internet công khai cần bổ sung xác minh email, khôi phục mật khẩu, MFA và chống đăng ký tự động.
+- Giao diện luôn tạo phiên `workflow_version=2` (bốn bước). Phiên `workflow_version=1` cũ chỉ còn xem được ở `/app/legacy` (chỉ đọc, trạng thái `LEGACY_READ_ONLY`).
 
-Trước khi tạo nhóm, giao diện chạy tác vụ xem trước và hiển thị độ phủ, thành viên dự kiến, xung đột và vùng còn chờ duyệt. Xem trước được gắn với snapshot quyết định; khi quyết định hoặc đánh giá thay đổi cần tính lại. Đủ độ phủ bản ghi không chứng minh chất lượng nhận dạng.
+## Tài liệu
 
-Ngoại lệ nhóm chỉ áp dụng cho đúng 2–20 thành viên đã được nối bằng các liên kết Accept, kèm lý do và lịch sử. Ngoại lệ có thể xác nhận các cặp nội bộ còn chờ nhưng vẫn giữ kiểm tra ràng buộc cứng, Deny, Không gộp, quy tắc nguồn và kích thước. Thay đổi thành viên hoặc bằng chứng liên quan làm mất hiệu lực của ngoại lệ.
+| Tài liệu | Nội dung |
+|---|---|
+| [docs/PRODUCT_REQUIREMENTS.md](docs/PRODUCT_REQUIREMENTS.md) | Yêu cầu sản phẩm (BA/PM): bài toán, persona, yêu cầu theo trạng thái triển khai, quy tắc nghiệp vụ, KPI, backlog |
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Hướng dẫn thao tác cho Data Steward |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Kiến trúc, module, máy trạng thái, mô hình dữ liệu |
+| [docs/MATCHING_ENGINE.md](docs/MATCHING_ENGINE.md) | Pipeline matching, nhóm A/B/C/BLOCKED, ràng buộc cứng, clustering, Golden |
+| [docs/API.md](docs/API.md) | Tham chiếu endpoint |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Cấu hình, triển khai, runbook, dọn dẹp |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Cấu trúc repo, kiểm thử, script, log AI |
+| [docs/EVALUATION.md](docs/EVALUATION.md) | Số đo chất lượng/hiệu năng và giới hạn |
+| [docs/reference/ENTITY_RESOLUTION_SPEC_v3.1.md](docs/reference/ENTITY_RESOLUTION_SPEC_v3.1.md) | Đặc tả thiết kế tham chiếu v3.1 (một phần chưa triển khai) |
 
-Luồng duyệt nhóm lớn riêng hỗ trợ 21–100 thành viên qua preview đã niêm phong,
-phân trang thành viên/bằng chứng và lý do xác nhận. Đây không phải mở rộng giới hạn
-của thao tác bulk thông thường; nhóm trên 100 vẫn bị chặn và không tự chia nhỏ.
-
-Chuỗi migration mới gồm `0030_review_reasons` → `0031_pair_automation` →
-`0032_generation_coverage`; chạy migration theo hướng dẫn cài đặt trước khi dùng
-backend/worker mới. Không cần tạo hay thay thế file Docker Compose.
-
-Kiểm chứng có môi trường SQLite riêng, tắt dịch vụ bên ngoài:
-
-```powershell
-./.venv/Scripts/python.exe -X utf8 scripts/run_merge_baseline.py --suite all --timeout 600
-npm.cmd --prefix frontend test
-npm.cmd --prefix frontend run lint
-npm.cmd --prefix frontend run build
-```
-
-[Hướng dẫn review backend và frontend](docs/benchmark/cluster-quality-scale-20261014-review.md)
-ghi cách kiểm thử, kết quả đã đo và phần còn dở. Báo cáo JSON sinh ra và tài liệu
-kế hoạch được giữ cục bộ; không cần các file này để chạy ứng dụng hay kiểm thử.
-
-## Phạm vi hiện tại
-
-Bản kiểm thử chất lượng nhóm/Golden và singleton ảo trên `Nam_Backup` có
-[hướng dẫn kiểm thử và phần còn dở](docs/benchmark/cluster-quality-scale-20261014-review.md).
-Nhánh Parquet hiện được giữ sau cờ `WORKFLOW_PARQUET_ENABLED=false`; đọc phạm vi
-trong báo cáo trước khi bật thử. Benchmark phiên này chỉ dùng TC1/10k theo yêu cầu.
-
-Các run không so khớp chéo nhau. Điểm matching là trọng số rule có điều chỉnh tần suất, **không phải xác suất đã hiệu chỉnh**. Compose API-only tắt inference Splink; benchmark local cũ chỉ được chạy khi chủ động tắt API-only. Gemini không tự quyết định gộp. MVP local dùng PostgreSQL và một worker backend; trước khi triển khai Internet công khai cần bổ sung xác minh email, khôi phục mật khẩu, MFA và chính sách chống đăng ký tự động. Không nạp dữ liệu khách hàng thật vào bản demo.
-
-## Cấu trúc repo và log phát triển
-
-- `backend/`: FastAPI, auth, MDM pipeline, migrations và pytest.
-- `frontend/`: Next.js và kiểm thử giao diện.
-- `masterone_test/`: CSV demo của Linh.
-- `docs/architecture_diagram.md`: sơ đồ hệ thống đang chạy.
-- `eval/results/`: bằng chứng manual và CSV xuất.
-- `scripts/`: đánh giá offline và hook ghi log AI.
-
-Nếu đội cần log việc dùng Codex/Claude/Gemini theo yêu cầu chương trình, mỗi thành viên đặt `AI_LOG_API_KEY` của mình trong `.env`, rồi cài hook một lần:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\setup_hooks.ps1
-```
-
-Hướng dẫn đầy đủ cho các hệ điều hành và công cụ khác ở [MDM_DEV.md](MDM_DEV.md) và `scripts/`. Đóng góp theo [CONTRIBUTING.md](CONTRIBUTING.md); dự án dùng [MIT](LICENSE).
+Đóng góp theo [CONTRIBUTING.md](CONTRIBUTING.md), báo lỗi bảo mật theo [SECURITY.md](SECURITY.md); dự án dùng giấy phép [MIT](LICENSE).

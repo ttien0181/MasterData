@@ -1,5 +1,7 @@
 # Bằng chứng kiểm thử manual — MasterOne MVP
 
+> **Phạm vi:** bằng chứng lịch sử của luồng **legacy v1** (Chờ gộp / Cần review) ngày 04/10/2026, không mô tả giao diện hiện tại (bốn bước theo phiên). Số đo hiện hành: [docs/EVALUATION.md](../../docs/EVALUATION.md).
+
 Ngày thực hiện: **04/10/2026**. Môi trường: frontend Next.js local, API FastAPI local, SQLite; dữ liệu demo `masterone_test/crm.csv`, `erp.csv`, `bill.csv` (mỗi file 7.000 dòng). Đây là **5 ca quan sát từ thao tác trên sản phẩm** do thành viên nhóm chụp lại; số liệu CSV bên dưới được đọc lại từ file đã xuất.
 
 | ID | Mục tiêu và thao tác | Mong đợi | Kết quả thực tế quan sát được | Kết luận | Bằng chứng |
