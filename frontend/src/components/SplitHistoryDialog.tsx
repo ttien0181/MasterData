@@ -43,7 +43,7 @@ export default function SplitHistoryDialog({ runId, exportId, onClose, onComplet
       await executeResolutionSplit(runId, exportId, preview.event_id, preview.separated.id,
                                    preview.version, requestId.current);
       await onCompleted();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Không tách được bản ghi"); }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Không tách được dòng thông tin"); }
     finally { setBusy(false); }
   }
 
@@ -51,16 +51,16 @@ export default function SplitHistoryDialog({ runId, exportId, onClose, onComplet
     <div className="card resolution-item-dialog split-history-dialog">
       <button type="button" className="dialog-close" aria-label="Đóng" onClick={onClose} disabled={busy}>×</button>
       <p className="section-kicker">LỊCH SỬ · TÁCH CHỌN LỌC</p>
-      <h2 id="split-heading">{preview ? "Xem trước khi tách" : "Chọn bản ghi cần tách"}</h2>
+      <h2 id="split-heading">{preview ? "Xem trước khi tách" : "Chọn dòng thông tin cần tách"}</h2>
       {error && <p role="alert" className="split-error">{error} <button type="button" className="button outline" onClick={() => void load()}>Thử lại</button></p>}
       {preview ? <div className="split-preview">
-        <p>Tách <b>{preview.separated.external_id}</b> ({preview.separated.name}) thành một bản ghi riêng.</p>
+        <p>Tách <b>{preview.separated.external_id}</b> ({preview.separated.name}) thành một dòng thông tin riêng.</p>
         <p>Nhóm còn lại: <b>{preview.retained.map((row) => row.external_id).join(" · ")}</b>.</p>
-        <p>CSV mới dự kiến có <b>{preview.estimated_output_rows.toLocaleString("vi-VN")}</b> dòng. Các nhóm gộp khác được giữ lại; liên kết giữa bản ghi tách và nhóm cũ sẽ bị chặn.</p>
+        <p>CSV mới dự kiến có <b>{preview.estimated_output_rows.toLocaleString("vi-VN")}</b> dòng. Các nhóm gộp khác được giữ lại; liên kết giữa dòng thông tin tách và nhóm cũ sẽ bị chặn.</p>
         <div className="split-actions"><button type="button" className="button outline" disabled={busy} onClick={() => setPreview(null)}>Quay lại</button>
           <button type="button" className="button primary" disabled={busy} onClick={() => void execute()}>{busy ? "Đang tách…" : "Xác nhận tách và tạo CSV mới"}</button></div>
       </div> : <>
-        <p className="muted-copy">Mỗi nhóm bên dưới là một kết quả gộp trong bản CSV mới nhất. Chọn một bản ghi nguồn để tách khỏi nhóm.</p>
+        <p className="muted-copy">Mỗi nhóm bên dưới là một kết quả gộp trong bản CSV mới nhất. Chọn một dòng thông tin nguồn để tách khỏi nhóm.</p>
         <form className="split-search" onSubmit={(event) => { event.preventDefault(); setOffset(0); setSearch(searchInput.trim()); }}>
           <input aria-label="Tìm theo tên khách hàng" placeholder="Tìm theo tên khách hàng…" value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)} />
@@ -68,7 +68,7 @@ export default function SplitHistoryDialog({ runId, exportId, onClose, onComplet
         </form>
         {busy && !history ? <p role="status">Đang tải nhóm gộp…</p> : history?.items.map((event) =>
           <article className="split-group" key={event.event_id}>
-            <div><strong>{event.name || "Khách hàng"}</strong><small>{event.member_count} bản ghi</small></div>
+            <div><strong>{event.name || "Khách hàng"}</strong><small>{event.member_count} dòng thông tin</small></div>
             <div className="split-members">{event.members.map((member) => <button type="button" className="button outline" key={member.id}
               disabled={busy} onClick={() => void inspect(event.event_id, member.id)} title={`Tách ${member.external_id}`}>
               Tách {member.source_system} · {member.external_id}

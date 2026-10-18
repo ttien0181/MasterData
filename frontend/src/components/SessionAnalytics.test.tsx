@@ -18,23 +18,32 @@ afterEach(() => { cleanup(); vi.resetAllMocks(); });
 it("shows source record counts regardless of quality assessments and the actual distribution", async () => {
   vi.mocked(getResolutionAnalytics).mockResolvedValue(metrics);
   render(<SessionAnalytics runId="r" revision="1" />);
-  expect(await screen.findByRole("img", { name: "25% bản ghi được phân loại tự xử lý" })).toBeInTheDocument();
-  const sources = within(screen.getByLabelText("Số lượng bản ghi theo nguồn"));
-  expect(sources.getByTitle("CRM: 2 bản ghi")).toHaveTextContent("2");
-  expect(sources.getByTitle("ERP: 1 bản ghi")).toHaveTextContent("1");
-  expect(sources.getByText("Tổng 3 bản ghi đầu vào từ 2 nguồn.")).toBeInTheDocument();
+  expect(await screen.findByRole("img", { name: "25% dòng thông tin được đề xuất gộp tự động ban đầu" })).toBeInTheDocument();
+  const sources = within(screen.getByLabelText("Số lượng dòng thông tin theo nguồn"));
+  expect(sources.getByTitle("CRM: 2 dòng thông tin")).toHaveTextContent("2");
+  expect(sources.getByTitle("ERP: 1 dòng thông tin")).toHaveTextContent("1");
+  expect(sources.getByText("Tổng 3 dòng thông tin đầu vào từ 2 nguồn.")).toBeInTheDocument();
   expect(sources.queryByText("75")).not.toBeInTheDocument();
   expect(sources.queryByText("Chưa đánh giá")).not.toBeInTheDocument();
 });
-it("refreshes after decisions but does not refetch on an unchanged render", async () => {
-  vi.mocked(getResolutionAnalytics).mockResolvedValue(metrics);
+it("distinguishes initial source rows from pending pairs after a decision", async () => {
+  const initial: ResolutionAnalytics = { ...metrics,
+    decisions: { ...metrics.decisions, total: 100000, automatic: 44600, review: 1000,
+      no_duplicate_detected: 54400, automatic_percent: 44.6 },
+    conflicts: { ...metrics.conflicts, review_pair_count: 500 },
+  };
+  vi.mocked(getResolutionAnalytics).mockResolvedValue(initial);
   const { rerender } = render(<SessionAnalytics runId="r" revision="1" />);
-  await screen.findByLabelText("Xung đột theo trường");
+  const distribution = await screen.findByLabelText("Phân loại dòng thông tin ban đầu");
+  expect(within(distribution).getByText("Cần xem xét ban đầu").parentElement).toHaveTextContent("1.000 dòng");
+  expect(distribution).toHaveTextContent("Biểu đồ giữ nguyên phân loại ban đầu sau khi bạn duyệt.");
+  expect(screen.getByLabelText("Thông tin không khớp trong các cặp đang chờ")).toHaveTextContent("500 cặp đang chờ xem xét");
   rerender(<SessionAnalytics runId="r" revision="1" />);
   expect(getResolutionAnalytics).toHaveBeenCalledTimes(1);
-  vi.mocked(getResolutionAnalytics).mockResolvedValue({ ...metrics, conflicts: { ...metrics.conflicts, review_pair_count: 0, fields: [{ field: "email", count: 0 }] } });
+  vi.mocked(getResolutionAnalytics).mockResolvedValue({ ...initial, conflicts: { ...initial.conflicts, review_pair_count: 400 } });
   rerender(<SessionAnalytics runId="r" revision="2" />);
-  await screen.findByText("Không còn cặp chờ xem xét.");
+  await screen.findByText(/Trong 400 cặp đang chờ xem xét/);
+  expect(within(screen.getByLabelText("Phân loại dòng thông tin ban đầu")).getByText("Cần xem xét ban đầu").parentElement).toHaveTextContent("1.000 dòng");
   expect(getResolutionAnalytics).toHaveBeenCalledTimes(2);
 });
 it("shows an error and retries instead of substituting sample metrics", async () => {
@@ -44,5 +53,5 @@ it("shows an error and retries instead of substituting sample metrics", async ()
   expect(screen.queryByRole("img")).not.toBeInTheDocument();
   vi.mocked(getResolutionAnalytics).mockResolvedValue(metrics);
   fireEvent.click(screen.getByRole("button", { name: "Tải lại số liệu" }));
-  await waitFor(() => expect(screen.getByLabelText("Phân bố quyết định")).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByLabelText("Phân loại dòng thông tin ban đầu")).toBeInTheDocument());
 });

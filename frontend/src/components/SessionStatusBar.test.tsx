@@ -11,22 +11,22 @@ describe("SessionStatusBar", () => {
         created_at: "2026-10-07T00:00:00Z", record_count: 1200, file_count: 3, files: ["crm.csv", "erp.csv", "bill.csv"],
       }]} />);
 
-    const trigger = screen.getByRole("button", { name: /2 phiên đang xử lý/ });
+    const trigger = screen.getByRole("button", { name: /2 đợt xử lý đang xử lý/ });
     fireEvent.click(trigger);
-    const panel = screen.getByRole("region", { name: "Các phiên đang xử lý" });
+    const panel = screen.getByRole("region", { name: "Các đợt xử lý đang xử lý" });
     expect(within(panel).getByText("Nhập tháng 10")).toBeInTheDocument();
-    expect(within(panel).getByText("Đang phân giải · Đang đối chiếu")).toBeInTheDocument();
-    expect(within(panel).getByText("1.200 bản ghi · 3 file")).toBeInTheDocument();
+    expect(within(panel).getByText("Đang tìm dữ liệu trùng · Đang đối chiếu")).toBeInTheDocument();
+    expect(within(panel).getByText("1.200 dòng thông tin · 3 file")).toBeInTheDocument();
 
     fireEvent.click(within(panel).getByRole("button", { name: /Nhập tháng 10/ }));
     expect(onOpenRun).toHaveBeenCalledWith("run-active-1");
-    expect(screen.queryByRole("region", { name: "Các phiên đang xử lý" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Các đợt xử lý đang xử lý" })).not.toBeInTheDocument();
   });
 
   it("preserves a stale indicator when the active-run summary cannot refresh", () => {
     render(<SessionStatusBar runStatus="COMPLETED" totalCount={0} canCreate activeTotal={1}
       activeStale activeRuns={[]} onOpenRun={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: /1 phiên đang xử lý/ }));
+    fireEvent.click(screen.getByRole("button", { name: /1 đợt xử lý đang xử lý/ }));
     expect(screen.getByRole("status")).toHaveTextContent("Chưa cập nhật được trạng thái mới nhất.");
   });
 });

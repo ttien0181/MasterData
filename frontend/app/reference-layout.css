@@ -284,6 +284,12 @@
   .overview-source-card { grid-column: 1 / -1; }
 }
 @media (max-width: 650px) {
+  .analytics-decision-content { flex-direction: column; align-items: stretch; }
+  .analytics-donut { align-self: center; }
+  .analytics-legend { flex: auto; width: 100%; }
+  .app-shell:not(.legacy-shell) .workspace-dock { overflow-x: auto; }
+  .app-shell:not(.legacy-shell) .workspace-dock .sidebar-link { flex: 0 0 auto; width: auto; padding: 7px 10px; }
+  .app-shell:not(.legacy-shell) .workspace-dock .sidebar-link-label { font-size: 10px; overflow: visible; text-overflow: clip; }
   .overview-dashboard-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
   .app-shell .overview-kpi { min-height: 96px; padding: 13px; }
   .overview-kpi strong { font-size: 22px; }

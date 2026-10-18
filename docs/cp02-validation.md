@@ -32,13 +32,13 @@ Kết quả CP2: 25 backend test trọng tâm pass; Ruff pass; frontend 6 file /
    $env:MDM_DATABASE_URL = "postgresql+psycopg://masterone:masterone@localhost:5432/masterone"
    $env:PYTHONPATH = "backend/src"
    .\.venv\Scripts\python.exe -m masterone.mdm.migrate --database-url $env:MDM_DATABASE_URL
-   .\.venv\Scripts\python.exe -m uvicorn masterone.main:app --reload --app-dir backend/src --port 8001
+   .\.venv\Scripts\python.exe -m uvicorn masterone.main:app --reload --app-dir backend/src --port 8101
    ```
 
 3. Trong PowerShell thứ hai, ở `frontend`, chạy:
 
    ```powershell
-   $env:NEXT_PUBLIC_API_BASE_URL = "http://localhost:8001"
+   $env:NEXT_PUBLIC_API_BASE_URL = "http://localhost:8101"
    npm run dev
    ```
 

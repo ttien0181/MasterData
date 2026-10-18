@@ -36,10 +36,10 @@ test("upload and session history open in a slide-out panel with full-screen expa
   await expect(uploadPanel).toBeHidden();
 
   await page.locator(".sessions-orbit").click();
-  const sessionsPanel = page.getByRole("dialog", { name: "Lịch sử phiên" });
+  const sessionsPanel = page.getByRole("dialog", { name: "Lịch sử đợt xử lý" });
   await expect(sessionsPanel).toBeVisible();
   await expect.poll(async () => (await sessionsPanel.boundingBox())!.x).toBeGreaterThan(600);
-  await expect(sessionsPanel.getByRole("region", { name: "Phiên phân giải" })).toBeVisible();
+  await expect(sessionsPanel.getByRole("region", { name: "Đợt xử lý" })).toBeVisible();
   await sessionsPanel.getByRole("button", { name: "Phóng to toàn màn hình" }).click();
   await expect(sessionsPanel).toHaveClass(/is-expanded/);
   await expect.poll(async () => Math.round((await sessionsPanel.boundingBox())?.width ?? 0)).toBe(viewportWidth);

@@ -114,7 +114,7 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
       }
       return result;
     } catch (error) {
-      if (requestId === runsRequestRef.current) setRunsError(error instanceof Error ? error.message : "Không tải được danh sách phiên.");
+      if (requestId === runsRequestRef.current) setRunsError(error instanceof Error ? error.message : "Không tải được danh sách đợt xử lý.");
       throw error;
     } finally { if (requestId === runsRequestRef.current) setRunsLoading(false); }
   }, []);
@@ -159,9 +159,9 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
         catch (error) {
           if (error instanceof ApiError && (error.status === 404 || error.status === 403)) {
             requested = ""; activeRunRef.current = ""; setRunId(""); setOverview(null);
-            setMessage("Phiên trong đường dẫn không tồn tại hoặc bạn không có quyền xem.");
+            setMessage("Đợt xử lý trong đường dẫn không tồn tại hoặc bạn không có quyền xem.");
           } else {
-            if (!cancelled) setMessage(error instanceof Error ? error.message : "Không tải được phiên trong đường dẫn.");
+            if (!cancelled) setMessage(error instanceof Error ? error.message : "Không tải được đợt xử lý trong đường dẫn.");
             return;
           }
         }
@@ -199,7 +199,7 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
             }
             continue;
           }
-          if (!cancelled && activeRunRef.current === candidateId) setMessage(error instanceof Error ? error.message : "Không tải được phiên gần nhất.");
+          if (!cancelled && activeRunRef.current === candidateId) setMessage(error instanceof Error ? error.message : "Không tải được đợt xử lý gần nhất.");
           return;
         }
       }
@@ -217,7 +217,7 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
       setRunId(next.runId); setOverview(null); setOverviewStale(false);
       if (!next.runId) return;
       if (next.runId) void refreshOverview(next.runId).catch((error: unknown) => {
-        if (activeRunRef.current === next.runId) setMessage(error instanceof Error ? error.message : "Không tải được phiên.");
+        if (activeRunRef.current === next.runId) setMessage(error instanceof Error ? error.message : "Không tải được đợt xử lý.");
       });
     }
     window.addEventListener("popstate", onPopState);
@@ -331,8 +331,8 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
       await refreshActiveRuns().catch(() => undefined);
       navigateStage("overview", "replace");
       setWorkspacePanel((panel) => panel === "upload" ? null : panel);
-      setMessage(`Đã nạp ${created.profile.row_count.toLocaleString("vi-VN")} bản ghi từ ${created.profile.file_count} file.`);
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Không thể bắt đầu phiên vừa tạo."); throw error; }
+      setMessage(`Đã nạp ${created.profile.row_count.toLocaleString("vi-VN")} dòng thông tin từ ${created.profile.file_count} file.`);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Không thể bắt đầu đợt xử lý vừa tạo."); throw error; }
   }
 
   async function retryRun() {
@@ -357,8 +357,8 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
     try { await refreshOverview(nextRunId); }
     catch (error) {
       if (activeRunRef.current === nextRunId) {
-        if (error instanceof ApiError && (error.status === 404 || error.status === 403)) setMessage("Phiên không tồn tại hoặc bạn không có quyền xem.");
-        else setMessage(error instanceof Error ? error.message : "Không tải được phiên");
+        if (error instanceof ApiError && (error.status === 404 || error.status === 403)) setMessage("Đợt xử lý không tồn tại hoặc bạn không có quyền xem.");
+        else setMessage(error instanceof Error ? error.message : "Không tải được đợt xử lý");
       }
     }
   }
@@ -384,7 +384,7 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
   }, [stage, openUploadPanel]);
 
   const selectedRun = runHistory.find((run) => run.run_id === runId);
-  const sessionLabel = selectedRun?.name || selectedRun?.files.join(", ") || (runId ? `Phiên ${runId.slice(0, 8)}` : undefined);
+  const sessionLabel = selectedRun?.name || selectedRun?.files.join(", ") || (runId ? `Đợt xử lý ${runId.slice(0, 8)}` : undefined);
 
   return <AppShell stage={stage} pendingCount={overview?.counts.review_pairs ?? overview?.counts.review ?? 0}
     mergeCount={overview?.counts.auto ?? 0}
@@ -398,54 +398,54 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
     onLogout={() => void onLogout().catch(() => setMessage("Không thể đăng xuất lúc này."))}>
     <main className="container workspace resolution-workspace" id="top">
       {stage !== "overview" && <PageHeader stage={stage} />}
-      {!can(user, "create_run") && <p role="note">Tài khoản {user.role || "chưa xác định quyền"} đang ở chế độ chỉ xem. Liên hệ người quản trị để được cấp quyền thao tác.</p>}
+      {!can(user, "create_run") && <p role="note">Tài khoản của bạn chưa có quyền tạo đợt xử lý. Liên hệ người quản trị nếu cần quyền này.</p>}
       {message && <div className="notice toast" role="status"><span className="toast-icon" aria-hidden="true">i</span><span className="toast-message">{message}</span><button type="button" aria-label="Đóng thông báo" onClick={() => setMessage("")}>×</button></div>}
       {stage === "overview" && <section className="resolution-overview">
         <div className="resolution-overview-head">
-          <div><h2>{overview ? "Tổng quan phiên" : "Bắt đầu từ dữ liệu của bạn"}</h2>
-            <p>{overview ? `${sessionLabel} · ${overview.file_count} file` : "Nạp các file CSV để tìm bản ghi trùng và hợp nhất dữ liệu."}</p></div>
+          <div><h2>{overview ? "Tổng quan đợt xử lý" : "Bắt đầu từ dữ liệu của bạn"}</h2>
+            <p>{overview ? `${sessionLabel} · ${overview.file_count} file` : "Nạp các file CSV để tìm dòng thông tin trùng và hợp nhất dữ liệu."}</p></div>
           {can(user, "create_run") && <button className="button primary btn btn-primary upload-open-button" type="button" onClick={openUploadPanel}>＋ Nạp dữ liệu</button>}
         </div>
         {overview && <>
-          {overviewStale && <div className="run-stale" role="status"><span>Chưa kết nối được để cập nhật phiên; đang giữ trạng thái gần nhất.</span><button type="button" onClick={() => void refreshOverview(runId).catch(() => setOverviewStale(true))}>Thử cập nhật</button></div>}
+          {overviewStale && <div className="run-stale" role="status"><span>Chưa kết nối được để cập nhật đợt xử lý; đang giữ trạng thái gần nhất.</span><button type="button" onClick={() => void refreshOverview(runId).catch(() => setOverviewStale(true))}>Thử cập nhật</button></div>}
           {overview.status !== "COMPLETED" && <div className="run-progress card"><div><span>{session?.statusLabel}</span><strong>{runPhaseLabel(overview.phase)}</strong></div>
             {session?.processing && <p role="status">Đang chờ kết quả xử lý. Chưa có phần trăm tiến độ chi tiết.</p>}
-            <small>{overview.record_count.toLocaleString("vi-VN")} bản ghi đầu vào</small>
+            <small>{overview.record_count.toLocaleString("vi-VN")} dòng thông tin đầu vào</small>
             {session?.errorCode && <p>Mã lỗi: {session.errorCode}</p>}
             {(session?.actions.start || session?.actions.retry) && <button className="button outline" type="button" disabled={busy} onClick={() => void retryRun()}>{session.actions.start ? "Bắt đầu xử lý" : "Chạy lại"}</button>}
           </div>}
           {overview.status === "COMPLETED" && <section className="overview-dashboard">
             <div className="overview-dashboard-kpis">
-              <div className="card overview-kpi"><strong>{overview.record_count.toLocaleString("vi-VN")}</strong><span>Bản ghi</span><small>Từ {overview.file_count} file dữ liệu</small></div>
-              <div className="card overview-kpi"><strong>{estimatedEntityCount.toLocaleString("vi-VN")}</strong><span>Thực thể ước tính</span><small>Sau các đề xuất gộp hiện có</small></div>
-              <div className="card overview-kpi overview-kpi-highlight"><strong>{duplicateRecordCount.toLocaleString("vi-VN")}</strong><span>Bản ghi trùng dự kiến loại bỏ</span><small>Nếu áp dụng đề xuất gộp</small></div>
-              <button className="card overview-kpi overview-kpi-review" type="button" onClick={() => navigateStage("review")}><strong>{reviewPairCount.toLocaleString("vi-VN")}</strong><span>Cần xem xét</span><small>Cặp bản ghi chờ xác nhận →</small></button>
+              <div className="card overview-kpi"><strong>{overview.record_count.toLocaleString("vi-VN")}</strong><span>Dòng thông tin</span><small>Từ {overview.file_count} file dữ liệu</small></div>
+              <div className="card overview-kpi"><strong>{estimatedEntityCount.toLocaleString("vi-VN")}</strong><span>Số hồ sơ dự kiến</span><small>Số dòng trong file kết quả nếu áp dụng các đề xuất</small></div>
+              <div className="card overview-kpi overview-kpi-highlight"><strong>{duplicateRecordCount.toLocaleString("vi-VN")}</strong><span>Số dòng dự kiến giảm sau gộp</span><small>So với dữ liệu đầu vào</small></div>
+              <button className="card overview-kpi overview-kpi-review" type="button" onClick={() => navigateStage("review")}><strong>{reviewPairCount.toLocaleString("vi-VN")}</strong><span>Cặp đang chờ xem xét</span><small>Mỗi cặp gồm hai dòng thông tin →</small></button>
             </div>
             <SessionAnalytics runId={runId} revision={`${overview.counts.auto}:${overview.counts.review_pairs ?? overview.counts.review}:${overview.counts.rejected}`} />
           </section>}
           {overview.status === "COMPLETED" && <div className="resolution-overview-distribution card">
             <div><h3>Phân bố công việc</h3><p>Các mục đang chờ quyết định</p>
-              <div className="resolution-donut-legend"><button type="button" onClick={() => navigateStage("auto")}><i className="waiting" />Chờ gộp <b>{overview.counts.auto.toLocaleString("vi-VN")}</b></button><button type="button" onClick={() => navigateStage("review")}><i className="review" />Cần review <b>{reviewPairCount.toLocaleString("vi-VN")}</b></button></div>
+              <div className="resolution-donut-legend"><button type="button" onClick={() => navigateStage("auto")}><i className="waiting" />Chờ gộp <b>{overview.counts.auto.toLocaleString("vi-VN")}</b></button><button type="button" onClick={() => navigateStage("review")}><i className="review" />Cần xem xét <b>{reviewPairCount.toLocaleString("vi-VN")}</b></button></div>
             </div>
             <div className="resolution-donut" style={{ "--waiting-share": `${overview.counts.auto + reviewPairCount ? overview.counts.auto / (overview.counts.auto + reviewPairCount) * 100 : 0}%` } as React.CSSProperties}>
-              <button type="button" className="resolution-donut-chart" aria-label={`Biểu đồ: Chờ gộp ${overview.counts.auto} mục, Cần review ${reviewPairCount} cặp; bấm phần màu để mở danh sách`} onClick={openDonutSegment}><span><strong>{(overview.counts.auto + reviewPairCount).toLocaleString("vi-VN")}</strong><small>mục công việc</small></span></button>
+              <button type="button" className="resolution-donut-chart" aria-label={`Biểu đồ: Chờ gộp ${overview.counts.auto} mục, Cần xem xét ${reviewPairCount} cặp; bấm phần màu để mở danh sách`} onClick={openDonutSegment}><span><strong>{(overview.counts.auto + reviewPairCount).toLocaleString("vi-VN")}</strong><small>mục công việc</small></span></button>
             </div>
           </div>}
           {overview.status === "COMPLETED" && <div className="stat-grid resolution-stats">
-            <div className="card stat-card resolution-stat"><span className="stat-value">{overview.record_count.toLocaleString("vi-VN")}</span><span className="stat-label">Bản ghi đầu vào</span><span className="stat-change">{overview.file_count} file dữ liệu</span></div>
-            <button className="card stat-card resolution-stat stat-primary" type="button" onClick={() => navigateStage("auto")}><span className="stat-value">{overview.counts.auto.toLocaleString("vi-VN")}</span><span className="stat-label">Cụm chờ gộp</span><span className="stat-change">Xem danh sách →</span></button>
-            <button className="card stat-card resolution-stat stat-review" type="button" onClick={() => navigateStage("review")}><span className="stat-value">{reviewPairCount.toLocaleString("vi-VN")}</span><span className="stat-label">Cặp cần review</span><span className="stat-change">Mở hàng đợi →</span></button>
+            <div className="card stat-card resolution-stat"><span className="stat-value">{overview.record_count.toLocaleString("vi-VN")}</span><span className="stat-label">Dòng thông tin đầu vào</span><span className="stat-change">{overview.file_count} file dữ liệu</span></div>
+            <button className="card stat-card resolution-stat stat-primary" type="button" onClick={() => navigateStage("auto")}><span className="stat-value">{overview.counts.auto.toLocaleString("vi-VN")}</span><span className="stat-label">Nhóm chờ gộp</span><span className="stat-change">Xem danh sách →</span></button>
+            <button className="card stat-card resolution-stat stat-review" type="button" onClick={() => navigateStage("review")}><span className="stat-value">{reviewPairCount.toLocaleString("vi-VN")}</span><span className="stat-label">Cặp cần xem xét</span><span className="stat-change">Mở hàng đợi →</span></button>
           </div>}
           {overview.status === "COMPLETED" && <section className="card source-summary resolution-signal-summary" aria-label="Kết quả đối chiếu dữ liệu"><div><p className="section-kicker">ĐỐI CHIẾU DỮ LIỆU</p><h3>Các dấu hiệu tìm thấy</h3><small>{overview.candidate_count.toLocaleString("vi-VN")} cặp được đối chiếu · {overview.counts.insufficient.toLocaleString("vi-VN")} cặp chưa đủ thông tin để xác nhận</small></div><div className="source-summary-values">
-            {([ ["A", overview.counts.group_a, "Thông tin khớp rõ", "Tên và thông tin liên hệ giống nhau"], ["C", overview.counts.group_c, "Cần thêm thông tin", "Tên chưa đủ rõ để xác nhận"], ["D", overview.counts.group_d, "Thông tin mâu thuẫn", "Tên khác nhau rõ rệt"] ] as const).map(([group, count, label, description]) => <span className="source-count" key={group}><b>{label}</b><strong>{count.toLocaleString("vi-VN")}</strong><small>{description}</small></span>)}
+            {([ ["A", overview.counts.group_a, "Thông tin khớp rõ", "Tên và thông tin liên hệ giống nhau"], ["C", overview.counts.group_c, "Cần thêm thông tin", "Tên chưa đủ rõ để xác nhận"], ["D", overview.counts.group_d, "Có thông tin không khớp", "Tên khác nhau rõ rệt"] ] as const).map(([group, count, label, description]) => <span className="source-count" key={group}><b>{label}</b><strong>{count.toLocaleString("vi-VN")}</strong><small>{description}</small></span>)}
           </div></section>}
           {runHistory.length > 1 && <section className="card recent-runs"><div className="recent-runs-title"><div><p className="section-kicker">Lần nạp dữ liệu</p><h3>Các lần nạp gần đây</h3></div><span className="muted-copy">Chọn một lần nạp để xem dữ liệu của nó</span></div>
             {runHistory.slice(0, 5).map((run) => <button type="button" className={`recent-run-row ${run.run_id === runId ? "current" : ""}`} key={run.run_id} onClick={() => void switchRun(run.run_id)}>
-              <span><b>{run.name || run.files.join(", ") || "Phiên phân giải"}</b><small>{new Date(run.created_at).toLocaleString("vi-VN")}</small></span><span>{run.record_count.toLocaleString("vi-VN")} bản ghi</span><span>{runStatusLabel(run.status)}</span>
+              <span><b>{run.name || run.files.join(", ") || "Đợt xử lý"}</b><small>{new Date(run.created_at).toLocaleString("vi-VN")}</small></span><span>{run.record_count.toLocaleString("vi-VN")} dòng thông tin</span><span>{runStatusLabel(run.status)}</span>
             </button>)}
           </section>}
-          <section className="card source-summary"><div><p className="section-kicker">Toàn bộ bản ghi đầu vào</p><h3>Phân bố nguồn dữ liệu</h3><small>{overview.record_count.toLocaleString("vi-VN")} bản ghi từ {overview.file_count} file</small></div><div className="source-summary-values">
-            {Object.entries(overview.source_counts).map(([source, count]) => <span className="source-count" key={source}><b>{source}</b><strong>{count.toLocaleString("vi-VN")}</strong><span className="source-share" aria-label={`${source}: ${count.toLocaleString("vi-VN")} bản ghi`}><span style={{ width: `${overview.record_count ? count / overview.record_count * 100 : 0}%` }} /></span></span>)}
+          <section className="card source-summary"><div><p className="section-kicker">Toàn bộ dòng thông tin đầu vào</p><h3>Phân bố nguồn dữ liệu</h3><small>{overview.record_count.toLocaleString("vi-VN")} dòng thông tin từ {overview.file_count} file</small></div><div className="source-summary-values">
+            {Object.entries(overview.source_counts).map(([source, count]) => <span className="source-count" key={source}><b>{source}</b><strong>{count.toLocaleString("vi-VN")}</strong><span className="source-share" aria-label={`${source}: ${count.toLocaleString("vi-VN")} dòng thông tin`}><span style={{ width: `${overview.record_count ? count / overview.record_count * 100 : 0}%` }} /></span></span>)}
           </div></section>
         </>}
       </section>}
@@ -454,7 +454,7 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
 
       {stage === "audit" && can(user, "read_audit") && (runId
         ? <AuditTrail key={runId} runId={runId} />
-        : <div className="card empty-state"><b>Chưa chọn phiên</b><p>Mở một phiên từ Hub để xem các thao tác đã ghi nhận.</p></div>)}
+        : <div className="card empty-state"><b>Chưa chọn đợt xử lý</b><p>Mở một đợt trong danh sách đợt xử lý để xem các thao tác đã ghi nhận.</p></div>)}
 
       {stage === "policy" && (can(user, "edit_policy") || can(user, "simulate_policy")) &&
         <PolicyAdmin user={user} runId={runId || null} />}
@@ -462,12 +462,12 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
       {["auto", "history"].includes(stage) && runId && <ResolutionFlow key={runId} user={user} runId={runId} stage={stage} onChanged={() => refreshOverview(runId)} notify={setMessage} />}
       {(stage === "review" || stage === "no_merge") && runId && <PairReviewFlow key={`${runId}:${stage}`} user={user} runId={runId} rejected={stage === "no_merge"} onChanged={() => refreshOverview(runId)} notify={setMessage} />}
     </main>
-    {can(user, "create_run") && <WorkspaceDrawer title="Nạp dữ liệu" subtitle="Tạo phiên phân giải mới" side="left"
+    {can(user, "create_run") && <WorkspaceDrawer title="Nạp dữ liệu" subtitle="Tạo đợt xử lý mới" side="left"
       open={workspacePanel === "upload"} expanded={panelExpanded} onToggleExpanded={() => setPanelExpanded((expanded) => !expanded)} onClose={closeWorkspacePanel}>
       <ResolutionIntake key={user.id} userId={user.id} onRunCreated={handleRunCreated} onPendingChange={setUploadPending} onDismiss={closeWorkspacePanel} />
     </WorkspaceDrawer>}
-    {workspacePanel === "sessions" && <WorkspaceDrawer title="Lịch sử phiên"
-      side="right" subtitle={`${runTotal.toLocaleString("vi-VN")} phiên · ${activeRunsTotal} đang chạy`}
+    {workspacePanel === "sessions" && <WorkspaceDrawer title="Lịch sử đợt xử lý"
+      side="right" subtitle={`${runTotal.toLocaleString("vi-VN")} đợt xử lý · ${activeRunsTotal} đang chạy`}
       expanded={panelExpanded} onToggleExpanded={() => setPanelExpanded((expanded) => !expanded)} onClose={closeWorkspacePanel}>
       <SessionsHub items={runHistory} total={runTotal} nextCursor={runsNextCursor} loading={runsLoading} error={runsError}
       onPage={(cursor, options) => void refreshRuns(0, { ...options, cursor }).catch(() => undefined)}

@@ -18,7 +18,7 @@ describe("AuditTrail", () => {
 
   it("shows recorded action details and filters by action type", async () => {
     render(<AuditTrail runId="run-1" />);
-    expect(await screen.findByText("Đổi tên phiên")).toBeInTheDocument();
+    expect(await screen.findByText("Đổi tên đợt xử lý")).toBeInTheDocument();
     expect(screen.getByText("SESSION_RENAMED")).toBeInTheDocument();
     expect(screen.getByText("1 sự kiện")).toBeInTheDocument();
 
@@ -37,6 +37,6 @@ describe("AuditTrail", () => {
     const alert = await screen.findByRole("alert");
     expect(within(alert).getByText("Tạm mất kết nối")).toBeInTheDocument();
     fireEvent.click(within(alert).getByRole("button", { name: "Thử lại" }));
-    expect(await screen.findByText("Đổi tên phiên")).toBeInTheDocument();
+    expect(await screen.findByText("Đổi tên đợt xử lý")).toBeInTheDocument();
   });
 });

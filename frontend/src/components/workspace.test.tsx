@@ -4,17 +4,18 @@ import ResolutionFlow from "./ResolutionFlow";
 import ResolutionWorkspace from "./ResolutionWorkspace";
 import { ApiError, createResolutionPreview, executeResolutionPreview, getResolutionExportReadiness, getResolutionItem,
   getResolutionItems, getResolutionOverview, getResolutionRuns, getReviewCategories, resolveMergeConflict,
-  getSeparateRecords, explainResolutionItem, transitionReviewItems } from "@/lib/api";
+  getSeparateRecords, explainResolutionItem, saveStagedGroupChoices, transitionReviewItems } from "@/lib/api";
 import type { AuthUser } from "@/lib/contracts";
 import { getSavedChoices } from "@/lib/resolutionChoices";
 
 vi.mock("@/lib/api", () => ({
-  ApiError: class extends Error { constructor(message: string, readonly status: number) { super(message); } },
+  ApiError: class extends Error { constructor(message: string, readonly status: number, readonly reason?: string) { super(message); } },
   compareResolutionExport: vi.fn(), createResolutionPreview: vi.fn(), executeResolutionPreview: vi.fn(), downloadResolutionExport: vi.fn(),
   downloadResolutionSource: vi.fn(), explainReviewCategory: vi.fn(), explainResolutionItem: vi.fn(),
   getResolutionExportReadiness: vi.fn(), getResolutionExports: vi.fn(), getResolutionItem: vi.fn(),
   getResolutionItems: vi.fn(), getResolutionOverview: vi.fn(), getResolutionRuns: vi.fn(), getSeparateRecords: vi.fn(),
   getReviewCategories: vi.fn(), resolveMergeConflict: vi.fn(), setCsrfToken: vi.fn(),
+  saveStagedGroupChoices: vi.fn(), unstageMergeGroup: vi.fn(),
   getPairCategories: vi.fn().mockResolvedValue([]), decideReviewPair: vi.fn(),
   getResolutionAnalytics: vi.fn().mockResolvedValue({
     decisions: { total: 3, automatic: 0, review: 2, no_duplicate_detected: 1, automatic_percent: 0 },
@@ -101,7 +102,7 @@ describe("Resolution item flow", () => {
     const viewer: AuthUser = { ...steward, role: "VIEWER", capabilities: ["read"] };
     render(<ResolutionFlow user={viewer} runId="run-1" stage="auto" onChanged={vi.fn()} notify={vi.fn()} />);
     await screen.findByRole("button", { name: /Xem so sánh/ });
-    expect(screen.getByRole("button", { name: /Xem trước CSV kết quả/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Xem trước file kết quả \(CSV\)/ })).toBeDisabled();
     expect(createResolutionPreview).not.toHaveBeenCalled();
   });
 
@@ -148,7 +149,7 @@ describe("Resolution item flow", () => {
   it("lets a conflicting item enter Merge staging and exposes the split action", async () => {
     vi.mocked(getResolutionItems).mockResolvedValue({ total: 1, items: [{ ...reviewItem, can_merge: false }] });
     vi.mocked(getResolutionItem).mockResolvedValue({ ...detail,
-      merge_blocked_reason: "Cụm có cặp Không gộp." });
+      merge_blocked_reason: "Nhóm có cặp Không gộp." });
     const props = { user: steward, runId: "run-1", onChanged: vi.fn(), notify: vi.fn() };
     const { rerender } = render(<ResolutionFlow {...props} stage="review" />);
     fireEvent.click(await screen.findByRole("button", { name: /Xem so sánh/ }));
@@ -159,14 +160,14 @@ describe("Resolution item flow", () => {
     vi.mocked(getResolutionItems).mockResolvedValue({ total: 1, items: [{ ...reviewItem,
       bucket: "merge", kind: "proposal", status: "REVIEW_STAGED_CONFLICT" }] });
     vi.mocked(getResolutionItem).mockResolvedValue({ ...detail, bucket: "merge", kind: "proposal",
-      status: "REVIEW_STAGED_CONFLICT", merge_blocked_reason: "Cụm còn cặp Không gộp." });
+      status: "REVIEW_STAGED_CONFLICT", merge_blocked_reason: "Nhóm còn cặp Không gộp." });
     vi.mocked(getResolutionExportReadiness).mockResolvedValue({ merge_count: 0, pending_review_count: 0,
       staged_conflict_count: 1, incomplete_count: 0, incomplete_items: [], blockers: [], can_export: false });
     rerender(<ResolutionFlow {...props} stage="auto" />);
     fireEvent.click(await screen.findByRole("button", { name: /Xem so sánh/ }));
     const mergeDialog = await screen.findByRole("dialog");
     expect(within(mergeDialog).queryAllByRole("radio")).toHaveLength(0);
-    fireEvent.click(within(mergeDialog).getByRole("button", { name: "Tách cụm an toàn" }));
+    fireEvent.click(within(mergeDialog).getByRole("button", { name: "Tách nhóm không hợp lệ" }));
     await waitFor(() => expect(resolveMergeConflict).toHaveBeenCalledWith("run-1", "case-1"));
   });
 
@@ -178,7 +179,7 @@ describe("Resolution item flow", () => {
     const dialog = await screen.findByRole("dialog", { name: "An Bình" });
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(dialog).toHaveAttribute("aria-modal", "true");
-    expect(screen.getByRole("complementary", { name: "Quyết định review" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Quyết định gộp" })).toBeInTheDocument();
     const close = within(dialog).getAllByRole("button", { name: "Đóng" })[0];
     await waitFor(() => expect(close).toHaveFocus());
     fireEvent.click(close);
@@ -197,11 +198,11 @@ describe("Resolution item flow", () => {
     expect(screen.getByRole("status", { name: "Đang tải danh sách" })).toBeInTheDocument();
     expect(screen.queryByText("An Bình")).not.toBeInTheDocument();
 
-    vi.mocked(getResolutionItems).mockResolvedValueOnce({ total: 1, items: [{ ...reviewItem, id: "new-item", label: "Bản ghi mới" }] });
+    vi.mocked(getResolutionItems).mockResolvedValueOnce({ total: 1, items: [{ ...reviewItem, id: "new-item", label: "Dòng thông tin mới" }] });
     rerender(<ResolutionFlow {...props} stage="review" />);
-    expect(await screen.findByText("Bản ghi mới")).toBeInTheDocument();
+    expect(await screen.findByText("Dòng thông tin mới")).toBeInTheDocument();
     await act(async () => { resolveOld({ total: 1, items: [{ ...reviewItem, label: "Kết quả cũ" }] }); });
-    expect(screen.getByText("Bản ghi mới")).toBeInTheDocument();
+    expect(screen.getByText("Dòng thông tin mới")).toBeInTheDocument();
     expect(screen.queryByText("Kết quả cũ")).not.toBeInTheDocument();
   });
 
@@ -235,7 +236,7 @@ describe("Resolution item flow", () => {
     expect(await screen.findByText("An Bình")).toBeInTheDocument();
     const toolbar = container.querySelector(".resolution-flow-toolbar")!;
     fireEvent.click(screen.getByRole("checkbox", { name: "Chọn An Bình" }));
-    expect(within(toolbar as HTMLElement).getByText("1 hồ sơ đã chọn")).toBeInTheDocument();
+    expect(within(toolbar as HTMLElement).getByText("1 nhóm đã chọn")).toBeInTheDocument();
     expect(within(toolbar as HTMLElement).getByRole("button", { name: /Đưa sang Chờ gộp/ })).toBeInTheDocument();
     expect(container.querySelector(".resolution-bulk-bar")).not.toBeInTheDocument();
 
@@ -309,7 +310,7 @@ describe("Resolution item flow", () => {
       ] },
     });
     render(<ResolutionFlow user={steward} runId="run-1" stage="auto" onChanged={vi.fn()} notify={vi.fn()} />);
-    expect(await screen.findByRole("button", { name: /Xem trước CSV kết quả/ })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: /Xem trước file kết quả \(CSV\)/ })).toBeEnabled();
     expect(getResolutionExportReadiness).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /Xem so sánh/ }));
     const dialog = await screen.findByRole("dialog");
@@ -335,9 +336,9 @@ describe("Resolution item flow", () => {
     vi.mocked(getResolutionExportReadiness).mockResolvedValue({ merge_count: 1, pending_review_count: 2, staged_conflict_count: 0,
       incomplete_count: 0, incomplete_items: [], blockers: [], can_export: true });
     vi.mocked(getResolutionItems).mockResolvedValue({ total: 0, items: [] });
-    vi.mocked(createResolutionPreview).mockRejectedValueOnce(new ApiError("Còn item cần review; cần xác nhận xuất các bản ghi đó riêng lẻ", 409));
+    vi.mocked(createResolutionPreview).mockRejectedValueOnce(new ApiError("Còn mục cần xem xét; cần xác nhận xuất các dòng đó riêng lẻ", 409, "PENDING_REVIEW"));
     render(<ResolutionFlow user={steward} runId="run-1" stage="auto" onChanged={vi.fn()} notify={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: /Xem trước CSV kết quả/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Xem trước file kết quả \(CSV\)/ }));
     expect(createResolutionPreview).toHaveBeenCalledWith("run-1", false);
     fireEvent.click(await screen.findByRole("button", { name: "Tiếp tục xem trước" }));
     await waitFor(() => expect(createResolutionPreview).toHaveBeenCalledWith("run-1", true));
@@ -345,19 +346,35 @@ describe("Resolution item flow", () => {
     await waitFor(() => expect(executeResolutionPreview).toHaveBeenCalledWith("run-1", "preview-1", expect.any(String)));
   });
 
+  it("edits a staged group and saves the choice on the server", async () => {
+    const staged = { ...reviewItem, id: "staged-group", bucket: "merge" as const,
+      kind: "proposal" as const, status: "STAGED_FOR_MERGE", revision: 2 };
+    vi.mocked(getResolutionItems).mockResolvedValue({ total: 1, items: [staged] });
+    vi.mocked(getResolutionItem).mockResolvedValue({ ...detail, ...staged,
+      choices: { phone: "a" }, missing_fields: [] });
+    vi.mocked(saveStagedGroupChoices).mockResolvedValue({ revision: 3, choices: { phone: "b" } });
+    render(<ResolutionFlow user={steward} runId="run-1" stage="auto" onChanged={vi.fn()} notify={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Xem so sánh/ }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("radio", { name: /0901001002/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Lưu lựa chọn" }));
+    await waitFor(() => expect(saveStagedGroupChoices).toHaveBeenCalledWith(
+      "run-1", "staged-group", 2, { phone: "b" }));
+  });
+
   it("reports an export blocker only after preview is requested", async () => {
     vi.mocked(getResolutionItems).mockResolvedValue({ total: 1, items: [{ ...reviewItem, bucket: "merge", kind: "proposal" }] });
     vi.mocked(getResolutionExportReadiness).mockResolvedValue({ merge_count: 1, pending_review_count: 0,
       staged_conflict_count: 0, incomplete_count: 1, incomplete_items: [{ item_id: "case-1", fields: ["phone"] }],
       blockers: [{ item_id: "case-1", kind: "MISSING_CHOICES", label: "An Bình", message: "Chọn giá trị cho các trường khác nhau.", fields: ["phone"] }], can_export: false });
-    vi.mocked(createResolutionPreview).mockRejectedValueOnce(new ApiError("Còn giá trị chưa chọn hoặc cụm cần tách trước khi xem trước", 409));
+    vi.mocked(createResolutionPreview).mockRejectedValueOnce(new ApiError("Còn giá trị chưa chọn hoặc nhóm cần tách trước khi xem trước", 409));
     const notify = vi.fn();
     render(<ResolutionFlow user={steward} runId="run-1" stage="auto" onChanged={vi.fn()} notify={notify} />);
-    const preview = await screen.findByRole("button", { name: /Xem trước CSV kết quả/ });
+    const preview = await screen.findByRole("button", { name: /Xem trước file kết quả \(CSV\)/ });
     expect(preview).toBeEnabled();
     expect(getResolutionExportReadiness).not.toHaveBeenCalled();
     fireEvent.click(preview);
-    await waitFor(() => expect(notify).toHaveBeenCalledWith("Còn giá trị chưa chọn hoặc cụm cần tách trước khi xem trước"));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith("Còn giá trị chưa chọn hoặc nhóm cần tách trước khi xem trước"));
   });
 
   it("shows user-facing outcome metrics with separate records hidden", async () => {
@@ -371,8 +388,8 @@ describe("Resolution item flow", () => {
     vi.mocked(getSeparateRecords).mockResolvedValue({ total: 2, items: [{ id: "a", external_id: "CRM-1",
       source_system: "CRM", raw_fields: { name: "Nguyễn A", phone: "0901234567" }, review_pending: true }] });
     render(<ResolutionWorkspace user={steward} onLogout={vi.fn()} />);
-    expect((await screen.findAllByText("Thực thể ước tính")).some((label) => label.closest(".overview-kpi"))).toBe(true);
-    expect(screen.queryByRole("button", { name: /Xem bản ghi được giữ riêng|Dự kiến giữ riêng/ })).not.toBeInTheDocument();
+    expect((await screen.findAllByText("Số hồ sơ dự kiến")).some((label) => label.closest(".overview-kpi"))).toBe(true);
+    expect(screen.queryByRole("button", { name: /Xem dòng thông tin được giữ riêng|Dự kiến giữ riêng/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Dự kiến giữ riêng" })).not.toBeInTheDocument();
     expect(getSeparateRecords).not.toHaveBeenCalled();
   });
@@ -387,7 +404,7 @@ describe("Resolution item flow", () => {
       counts: { auto: 1, review: 0, separate: 0, rejected: 0, review_cases: 0, manual: 0,
         hard_blocked: 0, insufficient: 0, group_a: 0, group_c: 0, group_d: 0 } });
     render(<ResolutionWorkspace user={steward} onLogout={vi.fn()} />);
-    expect(await screen.findByRole("heading", { name: "Cần xem xét" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Cặp cần xem xét" })).toBeInTheDocument();
     expect(getResolutionOverview).toHaveBeenCalledWith("url-run");
     expect(new URLSearchParams(window.location.search).get("run")).toBe("url-run");
     expect(new URLSearchParams(window.location.search).get("view")).toBe("review");
@@ -409,7 +426,7 @@ describe("Resolution item flow", () => {
     expect(screen.getByText("Đang đối chiếu")).toBeInTheDocument();
 
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
-    expect(screen.getByText("Chưa kết nối được để cập nhật phiên; đang giữ trạng thái gần nhất.")).toBeInTheDocument();
+    expect(screen.getByText("Chưa kết nối được để cập nhật đợt xử lý; đang giữ trạng thái gần nhất.")).toBeInTheDocument();
     expect(screen.getByText("Đang đối chiếu")).toBeInTheDocument();
   });
 

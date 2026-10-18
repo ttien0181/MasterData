@@ -34,15 +34,15 @@ export default function AppShell({ stage, pendingCount, mergeCount, totalCount, 
 
   return <div className={`app-shell ${legacyShell ? "legacy-shell" : ""}`}>
     <div className="shell-main">
-      <ShellTopBar currentLabel={{ overview: "Tổng quan", import: "Nạp dữ liệu", auto: "Tự động gộp", review: "Cần xem xét", no_merge: "Không gộp", history: "Lịch sử xuất", audit: "Audit", policy: "Chính sách" }[stage]}
+      <ShellTopBar currentLabel={{ overview: "Tổng quan", import: "Nạp dữ liệu", auto: "Chờ gộp", review: "Cặp cần xem xét", no_merge: "Không gộp", history: "Lịch sử xuất", audit: "Lịch sử thao tác", policy: "Chính sách" }[stage]}
         sessionLabel={sessionLabel} runStatus={runStatus} user={user} onLogout={onLogout} onOpenSessions={onOpenSessions} />
       <main className="shell-content">{children}</main>
     </div>
     <SessionDock stage={stage} pendingCount={pendingCount} mergeCount={mergeCount}
       canReadAudit={can(user, "read_audit")} canEditPolicy={can(user, "edit_policy")} onNavigate={onNavigate} />
-    <div className="workspace-orbit-actions" aria-label="Thao tác phiên">
+    <div className="workspace-orbit-actions" aria-label="Thao tác đợt xử lý">
       {can(user, "create_run") && <button className="workspace-orbit-button upload-orbit upload-open-button" type="button" aria-label="Nạp dữ liệu" title={uploadPending || "Nạp dữ liệu"} onClick={() => onNavigate("import")}><ShellIcon name="import" size={21} /><span>{uploadPending ? "Tiếp tục" : "Nạp"}</span>{uploadPending && <i className="upload-pending-dot" aria-label={uploadPending} />}</button>}
-      <button className="workspace-orbit-button sessions-orbit sessions-open-button" type="button" aria-label="Lịch sử phiên" title="Lịch sử phiên" onClick={onOpenSessions}><ShellIcon name="history" size={21} /><span>Phiên</span></button>
+      <button className="workspace-orbit-button sessions-orbit sessions-open-button" type="button" aria-label="Lịch sử đợt xử lý" title="Lịch sử đợt xử lý" onClick={onOpenSessions}><ShellIcon name="history" size={21} /><span>Đợt xử lý</span></button>
     </div>
     <SessionStatusBar runStatus={runStatus} totalCount={totalCount} canCreate={can(user, "create_run")}
       activeRuns={activeRuns} activeTotal={activeTotal} activeStale={activeStale} onOpenRun={onOpenRun} />

@@ -63,10 +63,10 @@ describe("ResolutionIntake", () => {
     expect(api.uploadResolutionUploadPart).toHaveBeenCalledWith(
       "upload-1", "file-1", 0, expect.any(Blob), "00".repeat(32), expect.any(Function),
     );
-    await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu phân giải" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu xử lý" })).toBeEnabled());
     expect(api.commitUploadSession).not.toHaveBeenCalled();
     fireEvent.change(screen.getByPlaceholderText("Mặc định dùng tên file"), { target: { value: "Customer tháng 10" } });
-    fireEvent.click(screen.getByRole("button", { name: "Bắt đầu phân giải" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bắt đầu xử lý" }));
     await waitFor(() => expect(onRunCreated).toHaveBeenCalledWith(expect.objectContaining({ run_id: "run-1" })));
     expect(api.validateUploadSession).toHaveBeenCalledWith("upload-1");
     expect(api.commitUploadSession).toHaveBeenCalledWith("upload-1");
@@ -103,8 +103,8 @@ describe("ResolutionIntake", () => {
       expect(api.uploadResolutionUploadPart).toHaveBeenNthCalledWith(index + 1,
         "upload-1", `file-${index}`, 0, expect.any(Blob), "00".repeat(32), expect.any(Function));
     }
-    await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu phân giải" })).toBeEnabled(), { timeout: 4000 });
-    expect(screen.getByText("Kiểm tra xong: dữ liệu hợp lệ. Bạn có thể bắt đầu phân giải.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu xử lý" })).toBeEnabled(), { timeout: 4000 });
+    expect(screen.getByText("Kiểm tra xong: dữ liệu hợp lệ. Bạn có thể bắt đầu xử lý.")).toBeInTheDocument();
     expect(api.commitUploadSession).not.toHaveBeenCalled();
   });
 
@@ -133,7 +133,7 @@ describe("ResolutionIntake", () => {
     fireEvent.change(input, { target: { files: [new File(["csv"], "one.csv"), new File(["txt"], "two.txt")] } });
     expect(screen.getByText(/Chỉ hỗ trợ file CSV/)).toBeInTheDocument();
     fireEvent.change(input, { target: { files: Array.from({ length: 11 }, (_, index) => new File(["csv"], `${index}.csv`)) } });
-    expect(screen.getByText("Mỗi phiên hiện hỗ trợ tối đa 10 file CSV.")).toBeInTheDocument();
+    expect(screen.getByText("Mỗi đợt xử lý hiện hỗ trợ tối đa 10 file CSV.")).toBeInTheDocument();
     expect(api.createUploadSession).not.toHaveBeenCalled();
     expect(api.uploadResolutionUploadPart).not.toHaveBeenCalled();
   });
@@ -150,13 +150,13 @@ describe("ResolutionIntake", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Để sau" })).toBeEnabled());
     expect(screen.getByText(/Mất kết nối/)).toBeInTheDocument();
     fireEvent.change(container.querySelector('.upload-replace-control input')!, { target: { files: [file] } });
-    await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu phân giải" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu xử lý" })).toBeEnabled());
     expect(api.createUploadSession).toHaveBeenCalledTimes(1);
     expect(api.uploadResolutionUploadPart).toHaveBeenCalledTimes(2);
-    fireEvent.click(screen.getByRole("button", { name: "Bắt đầu phân giải" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bắt đầu xử lý" }));
     await screen.findByText("Không thể bắt đầu. Hãy thử lại.");
-    expect(screen.getByRole("button", { name: "Bắt đầu phân giải" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "Bắt đầu phân giải" }));
+    expect(screen.getByRole("button", { name: "Bắt đầu xử lý" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Bắt đầu xử lý" }));
     await waitFor(() => expect(onRunCreated).toHaveBeenCalledTimes(1));
     expect(api.commitUploadSession).toHaveBeenCalledTimes(2);
   });
@@ -167,7 +167,7 @@ describe("ResolutionIntake", () => {
     api.getUploadSession.mockResolvedValue({ ...uploadSession(3, "COMMITTED", 3), committed_run_id: "run-1" });
     const onRunCreated = vi.fn().mockResolvedValue(undefined);
     render(<ResolutionIntake userId="user-1" onRunCreated={onRunCreated} />);
-    const resume = await screen.findByRole("button", { name: "Tiếp tục phiên phân giải" });
+    const resume = await screen.findByRole("button", { name: "Tiếp tục đợt xử lý" });
     expect(resume).toBeEnabled();
     fireEvent.click(resume);
     await waitFor(() => expect(onRunCreated).toHaveBeenCalledWith(expect.objectContaining({ run_id: "run-1" })));
@@ -185,7 +185,7 @@ describe("ResolutionIntake", () => {
     render(<ResolutionIntake userId="user-1" onRunCreated={vi.fn()} />);
 
     await waitFor(() => expect(api.getUploadSession).toHaveBeenCalledTimes(2), { timeout: 3000 });
-    await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu phân giải" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu xử lý" })).toBeEnabled());
   });
 
   it("restores partial progress after remount and uploads only the missing chunk", async () => {
@@ -198,7 +198,7 @@ describe("ResolutionIntake", () => {
     const fileInput = await screen.findByLabelText("Đổi hoặc tiếp tục tải large.csv");
     await waitFor(() => expect(fileInput).toBeEnabled());
     fireEvent.change(fileInput, { target: { files: [new File([new Uint8Array(chunkSize + 3)], "large.csv")] } });
-    await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu phân giải" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu xử lý" })).toBeEnabled());
     expect(api.uploadResolutionUploadPart).toHaveBeenCalledExactlyOnceWith("upload-1", "file-1", 1, expect.any(Blob), "00".repeat(32), expect.any(Function));
     expect(api.createUploadSession).not.toHaveBeenCalled();
   });
@@ -245,7 +245,7 @@ describe("ResolutionIntake", () => {
       expect(api.commitUploadPart).toHaveBeenCalledWith("upload-1", "file-1", 1, chunkSize, "00".repeat(32));
       expect(api.commitUploadPart).toHaveBeenCalledWith("upload-1", "file-1", 2, 5, "00".repeat(32));
       expect(api.putPartToStorage.mock.calls[0][0]).toMatchObject({ upload_url: "https://r2.test/0" });
-      await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu phân giải" })).toBeEnabled());
+      await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu xử lý" })).toBeEnabled());
     });
 
     it("asks for a fresh URL and retries when R2 reports the presigned URL expired", async () => {

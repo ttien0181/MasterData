@@ -146,19 +146,34 @@ def list_items(db: Session, run_id: str, bucket: str, offset: int, limit: int,
                origin: str | None = None, primary_group: str | None = None,
                subgroup: str | None = None, signature_hash: str | None = None):
     if bucket == "merge":
+        staged_groups = db.query(ResolutionProposal).filter_by(
+            run_id=run_id, status="STAGED_FOR_MERGE").order_by(ResolutionProposal.id).all()
+        if not staged_groups and db.query(ResolutionPair.id).filter_by(
+                run_id=run_id, staged_for_merge=True).first():
+            # Materialize pairs staged by an older deployment on first access.
+            from masterone.mdm.resolution_pairs import _sync_staged_groups
+            _sync_staged_groups(db, run_id)
+            db.commit()
+            staged_groups = db.query(ResolutionProposal).filter_by(
+                run_id=run_id, status="STAGED_FOR_MERGE").order_by(ResolutionProposal.id).all()
+        covered_proposals = {proposal_id for group in staged_groups
+                             for proposal_id in group.golden_fields.get("_covered_proposal_ids", [])}
         query = db.query(ResolutionProposal).filter(ResolutionProposal.run_id == run_id,
                                                      ResolutionProposal.status.in_((*ELIGIBLE, STAGED_CONFLICT)))
-        staged = db.query(ResolutionPair).filter_by(run_id=run_id, staged_for_merge=True)
+        if covered_proposals:
+            query = query.filter(~ResolutionProposal.id.in_(covered_proposals))
         if origin:
             if origin not in {"AUTO", "REVIEW"}:
                 raise HTTPException(422, "Nguồn item không hợp lệ")
             query = query.filter_by(origin=origin)
-        staged_count = 0 if origin == "AUTO" else staged.count()
+        if origin == "AUTO":
+            staged_groups = []
+        staged_count = len(staged_groups)
         total = staged_count + query.count()
-        staged_rows = ([] if origin == "AUTO" else staged.order_by(ResolutionPair.id)
-                       .offset(offset).limit(limit).all()) if offset < staged_count else []
-        entries = [{"id": f"staged:{row.id}", "bucket": bucket, "kind": "pair", "origin": "REVIEW",
-                    "member_record_ids": [row.left_record_id, row.right_record_id], "pair_count": 1,
+        staged_rows = staged_groups[offset:offset + limit] if offset < staged_count else []
+        entries = [{"id": row.id, "bucket": bucket, "kind": "proposal", "origin": "REVIEW",
+                    "member_record_ids": row.member_record_ids, "pair_count": 0,
+                    "label": row.golden_fields.get("fields", {}).get("name", {}).get("value", ""),
                     "status": "STAGED_FOR_MERGE"} for row in staged_rows]
         remaining = limit - len(entries)
         proposal_offset = max(0, offset - staged_count)
@@ -254,10 +269,12 @@ def get_item(db: Session, run_id: str, bucket: str, item_id: str, signature_hash
             meta = {"status": "STAGED_FOR_MERGE", "reason": row.triage_reason}
         else:
             row = db.get(ResolutionProposal, item_id)
-            if row is None or row.run_id != run_id or row.status not in (*ELIGIBLE, STAGED_CONFLICT):
+            if row is None or row.run_id != run_id or row.status not in (*ELIGIBLE, STAGED_CONFLICT, "STAGED_FOR_MERGE"):
                 raise HTTPException(404, "Item không còn ở tab Gộp")
             members, kind, origin = row.member_record_ids, "proposal", row.origin
             meta = {"reason": row.decision_reason, "status": row.status,
+                    "revision": row.revision,
+                    "choice_conflicts": row.golden_fields.get("_choice_conflicts", []),
                     "merge_blocked_reason": "Cụm còn cặp Không gộp; cần tách trước khi xuất CSV."
                     if row.status == STAGED_CONFLICT else None}
     elif bucket == "no_merge":
@@ -308,7 +325,18 @@ def get_item(db: Session, run_id: str, bucket: str, item_id: str, signature_hash
              "quality_flags": right.quality_flags}, set(row.blocking_reasons),
         )["field_evidence"]
     options = _options(records)
-    choices, missing = _choice_state(options, origin)
+    if bucket == "merge" and meta.get("status") == "STAGED_FOR_MERGE" and kind == "proposal":
+        saved = row.golden_fields.get("_selected_sources", {})
+        defaults = {field: value["source_record_id"]
+                    for field, value in row.golden_fields.get("fields", {}).items()
+                    if field in FIELDS and value.get("source_record_id")}
+        choices, missing = _choice_state(options, "AUTO", {**defaults, **saved})
+        for field in meta.get("choice_conflicts", []):
+            choices.pop(field, None)
+            if field not in missing:
+                missing.append(field)
+    else:
+        choices, missing = _choice_state(options, origin)
     records_by_id = {record.id: record for record in records}
     from masterone.mdm.engine_adapter import EngineResultAdapter
     adapter = EngineResultAdapter()

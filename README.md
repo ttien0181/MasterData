@@ -25,7 +25,7 @@ Mở hai terminal tại thư mục gốc:
 
 ```powershell
 # Terminal 1: API
-uv run --python .venv python -m uvicorn masterone.main:app --reload --port 8001
+uv run --python .venv python -m uvicorn masterone.main:app --reload --port 8101
 ```
 
 ```powershell
@@ -33,7 +33,7 @@ uv run --python .venv python -m uvicorn masterone.main:app --reload --port 8001
 npm --prefix frontend run dev
 ```
 
-Mở <http://localhost:3000> (hoặc cổng Next.js in ra), đăng ký/đăng nhập và vào `/app`. API ở <http://localhost:8001>; tài liệu endpoint ở <http://localhost:8001/docs>. Chạy backend từ thư mục gốc để tìm đúng `.env`, migration và database. Khi có migration mới, dừng backend, sao lưu database, rồi chạy lại lệnh migrate trước khi khởi động.
+Mở <http://localhost:3000> (hoặc cổng Next.js in ra), đăng ký/đăng nhập và vào `/app`. API ở <http://localhost:8101>; tài liệu endpoint ở <http://localhost:8101/docs>. Chạy backend từ thư mục gốc để tìm đúng `.env`, migration và database. Khi có migration mới, dừng backend, sao lưu database, rồi chạy lại lệnh migrate trước khi khởi động.
 
 ### Biến môi trường
 
@@ -82,10 +82,10 @@ Bộ CSV của Linh ở `masterone_test/crm.csv`, `erp.csv`, `bill.csv`. Mỗi f
 `GET /health` không cần đăng nhập:
 
 ```powershell
-Invoke-RestMethod http://localhost:8001/health
+Invoke-RestMethod http://localhost:8101/health
 ```
 
-Các truy vấn sau cần cookie phiên của tài khoản đã đăng nhập; dùng browser/DevTools hoặc <http://localhost:8001/docs> với phiên phù hợp. Thay `{run_id}` bằng ID run của bạn.
+Các truy vấn sau cần cookie phiên của tài khoản đã đăng nhập; dùng browser/DevTools hoặc <http://localhost:8101/docs> với phiên phù hợp. Thay `{run_id}` bằng ID run của bạn.
 
 | Yêu cầu | Mục đích |
 |---|---|

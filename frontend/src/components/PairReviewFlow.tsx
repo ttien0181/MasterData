@@ -7,7 +7,7 @@ import { can } from "@/lib/permissions";
 import { differenceSegments } from "./resolutionFields";
 
 const groupNames: Record<string, string> = {
-  A: "Nhiều thông tin trùng khớp", C: "Thiếu thông tin xác nhận", D: "Thông tin mâu thuẫn",
+  A: "Nhiều thông tin trùng khớp", C: "Thiếu thông tin xác nhận", D: "Có thông tin không khớp",
   SHARED_VALUE: "Thông tin liên hệ dùng chung", VIETNAM_VARIANT: "Khác cách viết",
   SPARSE_EVIDENCE: "Thiếu dữ liệu", SINGLE_MAJOR_CONFLICT: "Có thông tin quan trọng khác nhau",
   CONSTRAINT_OR_CLUSTER_RISK: "Liên kết cần kiểm tra", MODEL_DISAGREEMENT: "Dấu hiệu chưa thống nhất",
@@ -17,13 +17,13 @@ const subgroupNames: Record<string, string> = {
   C_NAME_ANCHOR_WEAK: "Tên chỉ giống một phần", C_NAME_ANCHOR_MISSING: "Thiếu tên đáng tin cậy",
   D2_NAME_CONFLICT: "Tên khác nhau rõ rệt", PHONE: "Số điện thoại dùng chung", EMAIL: "Email dùng chung",
   SHARED_PHONE: "Số điện thoại dùng chung", GENERIC_EMAIL: "Email dùng chung",
-  TEXT_VARIANT: "Khác cách viết", CLUSTER_GUARD: "Kiểm tra bản ghi liên quan",
+  TEXT_VARIANT: "Khác cách viết", CLUSTER_GUARD: "Kiểm tra dòng thông tin liên quan",
   TRANSITIVE_RISK: "Liên kết trong nhóm chưa thống nhất", NO_VALID_IDENTITY_ANCHOR: "Thiếu thông tin nhận diện",
   AMBIGUOUS_FIELD_EVIDENCE: "Thông tin đối chiếu chưa rõ", WEAK_FIELD_EVIDENCE: "Ít thông tin trùng khớp",
 };
 const groupLabel = (value?: string) => groupNames[value || ""] || "Cần kiểm tra thêm";
 const subLabel = (value?: string) => subgroupNames[value || ""] || "Đối chiếu thông tin nguồn";
-const fields = { name: "Tên khách hàng", phone: "Điện thoại", email: "Email", address: "Địa chỉ" };
+const fields = { name: "Họ tên", phone: "Điện thoại", email: "Email", address: "Địa chỉ" };
 const PAGE_SIZE = 25;
 
 export default function PairReviewFlow({ user, runId, rejected, onChanged, notify }: {
@@ -89,7 +89,7 @@ export default function PairReviewFlow({ user, runId, rejected, onChanged, notif
   async function open(item: ResolutionItem, button: HTMLButtonElement) {
     opener.current = button; setBusy(true); setDecisionError("");
     try { setActive(await getResolutionItem(runId, bucket, item.id)); }
-    catch (reason) { notify(reason instanceof Error ? reason.message : "Không mở được cặp bản ghi"); }
+    catch (reason) { notify(reason instanceof Error ? reason.message : "Không mở được cặp nghi trùng"); }
     finally { setBusy(false); }
   }
   async function decide(decision: "merge" | "no_merge") {
@@ -98,7 +98,7 @@ export default function PairReviewFlow({ user, runId, rejected, onChanged, notif
     try {
       const response = await decideReviewPair(runId, active.id, decision, active.revision);
       setActive(null); setReload((value) => value + 1);
-      notify(decision === "merge" ? `Đã xác nhận gộp ${response.affected_record_count} bản ghi thành một hồ sơ; xem trong Tự động gộp → Bạn đã xác nhận.` : "Đã chuyển cặp bản ghi sang Không gộp.");
+      notify(decision === "merge" ? `Đã xác nhận gộp ${response.affected_record_count} dòng thông tin thành một hồ sơ; xem trong Chờ gộp → Bạn đã xác nhận.` : "Đã chuyển cặp nghi trùng sang Không gộp.");
       void onChanged().catch(() => notify("Quyết định đã lưu; chưa cập nhật được số liệu tổng quan."));
     } catch (reason) { setDecisionError(reason instanceof Error ? reason.message : "Không lưu được quyết định"); }
     finally { setBusy(false); }
@@ -117,7 +117,7 @@ export default function PairReviewFlow({ user, runId, rejected, onChanged, notif
         ...(group ? { primary_group: group } : {}), ...(subgroup ? { subgroup } : {}),
       });
       setConfirmStage(false); resetSelection(); setReload((value) => value + 1);
-      notify(`Đã đưa ${result.staged_count.toLocaleString("vi-VN")} cặp sang Tự động gộp. Giá trị chưa chọn sẽ dùng mặc định khi xem trước CSV.`);
+      notify(`Đã đưa ${result.staged_count.toLocaleString("vi-VN")} cặp sang Chờ gộp và tạo nhóm dự kiến với giá trị mặc định.`);
       void onChanged().catch(() => undefined);
     } catch (reason) { notify(reason instanceof Error ? reason.message : "Không chuyển được các cặp đã chọn"); }
     finally { setBusy(false); }
@@ -126,19 +126,19 @@ export default function PairReviewFlow({ user, runId, rejected, onChanged, notif
 
   return <section className="resolution-flow resolution-flow-review">
     {!rejected && <div className="card review-filters pair-filters">
-      <label>Nhóm xem xét<select value={group} disabled={busy} onChange={(event) => { resetSelection(); setGroup(event.target.value); setSubgroup(""); setOffset(0); }}>
+      <label>Lý do cần xem xét<select value={group} disabled={busy} onChange={(event) => { resetSelection(); setGroup(event.target.value); setSubgroup(""); setOffset(0); }}>
         <option value="">Tất cả nhóm</option>{Array.from(new Set(categories.map((item) => item.primary_group))).map((value) =>
           <option key={value} value={value}>{groupLabel(value)} ({categories.filter((item) => item.primary_group === value).reduce((sum, item) => sum + item.pair_count, 0).toLocaleString("vi-VN")})</option>)}
       </select></label>
-      <label>Phân nhóm chi tiết<select value={subgroup} disabled={!group || busy} onChange={(event) => { resetSelection(); setSubgroup(event.target.value); setOffset(0); }}>
+      <label>Lý do chi tiết<select value={subgroup} disabled={!group || busy} onChange={(event) => { resetSelection(); setSubgroup(event.target.value); setOffset(0); }}>
         <option value="">Tất cả phân nhóm</option>{categories.filter((item) => item.primary_group === group).map((item) =>
           <option key={item.subgroup} value={item.subgroup}>{subLabel(item.subgroup)} ({item.pair_count.toLocaleString("vi-VN")})</option>)}
       </select></label>
     </div>}
-    <div className="resolution-flow-toolbar"><div><h2>{rejected ? "Đã xác định không gộp" : "Đối chiếu bản ghi nghi trùng"}</h2>
-      <p>{loading ? "Đang tải…" : `${total.toLocaleString("vi-VN")} lượt đối chiếu${rejected ? "" : " cần xác nhận"}`}</p></div>
-      <p>{rejected ? "Mỗi dòng là hai bản ghi được giữ riêng với nhau. Một bản ghi vẫn có thể gộp với bản ghi khác phù hợp." : "Mỗi lượt so sánh hai bản ghi để bạn xác nhận gộp hoặc giữ riêng."}</p></div>
-    <p className="muted-copy">Một bản ghi có thể xuất hiện trong nhiều lượt đối chiếu. Ví dụ: A so với B, rồi A so với C. Vì vậy, số lượt đối chiếu có thể lớn hơn số bản ghi đầu vào.</p>
+    <div className="resolution-flow-toolbar"><div><h2>{rejected ? "Đã xác định không gộp" : "Cặp nghi trùng đang chờ xem xét"}</h2>
+      <p>{loading ? "Đang tải…" : `${total.toLocaleString("vi-VN")} cặp${rejected ? "" : " đang chờ xem xét"}`}</p></div>
+      <p>{rejected ? "Mỗi dòng là hai dòng thông tin được giữ riêng với nhau. Một dòng thông tin vẫn có thể gộp với dòng thông tin khác phù hợp." : "Mỗi cặp gồm hai dòng thông tin cần so sánh trước khi xác nhận gộp hoặc không gộp."}</p></div>
+    <p className="muted-copy">Một dòng thông tin có thể thuộc nhiều cặp. Ví dụ, hai cặp A–B và B–C gồm ba dòng khác nhau. Số cặp ở đây là công việc đang chờ, còn biểu đồ tổng quan đếm các dòng theo phân loại ban đầu.</p>
     {!rejected && can(user, "approve_pair") && <div className="resolution-review-controls">
       <label className="resolution-select-all"><input type="checkbox" disabled={busy || loading || !total}
         checked={allMatching && !excludedIds.length} onChange={() => {
@@ -146,13 +146,13 @@ export default function PairReviewFlow({ user, runId, rejected, onChanged, notif
           else { setAllMatching(true); setSelectedIds([]); setExcludedIds([]); }
         }} /> Chọn tất cả {total.toLocaleString("vi-VN")} cặp trên mọi trang</label>
       {selectedCount > 0 && <div className="resolution-flow-actions"><strong>{selectedCount.toLocaleString("vi-VN")} cặp đã chọn</strong>
-        <button type="button" className="button primary" disabled={busy} onClick={() => setConfirmStage(true)}>Đưa sang Tự động gộp</button></div>}
+        <button type="button" className="button primary" disabled={busy} onClick={() => setConfirmStage(true)}>Đưa sang Chờ gộp</button></div>}
     </div>}
-    <section className="card review-list-panel" aria-label="Danh sách cặp bản ghi">
+    <section className="card review-list-panel" aria-label="Danh sách cặp nghi trùng">
       {error ? <div className="empty-state" role="alert"><p>{error}</p><button className="button outline" onClick={() => { setError(""); setReload((value) => value + 1); }}>Thử lại</button></div> : loading ?
-        <p className="empty-state" role="status">Đang tải danh sách…</p> : !result?.items.length ? <div className="empty-state">Không có cặp bản ghi trong nhóm này.</div> :
-        <div className="review-table-scroll" tabIndex={0} role="region" aria-label="Bảng các cặp bản ghi">
-          <table className="review-table pair-list-table"><thead><tr>{!rejected && can(user, "approve_pair") && <th scope="col">Chọn</th>}<th scope="col">Bản ghi thứ nhất</th><th scope="col">Bản ghi thứ hai</th><th scope="col">{rejected ? "Quyết định" : "Phân nhóm"}</th><th scope="col" className="review-action-cell">So sánh</th></tr></thead>
+        <p className="empty-state" role="status">Đang tải danh sách…</p> : !result?.items.length ? <div className="empty-state">Không có cặp nghi trùng trong nhóm này.</div> :
+        <div className="review-table-scroll" tabIndex={0} role="region" aria-label="Bảng các cặp nghi trùng">
+          <table className="review-table pair-list-table"><thead><tr>{!rejected && can(user, "approve_pair") && <th scope="col">Chọn</th>}<th scope="col">Dòng thông tin thứ nhất</th><th scope="col">Dòng thông tin thứ hai</th><th scope="col">{rejected ? "Quyết định" : "Phân nhóm"}</th><th scope="col" className="review-action-cell">So sánh</th></tr></thead>
             <tbody>{result.items.map((item) => <tr key={item.id}>{!rejected && can(user, "approve_pair") && <td className="review-check-cell"><input type="checkbox" aria-label={`Chọn cặp ${item.id}`} disabled={busy}
               checked={allMatching ? !excludedIds.includes(item.id) : selectedIds.includes(item.id)} onChange={() => togglePair(item.id)} /></td>}<td><strong className="review-table-name">{item.record_labels?.[0] || item.label || "Chưa có tên"}</strong></td>
               <td><strong className="review-table-name">{item.record_labels?.[1] || "Chưa có tên"}</strong></td>
@@ -170,18 +170,18 @@ export default function PairReviewFlow({ user, runId, rejected, onChanged, notif
       </nav>
     </section>
     {confirmStage && <div className="history-overlay" role="dialog" aria-modal="true" aria-labelledby="stage-pairs-heading"><div className="card resolution-confirm-dialog">
-      <h2 id="stage-pairs-heading">Đưa {selectedCount.toLocaleString("vi-VN")} cặp sang Tự động gộp?</h2>
-      <p>Hệ thống sẽ dùng giá trị mặc định cho các trường bạn chưa chọn. Nhóm gộp sẽ được kiểm tra khi bạn bấm Xem trước CSV kết quả.</p>
+      <h2 id="stage-pairs-heading">Đưa {selectedCount.toLocaleString("vi-VN")} cặp sang Chờ gộp?</h2>
+      <p>Hệ thống sẽ tự chọn giá trị theo quy tắc mặc định cho những thông tin bạn chưa chọn. Nhóm gộp sẽ được kiểm tra khi bạn bấm Xem trước file kết quả (CSV).</p>
       <div><button type="button" className="button outline" disabled={busy} onClick={() => setConfirmStage(false)}>Quay lại</button>
-        <button type="button" className="button primary" disabled={busy} onClick={() => void stageSelected()}>Đưa sang Tự động gộp</button></div>
+        <button type="button" className="button primary" disabled={busy} onClick={() => void stageSelected()}>Đưa sang Chờ gộp</button></div>
     </div></div>}
     {active && <div className="history-overlay review-detail-overlay" role="dialog" aria-modal="true" aria-labelledby="pair-title" ref={dialog}>
       <div className="pair-comparison-dialog">
-        <header className="pair-comparison-heading"><div><p className="section-kicker">{rejected ? "KHÔNG GỘP" : "CẦN XEM XÉT"}</p><h2 id="pair-title">So sánh hai bản ghi</h2><p>{subLabel(active.subgroup)}</p></div>
+        <header className="pair-comparison-heading"><div><p className="section-kicker">{rejected ? "KHÔNG GỘP" : "CẦN XEM XÉT"}</p><h2 id="pair-title">So sánh hai dòng thông tin</h2><p>{subLabel(active.subgroup)}</p></div>
           <button className="review-close-button" aria-label="Đóng so sánh" disabled={busy} onClick={() => setActive(null)}>×</button></header>
-        <div className="pair-comparison-scroll" tabIndex={0} role="region" aria-label="Giá trị của hai bản ghi">
+        <div className="pair-comparison-scroll" tabIndex={0} role="region" aria-label="Giá trị của hai dòng thông tin">
           <table className="pair-comparison-table"><thead><tr><th scope="col">Thông tin</th>{records.map((record, index) => <th scope="col" key={record.id}>
-            <strong>Bản ghi {index + 1}</strong><span>{record.source_system} · {record.external_id}</span></th>)}</tr></thead>
+            <strong>Dòng thông tin {index + 1}</strong><span>{record.source_system} · {record.external_id}</span></th>)}</tr></thead>
             <tbody>{Object.entries(fields).map(([field, label]) => {
               const values = records.map((record) => String(record.raw_fields[field] || ""));
               return <tr key={field} className={values[0] !== values[1] ? "is-different" : ""}><th scope="row">{label}{values[0] !== values[1] && <small>Khác nhau</small>}</th>
@@ -190,7 +190,7 @@ export default function PairReviewFlow({ user, runId, rejected, onChanged, notif
           </table>
         </div>
         <footer className="pair-comparison-footer">
-          {!rejected && <p>Chỉ xác nhận mối liên hệ giữa hai bản ghi này. {(active.affected_record_count ?? 2) > 2 && `Một bản ghi đã thuộc nhóm gộp: xác nhận sẽ nối các nhóm liên quan, tổng cộng ${active.affected_record_count} bản ghi.`} Giá trị hợp nhất được kiểm tra trong nhóm Tự động gộp trước khi xuất CSV.</p>}
+          {!rejected && <p>Chỉ xác nhận mối liên hệ giữa hai dòng thông tin này. {(active.affected_record_count ?? 2) > 2 && `Một dòng thông tin đã thuộc nhóm gộp: xác nhận sẽ nối các nhóm liên quan, tổng cộng ${active.affected_record_count} dòng thông tin.`} Bạn có thể xem các giá trị dự kiến ở Chờ gộp. Xác nhận này chưa xuất file CSV.</p>}
           {active.merge_blocked_reason && <p role="alert">{active.merge_blocked_reason}</p>}
           {decisionError && <p role="alert">{decisionError}</p>}
           <div><button className="button outline" disabled={busy} onClick={() => setActive(null)}>Đóng</button>

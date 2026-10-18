@@ -61,7 +61,8 @@ from masterone.mdm.resolution_items import (
     transition_review,
 )
 from masterone.mdm.resolution_pairs import (
-    decide_review_pair, pair_categories, pending_pairs, stage_review_pairs, unstage_review_pair,
+    decide_review_pair, pair_categories, pending_pairs, save_staged_group_choices,
+    stage_review_pairs, unstage_group, unstage_review_pair,
 )
 from masterone.mdm.run_summary import summary_for
 from masterone.mdm.resolution_preview import execute_preview, prepare_preview
@@ -101,6 +102,7 @@ class StagePairsRequest(BaseModel):
     excluded_ids: list[str] = Field(default_factory=list, max_length=10000)
     primary_group: str | None = None
     subgroup: str | None = None
+    choices: dict[str, dict[str, str]] = Field(default_factory=dict)
 
 
 @router.get("/{run_id}/pair-categories")
@@ -119,7 +121,8 @@ def post_stage_review_pairs(run_id: str, request: StagePairsRequest,
         raise HTTPException(409, "Chỉ chuyển cặp khi phiên đã xử lý xong")
     return stage_review_pairs(db, run_id, all_matching=request.all_matching,
         pair_ids=request.pair_ids, excluded_ids=request.excluded_ids,
-        primary_group=request.primary_group, subgroup=request.subgroup, actor=auth.user.id)
+        primary_group=request.primary_group, subgroup=request.subgroup, actor=auth.user.id,
+        choices=request.choices)
 
 
 @router.post("/{run_id}/review-pairs/{pair_id}/unstage")
@@ -128,6 +131,28 @@ def post_unstage_review_pair(run_id: str, pair_id: str,
                              auth: CurrentSession = Depends(require_mutation_capability("approve_pair"))):
     owned_run(db, run_id, auth.user.id)
     return unstage_review_pair(db, run_id, pair_id, auth.user.id)
+
+
+class StagedGroupChoicesRequest(BaseModel):
+    revision: int = Field(ge=1)
+    choices: dict[str, str]
+
+
+@router.put("/{run_id}/merge-items/{item_id}/choices")
+def put_staged_group_choices(run_id: str, item_id: str, request: StagedGroupChoicesRequest,
+                             db: Session = Depends(get_session),
+                             auth: CurrentSession = Depends(require_mutation_capability("edit_golden"))):
+    owned_run(db, run_id, auth.user.id)
+    return save_staged_group_choices(db, run_id, item_id, request.choices,
+                                     request.revision, auth.user.id)
+
+
+@router.post("/{run_id}/merge-items/{item_id}/unstage")
+def post_unstage_group(run_id: str, item_id: str,
+                       db: Session = Depends(get_session),
+                       auth: CurrentSession = Depends(require_mutation_capability("approve_pair"))):
+    owned_run(db, run_id, auth.user.id)
+    return unstage_group(db, run_id, item_id, auth.user.id)
 
 
 @router.post("/{run_id}/review-pairs/{pair_id}/decision")

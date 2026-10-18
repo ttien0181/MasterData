@@ -80,6 +80,7 @@ export type ResolutionItemDetail = ResolutionItem & {
   records: ResolutionRecord[];
   field_options: Record<string, { source_record_id: string; source_system: string; external_id: string; value: string }[]>;
   choices: Record<string, string>; missing_fields: string[];
+  choice_conflicts?: string[];
   field_evidence?: { field: string; similarity: number; left: string; right: string }[];
   pairs?: { id: string; left_external_id: string; right_external_id: string;
     primary_group?: string | null; subgroup?: string | null; score: number;

@@ -12,7 +12,7 @@ let csrfToken = "";
 export function setCsrfToken(token: string) { csrfToken = token; }
 
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly reason?: string) {
     super(message);
   }
 }
@@ -22,9 +22,11 @@ function errorMessage(detail: unknown, status: number) {
   if (detail && typeof detail === "object" && "reason" in detail) {
     const conflict = detail as { reason: string; blocked_pair_ids?: string[]; examples?: string[][] };
     if (conflict.reason === "MERGE_CONFLICT")
-      return `Nhóm đã chọn chứa cặp không được gộp${conflict.blocked_pair_ids?.length ? `: ${conflict.blocked_pair_ids.slice(0, 5).join(", ")}` : ""}. Hãy đưa cặp liên quan trở lại Cần xem xét.`;
-    if (conflict.reason === "GROUP_TOO_LARGE") return "Nhóm gộp vượt giới hạn số bản ghi. Hãy giảm số cặp được chọn.";
+      return `Nhóm đã chọn chứa cặp không được gộp${conflict.blocked_pair_ids?.length ? `: ${conflict.blocked_pair_ids.slice(0, 5).join(", ")}` : ""}. Hãy đưa cặp liên quan trở lại danh sách Cặp cần xem xét.`;
+    if (conflict.reason === "GROUP_TOO_LARGE") return "Nhóm gộp vượt giới hạn số dòng thông tin. Hãy giảm số cặp được chọn.";
     if (conflict.reason === "CLUSTER_GUARD_FAILED") return "Nhóm gộp chứa liên kết không được gộp. Hãy kiểm tra lại trước khi xuất CSV.";
+    if (conflict.reason === "PENDING_REVIEW") return "Còn mục cần xem xét; cần xác nhận xuất các dòng đó riêng lẻ";
+    if (conflict.reason === "CHOICE_CONFLICT") return "Các nhóm được nối có lựa chọn trường khác nhau. Hãy chọn lại trên nhóm chờ gộp.";
   }
   return `Yêu cầu thất bại (${status})`;
 }
@@ -36,7 +38,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBase()}/api/v1/mdm${path}`, { ...init, credentials: "include", headers });
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
-    throw new ApiError(errorMessage(detail?.detail, response.status), response.status);
+    throw new ApiError(errorMessage(detail?.detail, response.status), response.status,
+      typeof detail?.detail?.reason === "string" ? detail.detail.reason : undefined);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -201,10 +204,17 @@ export type StagePairsSelection = { all_matching: boolean; pair_ids: string[]; e
   primary_group?: string; subgroup?: string };
 export const stageReviewPairs = (runId: string, selection: StagePairsSelection) =>
   request<{ staged_count: number }>(`/runs/${runId}/review-pairs/stage`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(selection),
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...selection, choices: exportChoices(runId) }),
   });
 export const unstageReviewPair = (runId: string, pairId: string) =>
   request<{ pair_id: string }>(`/runs/${runId}/review-pairs/${pairId}/unstage`, { method: "POST" });
+export const unstageMergeGroup = (runId: string, itemId: string) =>
+  request<{ unstaged_count: number }>(`/runs/${runId}/merge-items/${itemId}/unstage`, { method: "POST" });
+export const saveStagedGroupChoices = (runId: string, itemId: string, revision: number,
+  choices: Record<string, string>) => request<{ revision: number; choices: Record<string, string> }>(
+    `/runs/${runId}/merge-items/${itemId}/choices`, { method: "PUT",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision, choices }) });
 export function getResolutionItems(runId: string, bucket: ItemBucket, options: { offset?: number; limit?: number; origin?: string; primary_group?: string; subgroup?: string; signature_hash?: string } = {}) {
   const query = new URLSearchParams();
   Object.entries(options).forEach(([key, value]) => { if (value !== undefined) query.set(key, String(value)); });

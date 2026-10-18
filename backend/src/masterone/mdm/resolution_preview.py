@@ -47,6 +47,9 @@ def _pair_snapshot(db: Session, run_id: str) -> tuple[str, Query[ResolutionPair]
         fingerprint.update(dumps((pair.id, pair.revision, pair.user_decision, pair.staged_for_merge),
                                  separators=(",", ":")).encode())
         first = False
+    for proposal_id, revision in db.query(ResolutionProposal.id, ResolutionProposal.revision).filter_by(
+            run_id=run_id, status="STAGED_FOR_MERGE").order_by(ResolutionProposal.id):
+        fingerprint.update(dumps((proposal_id, revision), separators=(",", ":")).encode())
     fingerprint.update(b"]")
     # A Query is re-iterable for guards/events without retaining the complete pair list.
     return fingerprint.hexdigest(), query.order_by(ResolutionPair.id).yield_per(get_settings().export_batch_rows)
@@ -68,7 +71,7 @@ def _guard(proposals: list[ResolutionProposal], pairs: Iterable[ResolutionPair])
     return blocked
 
 
-def _plan_staged_pairs(db: Session, run_id: str) -> dict:
+def _plan_staged_pairs(db: Session, run_id: str, *, validate: bool = True) -> dict:
     """Build connected groups and validate only the groups touched by staged pairs."""
     staged = db.query(ResolutionPair).filter_by(run_id=run_id, staged_for_merge=True).all()
     if not staged:
@@ -107,21 +110,22 @@ def _plan_staged_pairs(db: Session, run_id: str) -> dict:
     from masterone.config import get_settings
     limit = get_settings().export_max_group_records
     too_large = [sorted(members)[:2] for members in affected.values() if len(members) > limit]
-    if too_large:
+    if too_large and validate:
         raise HTTPException(409, {"reason": "GROUP_TOO_LARGE", "examples": too_large[:10]})
-    blocked: dict[str, list[str]] = {}
-    for pair in db.query(ResolutionPair).filter_by(run_id=run_id).yield_per(get_settings().export_batch_rows):
-        left = parent.get(pair.left_record_id)
-        right = parent.get(pair.right_record_id)
-        if left is None or right is None:
-            continue
-        root = find(left)
-        if root in touched and root == find(right) and not persisted_eligibility(pair).manual_allowed:
-            blocked.setdefault(root, []).append(pair.id)
-    if blocked:
-        raise HTTPException(409, {"reason": "MERGE_CONFLICT", "blocked_pair_ids": sorted(
-            pair_id for ids in blocked.values() for pair_id in ids)[:100]})
-    require_manual_merges(db, run_id, affected.values())
+    if validate:
+        blocked: dict[str, list[str]] = {}
+        for pair in db.query(ResolutionPair).filter_by(run_id=run_id).yield_per(get_settings().export_batch_rows):
+            left = parent.get(pair.left_record_id)
+            right = parent.get(pair.right_record_id)
+            if left is None or right is None:
+                continue
+            root = find(left)
+            if root in touched and root == find(right) and not persisted_eligibility(pair).manual_allowed:
+                blocked.setdefault(root, []).append(pair.id)
+        if blocked:
+            raise HTTPException(409, {"reason": "MERGE_CONFLICT", "blocked_pair_ids": sorted(
+                pair_id for ids in blocked.values() for pair_id in ids)[:100]})
+        require_manual_merges(db, run_id, affected.values())
 
     ids = {record_id for members in affected.values() for record_id in members}
     records = {}
@@ -135,21 +139,34 @@ def _plan_staged_pairs(db: Session, run_id: str) -> dict:
         raise HTTPException(409, "Thiếu bản ghi nguồn của nhóm sẽ gộp")
     payload = {record_id: golden_payload(row) for record_id, row in records.items()}
     from masterone.mdm.resolution_items import _hash_members
-    proposal_ids = {root: sha256(f"{run_id}:staged:{_hash_members(members)}".encode()).hexdigest()
+    pair_ids_by_root: dict[str, list[str]] = {root: [] for root in affected}
+    for pair in staged:
+        pair_ids_by_root[find(pair.left_record_id)].append(pair.id)
+    proposal_ids = {root: sha256(f"{run_id}:staged:{_hash_members(members)}:"
+                                 f"{','.join(sorted(pair_ids_by_root[root]))}".encode()).hexdigest()
                     for root, members in affected.items()}
     generated_ids = list(proposal_ids.values())
     for start in range(0, len(generated_ids), 500):
-        if db.query(ResolutionProposal.id).filter(ResolutionProposal.id.in_(generated_ids[start:start + 500])).first():
+        if db.query(ResolutionProposal.id).filter(
+                ResolutionProposal.id.in_(generated_ids[start:start + 500]),
+                ResolutionProposal.status != "STAGED_FOR_MERGE").first():
             raise HTTPException(409, "Nhóm đã được duyệt; hãy tải lại")
     existing_by_root: dict[str, list[ResolutionProposal]] = {}
     for proposal in existing:
         existing_by_root.setdefault(find(proposal.member_record_ids[0]), []).append(proposal)
     new_proposals = []
+    staged_groups = {row.id: row for row in db.query(ResolutionProposal).filter_by(
+        run_id=run_id, status="STAGED_FOR_MERGE")}
     for root, members in sorted(affected.items()):
         proposal_id = proposal_ids[root]
         golden = build_golden(sorted(members), payload,
             existing_golden=merge_existing_golden(existing_by_root.get(root, []), members))
         golden["_default_unselected"] = True
+        staged_group = staged_groups.get(proposal_id)
+        if staged_group is not None:
+            golden["_selected_sources"] = staged_group.golden_fields.get("_selected_sources", {})
+            if staged_group.golden_fields.get("_choice_conflicts"):
+                golden["_choice_conflicts"] = staged_group.golden_fields["_choice_conflicts"]
         new_proposals.append({"id": proposal_id, "member_record_ids": sorted(members),
                               "golden_fields": golden})
     staged_ids = {pair.id for pair in staged}
@@ -186,10 +203,18 @@ def _apply_staged_plan(db: Session, run_id: str, actor_user_id: str, plan: dict)
         proposal = db.get(ResolutionProposal, proposal_id)
         proposal.status = "SUPERSEDED"
         proposal.revision += 1
-    db.add_all(ResolutionProposal(id=entry["id"], run_id=run_id,
-        member_record_ids=entry["member_record_ids"], golden_fields=entry["golden_fields"],
-        status="REVIEW_APPROVED", origin="REVIEW", decision_reason="STAGED_PAIRS_PREVIEWED")
-        for entry in plan["proposals"])
+    for entry in plan["proposals"]:
+        proposal = db.get(ResolutionProposal, entry["id"])
+        if proposal is None:
+            db.add(ResolutionProposal(id=entry["id"], run_id=run_id,
+                member_record_ids=entry["member_record_ids"], golden_fields=entry["golden_fields"],
+                status="REVIEW_APPROVED", origin="REVIEW", decision_reason="STAGED_PAIRS_PREVIEWED"))
+        elif proposal.run_id == run_id and proposal.status == "STAGED_FOR_MERGE":
+            proposal.status = "REVIEW_APPROVED"
+            proposal.golden_fields = entry["golden_fields"]
+            proposal.revision += 1
+        else:
+            raise HTTPException(409, "Nhóm chờ gộp đã thay đổi; hãy tải lại")
     for pair_id in plan["pair_ids"]:
         pair = db.get(ResolutionPair, pair_id)
         pair.staged_for_merge = False
@@ -264,16 +289,28 @@ def prepare_preview(db: Session, run_id: str, actor_user_id: str,
     baseline = {row.id: row.revision for row in _active_proposals(db, run_id)}
     fingerprint, _ = _pair_snapshot(db, run_id)
     plan = _plan_staged_pairs(db, run_id)
+    for entry in plan["proposals"]:
+        if entry["golden_fields"].get("_choice_conflicts"):
+            raise HTTPException(409, {"reason": "CHOICE_CONFLICT",
+                "fields": entry["golden_fields"]["_choice_conflicts"],
+                "message": "Các nhóm được nối có lựa chọn trường khác nhau; hãy chọn lại trên nhóm chờ gộp"})
+    effective_choices = dict(choices)
+    for entry in plan["proposals"]:
+        effective_choices[entry["id"]] = {
+            **entry["golden_fields"].get("_selected_sources", {}),
+            **effective_choices.get(entry["id"], {}),
+        }
     staged_count = len(plan["pair_ids"])
     savepoint = db.begin_nested() if staged_count else None
     try:
         if staged_count:
             _apply_staged_plan(db, run_id, actor_user_id, plan)
-        readiness = export_readiness(db, run_id, choices)
+        readiness = export_readiness(db, run_id, effective_choices)
+        if readiness["pending_review_count"] and not acknowledge_unreviewed:
+            raise HTTPException(409, {"reason": "PENDING_REVIEW",
+                "message": "Còn mục cần xem xét; cần xác nhận xuất các dòng đó riêng lẻ"})
         if not readiness["can_export"]:
             raise HTTPException(409, "Còn giá trị chưa chọn hoặc cụm cần tách trước khi xem trước")
-        if readiness["pending_review_count"] and not acknowledge_unreviewed:
-            raise HTTPException(409, "Còn item cần review; cần xác nhận xuất các bản ghi đó riêng lẻ")
         proposals = _active_proposals(db, run_id)
         eligible_count = len(proposals)
         separate_count = run.record_count - len({rid for proposal in proposals
@@ -289,7 +326,7 @@ def prepare_preview(db: Session, run_id: str, actor_user_id: str,
         run_id=run_id, actor_user_id=actor_user_id, policy_version=run.policy_version,
         pair_set_hash=fingerprint,
         proposal_revisions=baseline,
-        choices=choices, readiness_snapshot=readiness, staged_plan=plan if staged_count else None,
+        choices=effective_choices, readiness_snapshot=readiness, staged_plan=plan if staged_count else None,
         acknowledge_unreviewed=acknowledge_unreviewed,
         created_at=created_at, expires_at=created_at + timedelta(minutes=15),
     )
