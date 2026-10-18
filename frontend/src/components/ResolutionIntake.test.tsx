@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ResolutionIntake from "./ResolutionIntake";
 import { ApiError } from "@/lib/api";
@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   renameUploadSession: vi.fn(), replaceUploadSessionFile: vi.fn(), uploadResolutionUploadPart: vi.fn(),
   validateUploadSession: vi.fn(),
   addUploadSessionFiles: vi.fn(),
+  getSampleCatalog: vi.fn(), requestResponse: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -65,10 +66,167 @@ describe("ResolutionIntake", () => {
     render(<ResolutionIntake userId="u" initialSessionId="upload-1" workflowVersion={2} onRunCreated={vi.fn()}/>);
     const toggle=await screen.findByRole('checkbox',{name:/So sánh tên và địa chỉ bằng AI/});
     await waitFor(()=>expect(screen.getByRole('button',{name:'Tạo phiên từ dữ liệu đã kiểm tra'})).toBeEnabled());
-    expect(toggle).toBeChecked();
-    fireEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
     fireEvent.click(screen.getByRole('button',{name:'Tạo phiên từ dữ liệu đã kiểm tra'}));
     await waitFor(()=>expect(api.commitUploadSession).toHaveBeenCalledWith('upload-1',2,false));
+  });
+
+  it('keeps an explicit embedding choice through upload and validation updates', async () => {
+    const pending = { ...uploadSession(3, 'UPLOADING'), use_embedding: false };
+    const uploaded = { ...uploadSession(3, 'UPLOADING', 3), use_embedding: false };
+    const ready = { ...uploadSession(3, 'READY', 3), use_embedding: false };
+    api.createUploadSession.mockResolvedValue(pending);
+    api.getUploadSession.mockResolvedValue(uploaded);
+    api.validateUploadSession.mockResolvedValue(ready);
+    const { container } = render(<ResolutionIntake workflowVersion={2} onRunCreated={vi.fn()} />);
+    const toggle = screen.getByRole('checkbox', { name: /So sánh tên và địa chỉ bằng AI/ });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    fireEvent.change(container.querySelector('input[type="file"][multiple]')!, {
+      target: { files: [new File(['csv'], 'large.csv')] },
+    });
+    const commit = await screen.findByRole('button', { name: 'Tạo phiên từ dữ liệu đã kiểm tra' });
+    await waitFor(() => expect(commit).toBeEnabled());
+    expect(toggle).toBeChecked();
+    fireEvent.click(commit);
+    await waitFor(() => expect(api.commitUploadSession).toHaveBeenCalledWith('upload-1', 2, true));
+  });
+
+  it.each([false, true])('restores the committed embedding mode %s', async (useEmbedding) => {
+    const committed = { ...uploadSession(3, 'COMMITTED', 3), use_embedding: useEmbedding, committed_run_id: 'run-1' };
+    api.getUploadSessions.mockResolvedValue({ items: [committed] });
+    api.getUploadSession.mockResolvedValue(committed);
+    render(<ResolutionIntake userId="u" initialSessionId="upload-1" workflowVersion={2} onRunCreated={vi.fn()} />);
+    await screen.findByRole('button', { name: 'Tiếp tục phiên phân giải' });
+    const toggle = screen.getByRole('checkbox', { name: /So sánh tên và địa chỉ bằng AI/ });
+    await waitFor(() => expect(toggle).toHaveProperty('checked', useEmbedding));
+    expect(toggle).toBeDisabled();
+  });
+
+  describe('guide sample data', () => {
+    const filenames = ['crm.csv', 'erp sample.csv', 'billing.csv'];
+    const catalog = {
+      version: '1', title: 'Sample', description: 'Synthetic fixture', record_count: 3,
+      file_count: 3, synthetic: true,
+      files: filenames.map(name => ({ name, source: name, description: '', record_count: 1, byte_size: 3 })),
+    };
+
+    function prepareSamples() {
+      const pending = uploadSession(9, 'UPLOADING');
+      pending.files = filenames.map((filename, index) => ({ ...pending.files[0], filename,
+        file_id: `sample-${index}`, position: index, expected_size: 3 }));
+      const uploaded = { ...pending, files: pending.files.map(file => ({ ...file, received_size: 3 })) };
+      const ready = { ...uploaded, status: 'READY' as const };
+      api.getSampleCatalog.mockResolvedValue(catalog);
+      api.requestResponse.mockImplementation(async () => ({ blob: async () => new Blob(['csv']) }));
+      api.createUploadSession.mockResolvedValue(pending);
+      api.getUploadSession.mockResolvedValue(uploaded);
+      api.validateUploadSession.mockResolvedValue(ready);
+    }
+
+    it.each(['masterone:start-guide', 'masterone:prepare-guide-upload'])('%s loads every catalog CSV and validates without committing or manual selection', async (eventName) => {
+      prepareSamples();
+      const onRunCreated = vi.fn();
+      render(<ResolutionIntake workflowVersion={2} onRunCreated={onRunCreated} />);
+      fireEvent(window, new Event(eventName));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Tạo phiên từ dữ liệu đã kiểm tra' })).toBeEnabled());
+      expect(api.getSampleCatalog).toHaveBeenCalledTimes(1);
+      expect(api.requestResponse).toHaveBeenCalledTimes(filenames.length);
+      for (const filename of filenames) {
+        expect(api.requestResponse).toHaveBeenCalledWith(`/demo/files/${encodeURIComponent(filename)}`,
+          expect.objectContaining({ signal: expect.any(AbortSignal) }));
+      }
+      expect(api.createUploadSession).toHaveBeenCalledExactlyOnceWith('',
+        filenames.map(name => expect.objectContaining({ name, size: 3, type: 'text/csv' })));
+      expect(api.uploadResolutionUploadPart).toHaveBeenCalledTimes(filenames.length);
+      expect(api.validateUploadSession).toHaveBeenCalledExactlyOnceWith('upload-1');
+      expect(api.addUploadSessionFiles).not.toHaveBeenCalled();
+      expect(api.commitUploadSession).not.toHaveBeenCalled();
+      expect(onRunCreated).not.toHaveBeenCalled();
+    });
+
+    it('coalesces repeated guide requests while the catalog is loading', async () => {
+      prepareSamples();
+      let resolveCatalog!: (value: typeof catalog) => void;
+      api.getSampleCatalog.mockImplementation(() => new Promise(resolve => { resolveCatalog = resolve; }));
+      render(<ResolutionIntake workflowVersion={2} onRunCreated={vi.fn()} />);
+      fireEvent(window, new Event('masterone:start-guide'));
+      await waitFor(() => expect(api.getSampleCatalog).toHaveBeenCalledTimes(1));
+      fireEvent(window, new Event('masterone:start-guide'));
+      fireEvent(window, new Event('masterone:start-guide'));
+      expect(screen.getByRole('button', { name: 'Đang chuẩn bị dữ liệu mẫu…' })).toBeDisabled();
+      await act(async () => resolveCatalog(catalog));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Tạo phiên từ dữ liệu đã kiểm tra' })).toBeEnabled());
+      expect(api.getSampleCatalog).toHaveBeenCalledTimes(1);
+      expect(api.createUploadSession).toHaveBeenCalledTimes(1);
+      expect(api.uploadResolutionUploadPart).toHaveBeenCalledTimes(filenames.length);
+      expect(api.commitUploadSession).not.toHaveBeenCalled();
+    });
+
+    it('keeps an existing draft intact when the guide starts', async () => {
+      prepareSamples();
+      const ready = uploadSession(3, 'READY', 3);
+      api.getUploadSessions.mockResolvedValue({ items: [ready] });
+      api.getUploadSession.mockResolvedValue(ready);
+      render(<ResolutionIntake userId="u" initialSessionId="upload-1" workflowVersion={2} onRunCreated={vi.fn()} />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Tạo phiên từ dữ liệu đã kiểm tra' })).toBeEnabled());
+      fireEvent(window, new Event('masterone:start-guide'));
+      expect(await screen.findByText(/Đang giữ dữ liệu của bạn/)).toBeInTheDocument();
+      expect(api.getSampleCatalog).not.toHaveBeenCalled();
+      expect(api.createUploadSession).not.toHaveBeenCalled();
+      expect(api.addUploadSessionFiles).not.toHaveBeenCalled();
+      expect(api.uploadResolutionUploadPart).not.toHaveBeenCalled();
+    });
+
+    it('does not turn duplicate guide events into an automatic retry after failure', async () => {
+      prepareSamples();
+      let rejectCatalog!: (reason: Error) => void;
+      api.getSampleCatalog.mockImplementation(() => new Promise((_resolve, reject) => { rejectCatalog = reject; }));
+      render(<ResolutionIntake workflowVersion={2} onRunCreated={vi.fn()} />);
+      fireEvent(window, new Event('masterone:start-guide'));
+      await waitFor(() => expect(api.getSampleCatalog).toHaveBeenCalledTimes(1));
+      fireEvent(window, new Event('masterone:start-guide'));
+      await act(async () => rejectCatalog(new Error('Không tải được danh mục mẫu')));
+      expect(await screen.findByText('Không tải được danh mục mẫu')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Dùng bộ dữ liệu mẫu' })).toBeEnabled();
+      expect(api.getSampleCatalog).toHaveBeenCalledTimes(1);
+      expect(api.createUploadSession).not.toHaveBeenCalled();
+    });
+
+    it('aborts sample loading on unmount and never creates a draft from late responses', async () => {
+      prepareSamples();
+      let resolveDownload!: (response: { blob: () => Promise<Blob> }) => void;
+      const delayedDownload = new Promise<{ blob: () => Promise<Blob> }>(resolve => { resolveDownload = resolve; });
+      api.requestResponse.mockReturnValue(delayedDownload);
+      const { unmount } = render(<ResolutionIntake workflowVersion={2} onRunCreated={vi.fn()} />);
+      fireEvent(window, new Event('masterone:start-guide'));
+      await waitFor(() => expect(api.requestResponse).toHaveBeenCalledTimes(filenames.length));
+      const signal = api.requestResponse.mock.calls[0][1].signal as AbortSignal;
+      expect(signal.aborted).toBe(false);
+      unmount();
+      expect(signal.aborted).toBe(true);
+      await act(async () => resolveDownload({ blob: async () => new Blob(['csv']) }));
+      expect(api.createUploadSession).not.toHaveBeenCalled();
+      expect(api.uploadResolutionUploadPart).not.toHaveBeenCalled();
+    });
+
+    it.each(['catalog', 'file'])('shows a %s fetch error and allows retry with the sample button', async (stage) => {
+      prepareSamples();
+      const error = new Error('Mất kết nối dữ liệu mẫu');
+      if (stage === 'catalog') api.getSampleCatalog.mockRejectedValueOnce(error);
+      else api.requestResponse.mockRejectedValueOnce(error);
+      render(<ResolutionIntake workflowVersion={2} onRunCreated={vi.fn()} />);
+      fireEvent(window, new Event('masterone:start-guide'));
+      expect(await screen.findByText(error.message)).toBeInTheDocument();
+      expect(api.createUploadSession).not.toHaveBeenCalled();
+      const retry = screen.getByRole('button', { name: 'Dùng bộ dữ liệu mẫu' });
+      await waitFor(() => expect(retry).toBeEnabled());
+      fireEvent.click(retry);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Tạo phiên từ dữ liệu đã kiểm tra' })).toBeEnabled());
+      expect(api.createUploadSession).toHaveBeenCalledTimes(1);
+      expect(api.validateUploadSession).toHaveBeenCalledExactlyOnceWith('upload-1');
+      expect(api.commitUploadSession).not.toHaveBeenCalled();
+    });
   });
 
   it('disables adding files until asynchronous validation finishes', async () => {
