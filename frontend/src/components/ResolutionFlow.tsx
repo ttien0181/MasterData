@@ -362,6 +362,10 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
   const differentFields = active ? FIELDS.filter((field) => groupFieldOptions(active.field_options[field] ?? []).length > 1) : [];
   const emptyFields = active ? FIELDS.filter((field) => !(active.field_options[field] ?? []).length) : [];
   const sharedFields = active ? FIELDS.filter((field) => groupFieldOptions(active.field_options[field] ?? []).length === 1) : [];
+  const conflictFields = active ? FIELDS.filter((field) =>
+    active.pairs?.some((pair) => pair.field_evidence.some((entry) => entry.field === field && entry.state === "CF")))
+    : [];
+  const pureDifferentFields = differentFields.filter((field) => !conflictFields.includes(field));
   const selectedCount = differentFields.filter((field) => (active?.field_options[field] ?? [])
     .some((option) => option.source_record_id === choices[field])).length;
   const choicesDirty = !!active && FIELDS.some((field) => choices[field] !== active.choices[field]);
@@ -374,7 +378,7 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
     const groups = groupFieldOptions(options);
     const different = groups.length > 1;
     return <div className={`resolution-field ${different ? "different" : "same"} ${field === "address" ? "long-value" : ""}`} key={field}>
-      <div className="resolution-field-label"><strong>{labels[field]}</strong><small>{different ? `${groups.length} giá trị khác nhau` : options.length ? "Giống nhau" : "Chưa có dữ liệu"}</small></div>
+      <div className="resolution-field-label"><strong>{labels[field]}</strong><small>{different ? (pureDifferentFields.includes(field) ? `${groups.length} giá trị khác nhau (không phải xung đột)` : `${groups.length} giá trị khác nhau`) : options.length ? "Giống nhau" : "Chưa có dữ liệu"}</small></div>
       {!options.length ? <span className="muted-copy">Chưa có dữ liệu</span> : !different ? <div className="resolution-shared-value"><b>{groups[0].value}</b><span className="resolution-source-list">{options.map((option) => <span key={option.source_record_id} className={`resolution-source ${sourceColor(option.source_system)}`}>{option.source_system} · {option.external_id}</span>)}</span></div> :
         <div className="resolution-options">{groups.map((group) => {
           const selected = group.sources.some((option) => option.source_record_id === choices[field]);
@@ -535,7 +539,7 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
               <button type="button" className="button outline" disabled={busy || !canExplain} onClick={() => void explainActiveItem()}>Giải thích bằng AI</button>
               {itemExplanation?.itemId === active.id && <div className="resolution-ai-review"><strong>{itemExplanation.status === "TEMPLATE" ? "Giải thích theo quy tắc" : "Giải thích từ AI"}</strong><p>{itemExplanation.summary}</p></div>}
             </div>
-            <div className="resolution-footer-status"><strong>{active.status === "REVIEW_STAGED_CONFLICT" ? "Nhóm đang chờ tách" : differentFields.length ? `${selectedCount}/${differentFields.length} trường khác nhau đã có lựa chọn` : "Không có trường khác nhau cần chọn"}</strong>
+            <div className="resolution-footer-status"><strong>{active.status === "REVIEW_STAGED_CONFLICT" ? "Nhóm đang chờ tách" : conflictFields.length ? `${conflictFields.length} trường xung đột` : differentFields.length ? `${selectedCount}/${differentFields.length} trường khác nhau đã có lựa chọn` : "Không có trường khác nhau cần chọn"}</strong>
               <small>{choicesDirty ? "Có thay đổi chưa lưu." : "Chưa có thay đổi để lưu."} {selectedCount < differentFields.length && "Có thể lưu từng phần và hoàn tất sau."}</small></div>
             <div className="review-decision-actions">
               {active.status !== "REVIEW_STAGED_CONFLICT" && <button type="button" className="button outline" disabled={busy || !choicesDirty || !canEdit} onClick={() => void save()}>Lưu lựa chọn</button>}

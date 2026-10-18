@@ -173,36 +173,6 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
         return;
       }
 
-      let saved = "";
-      if (!location.runId) {
-        try { saved = window.localStorage.getItem(activeRunKey(user.id)) || ""; } catch { /* Storage is optional. */ }
-      }
-      const candidates = [...new Set([
-        list.find((run) => run.status === "RUNNING" || run.status === "QUEUED" || run.status === "IMPORTING")?.run_id || "",
-        saved,
-        list[0]?.run_id || "",
-      ].filter(Boolean))];
-      for (const candidateId of candidates) {
-        if (cancelled || !isInitialLocationCurrent()) return;
-        activeRunRef.current = candidateId; setRunId(candidateId);
-        try {
-          await refreshOverview(candidateId);
-          if (!cancelled && activeRunRef.current === candidateId) {
-            try { window.localStorage.setItem(activeRunKey(user.id), candidateId); } catch { /* Optional restore hint. */ }
-            writeLocation(candidateId, location.stage, "replace");
-          }
-          return;
-        } catch (error) {
-          if (error instanceof ApiError && (error.status === 404 || error.status === 403)) {
-            if (candidateId === saved) {
-              try { window.localStorage.removeItem(activeRunKey(user.id)); } catch { /* Storage is optional. */ }
-            }
-            continue;
-          }
-          if (!cancelled && activeRunRef.current === candidateId) setMessage(error instanceof Error ? error.message : "Không tải được đợt xử lý gần nhất.");
-          return;
-        }
-      }
       if (!cancelled && isInitialLocationCurrent()) {
         activeRunRef.current = ""; setRunId(""); setOverview(null); writeLocation("", location.stage, "replace");
       }
@@ -352,6 +322,14 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
     if (nextRunId === activeRunRef.current) { setWorkspacePanel(null); return; }
     activeRunRef.current = nextRunId; overviewRequestRef.current += 1;
     setRunId(nextRunId); setOverview(null); setOverviewStale(false); setWorkspacePanel(null);
+    if (!nextRunId) {
+      try { window.localStorage.removeItem(activeRunKey(user.id)); } catch { /* Storage is optional. */ }
+      writeLocation("", "overview");
+      setStage("overview");
+      void refreshRuns(0).catch(() => undefined);
+      void refreshActiveRuns().catch(() => undefined);
+      return;
+    }
     try { window.localStorage.setItem(activeRunKey(user.id), nextRunId); } catch { /* URL remains authoritative. */ }
     writeLocation(nextRunId, stage);
     try { await refreshOverview(nextRunId); }
@@ -400,13 +378,86 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
       {stage !== "overview" && <PageHeader stage={stage} />}
       {!can(user, "create_run") && <p role="note">Tài khoản của bạn chưa có quyền tạo đợt xử lý. Liên hệ người quản trị nếu cần quyền này.</p>}
       {message && <div className="notice toast" role="status"><span className="toast-icon" aria-hidden="true">i</span><span className="toast-message">{message}</span><button type="button" aria-label="Đóng thông báo" onClick={() => setMessage("")}>×</button></div>}
-      {stage === "overview" && <section className="resolution-overview">
+      {stage === "overview" && !overview && <section className="resolution-overview sessions-hub-landing">
+        <div className="resolution-overview-head" style={{ marginBottom: 20 }}>
+          <div>
+            <h2>Quản lý các đợt xử lý dữ liệu</h2>
+            <p>Chọn một đợt xử lý bên dưới để xem chi tiết hoặc nạp thêm dữ liệu mới.</p>
+          </div>
+          {can(user, "create_run") && <button className="button primary btn btn-primary upload-open-button" type="button" onClick={openUploadPanel}>＋ Nạp dữ liệu mới</button>}
+        </div>
+
+        {runsLoading && <div className="card" style={{ padding: 24 }}><p>Đang tải danh sách đợt xử lý…</p></div>}
+        {runsError && <div className="card" role="alert" style={{ padding: 24 }}><p>{runsError}</p><button type="button" className="button outline" onClick={() => void refreshRuns(0)}>Thử lại</button></div>}
+
+        {!runsLoading && !runsError && runHistory.length === 0 && (
+          <div className="card empty-state" style={{ padding: "48px 24px", textAlign: "center", display: "grid", placeItems: "center", gap: 12 }}>
+            <h3 style={{ margin: 0 }}>Chưa có đợt xử lý nào</h3>
+            <p className="muted-copy" style={{ maxWidth: 500, margin: 0 }}>Nạp các file CSV để hệ thống tự động nhận diện bản ghi trùng lặp và hỗ trợ hợp nhất dữ liệu.</p>
+            {can(user, "create_run") && <button className="button primary btn btn-primary" type="button" style={{ marginTop: 8 }} onClick={openUploadPanel}>＋ Nạp dữ liệu ngay</button>}
+          </div>
+        )}
+
+        {!runsLoading && !runsError && runHistory.length > 0 && (
+          <div className="card recent-runs" style={{ gridColumn: "1 / -1", margin: 0, padding: "20px 24px", borderRadius: "14px" }}>
+            <div className="recent-runs-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div>
+                <h3 style={{ fontSize: "16px", margin: 0 }}>Tất cả đợt xử lý gần đây ({runTotal.toLocaleString("vi-VN")})</h3>
+                <small className="muted-copy">Bấm vào đợt xử lý để mở không gian làm việc chi tiết</small>
+              </div>
+              <button type="button" className="button outline" style={{ fontSize: "12px", minHeight: "32px" }} onClick={openSessionsPanel}>
+                Xem đầy đủ & bộ lọc →
+              </button>
+            </div>
+            <div className="sessions-list-content">
+              {runHistory.map((run) => (
+                <button
+                  type="button"
+                  className="recent-run-row"
+                  key={run.run_id}
+                  onClick={() => void switchRun(run.run_id)}
+                  style={{ cursor: "pointer", transition: "background 150ms ease" }}
+                >
+                  <span>
+                    <strong style={{ fontSize: "14px", color: "var(--ink)", fontWeight: 650 }}>
+                      {run.name || run.files.join(", ") || `Đợt xử lý ${run.run_id.slice(0, 8)}`}
+                    </strong>
+                    <small style={{ color: "var(--ink-3)" }}>
+                      {new Date(run.created_at).toLocaleString("vi-VN")} · {run.file_count} file
+                    </small>
+                  </span>
+                  <span style={{ fontWeight: 600, color: "var(--ink-2)" }}>
+                    {run.record_count.toLocaleString("vi-VN")} dòng thông tin
+                  </span>
+                  <span className="session-status" data-status={run.status.toLowerCase()}>
+                    {runStatusLabel(run.status)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>}
+
+      {stage === "overview" && overview && <section className="resolution-overview">
         <div className="resolution-overview-head">
-          <div><h2>{overview ? "Tổng quan đợt xử lý" : "Bắt đầu từ dữ liệu của bạn"}</h2>
-            <p>{overview ? `${sessionLabel} · ${overview.file_count} file` : "Nạp các file CSV để tìm dòng thông tin trùng và hợp nhất dữ liệu."}</p></div>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <button
+                type="button"
+                className="button outline"
+                style={{ padding: "4px 10px", fontSize: "12px", minHeight: "28px" }}
+                onClick={() => void switchRun("")}
+              >
+                ← Danh sách đợt xử lý
+              </button>
+            </div>
+            <h2>Tổng quan đợt xử lý</h2>
+            <p>{sessionLabel} · {overview.file_count} file</p>
+          </div>
           {can(user, "create_run") && <button className="button primary btn btn-primary upload-open-button" type="button" onClick={openUploadPanel}>＋ Nạp dữ liệu</button>}
         </div>
-        {overview && <>
+        <>
           {overviewStale && <div className="run-stale" role="status"><span>Chưa kết nối được để cập nhật đợt xử lý; đang giữ trạng thái gần nhất.</span><button type="button" onClick={() => void refreshOverview(runId).catch(() => setOverviewStale(true))}>Thử cập nhật</button></div>}
           {overview.status !== "COMPLETED" && <div className="run-progress card"><div><span>{session?.statusLabel}</span><strong>{runPhaseLabel(overview.phase)}</strong></div>
             {session?.processing && <p role="status">Đang chờ kết quả xử lý. Chưa có phần trăm tiến độ chi tiết.</p>}
@@ -447,14 +498,24 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
           <section className="card source-summary"><div><p className="section-kicker">Toàn bộ dòng thông tin đầu vào</p><h3>Phân bố nguồn dữ liệu</h3><small>{overview.record_count.toLocaleString("vi-VN")} dòng thông tin từ {overview.file_count} file</small></div><div className="source-summary-values">
             {Object.entries(overview.source_counts).map(([source, count]) => <span className="source-count" key={source}><b>{source}</b><strong>{count.toLocaleString("vi-VN")}</strong><span className="source-share" aria-label={`${source}: ${count.toLocaleString("vi-VN")} dòng thông tin`}><span style={{ width: `${overview.record_count ? count / overview.record_count * 100 : 0}%` }} /></span></span>)}
           </div></section>
-        </>}
+        </>
       </section>}
+
+      {stage !== "overview" && !runId && (
+        <div className="card empty-state" style={{ padding: "48px 24px", textAlign: "center", display: "grid", placeItems: "center", gap: 12 }}>
+          <h3 style={{ margin: 0 }}>Chưa chọn đợt xử lý</h3>
+          <p className="muted-copy" style={{ margin: 0 }}>Vui lòng chọn một đợt xử lý từ danh sách để xem chi tiết hoặc thực hiện thao tác.</p>
+          <button type="button" className="button primary" onClick={() => navigateStage("overview")}>
+            Về danh sách đợt xử lý
+          </button>
+        </div>
+      )}
 
       {stage === "import" && can(user, "create_run") && <button type="button" className="button outline" onClick={openUploadPanel}>Tiếp tục chuẩn bị dữ liệu</button>}
 
       {stage === "audit" && can(user, "read_audit") && (runId
         ? <AuditTrail key={runId} runId={runId} />
-        : <div className="card empty-state"><b>Chưa chọn đợt xử lý</b><p>Mở một đợt trong danh sách đợt xử lý để xem các thao tác đã ghi nhận.</p></div>)}
+        : null)}
 
       {stage === "policy" && (can(user, "edit_policy") || can(user, "simulate_policy")) &&
         <PolicyAdmin user={user} runId={runId || null} />}

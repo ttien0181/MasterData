@@ -55,3 +55,25 @@ it("shows an error and retries instead of substituting sample metrics", async ()
   fireEvent.click(screen.getByRole("button", { name: "Tải lại số liệu" }));
   await waitFor(() => expect(screen.getByLabelText("Phân loại dòng thông tin ban đầu")).toBeInTheDocument());
 });
+it("displays difference count with conflict breakdown for discrepant fields", async () => {
+  const customMetrics: ResolutionAnalytics = {
+    ...metrics,
+    conflicts: {
+      basis: "pending_review_pairs",
+      unit: "pair",
+      review_pair_count: 84,
+      fields: [
+        { field: "name", count: 16, difference_count: 16, conflict_count: 16 },
+        { field: "address", count: 18, difference_count: 18, conflict_count: 0 },
+        { field: "phone", count: 0, difference_count: 0, conflict_count: 0 },
+        { field: "email", count: 0, difference_count: 0, conflict_count: 0 },
+      ],
+    },
+  };
+  vi.mocked(getResolutionAnalytics).mockResolvedValue(customMetrics);
+  render(<SessionAnalytics runId="r" revision="1" />);
+  const conflictsSection = await screen.findByLabelText("Thông tin không khớp trong các cặp đang chờ");
+  expect(within(conflictsSection).getByText("16 (16 xung đột)")).toBeInTheDocument();
+  expect(within(conflictsSection).getByText("18 (0 xung đột)")).toBeInTheDocument();
+  expect(within(conflictsSection).getAllByText("0")).toHaveLength(2);
+});

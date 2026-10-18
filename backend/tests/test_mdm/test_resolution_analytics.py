@@ -20,7 +20,7 @@ def seed_analytics(client):
         pair = db.get(ResolutionPair, "uncertain-bc")
         pair.field_evidence = [{"field": "name", "state": "CF"}, {"field": "name", "state": "CF"},
                                {"field": "phone", "state": "EX"}, {"field": "email", "state": "NC"},
-                               {"field": "address", "state": "CF"}]
+                               {"field": "address", "state": "DF"}]
     return f"/api/v1/mdm/runs/{run_id}"
 
 
@@ -31,8 +31,15 @@ def test_distribution_counts_each_source_record_once_with_review_precedence(clie
     data = response.json()
     assert data["decisions"] == {"basis": "initial_classification", "unit": "source_record",
         "total": 4, "automatic": 1, "review": 2, "no_duplicate_detected": 1, "automatic_percent": 25.0}
-    assert {row["field"]: row["count"] for row in data["conflicts"]["fields"]} == {
-        "name": 1, "address": 1, "phone": 0, "email": 0}
+    fields = {row["field"]: row for row in data["conflicts"]["fields"]}
+    assert fields["name"]["count"] == 1
+    assert fields["name"]["conflict_count"] == 1
+    assert fields["address"]["count"] == 1
+    assert fields["address"]["conflict_count"] == 0
+    assert fields["phone"]["count"] == 0
+    assert fields["phone"]["conflict_count"] == 0
+    assert fields["email"]["count"] == 0
+    assert fields["email"]["conflict_count"] == 0
     assert data["conflicts"]["review_pair_count"] == 1
 
 

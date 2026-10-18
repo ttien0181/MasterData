@@ -44,12 +44,17 @@ def field_conflicts(db: Session, run_id: str):
         field = func.json_extract(entries.c.value, "$.field")
         state = func.json_extract(entries.c.value, "$.state")
     rows = pending_pairs(db, run_id).join(entries, true()).with_entities(
-        field.label("field"), func.count(func.distinct(ResolutionPair.id))
-    ).filter(field.in_(FIELDS), state == "CF").group_by(field).all()
-    counts = dict(rows)
+        field.label("field"),
+        func.count(func.distinct(case((state.in_(["CF", "DF"]), ResolutionPair.id)))).label("diff_count"),
+        func.count(func.distinct(case((state == "CF", ResolutionPair.id)))).label("conflict_count"),
+    ).filter(field.in_(FIELDS)).group_by(field).all()
+    diff_counts = {r[0]: r[1] for r in rows}
+    cf_counts = {r[0]: r[2] for r in rows}
     return {"basis": "pending_review_pairs", "unit": "pair", "review_pair_count": pending_pairs(db, run_id).count(),
-            "fields": [{"field": field, "count": counts.get(field, 0)}
-                       for field in sorted(FIELDS, key=lambda name: (-counts.get(name, 0), name))]}
+            "fields": [{"field": field, "count": diff_counts.get(field, 0),
+                        "difference_count": diff_counts.get(field, 0),
+                        "conflict_count": cf_counts.get(field, 0)}
+                       for field in sorted(FIELDS, key=lambda name: (-diff_counts.get(name, 0), -cf_counts.get(name, 0), name))]}
 
 
 def source_quality(db: Session, run_id: str):

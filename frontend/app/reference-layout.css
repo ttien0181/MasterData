@@ -236,7 +236,7 @@
 .analytics-legend .is-review { background: var(--chart-review); }
 .analytics-conflict-list { display: grid; gap: 14px; }
 .analytics-conflict-row { display: grid; grid-template-columns: 82px minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 14px; }
-.analytics-conflict-row b { min-width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+.analytics-conflict-row b { min-width: 28px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .analytics-bar-track { height: 12px; border-radius: 8px; background: var(--bg-subtle); overflow: hidden; }
 .analytics-bar-track i { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
 .analytics-quality-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(65px, 1fr)); align-items: start; gap: 16px; }

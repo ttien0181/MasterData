@@ -258,13 +258,17 @@ describe("Resolution item flow", () => {
     vi.mocked(getResolutionItem).mockResolvedValue({ ...detail, records: [...records, third],
       choices: { address: "b" }, missing_fields: ["phone"],
       field_options: { ...detail.field_options, address },
+      pairs: [{ id: "pair-1", left_external_id: "A", right_external_id: "B", score: 0.6,
+        decision: "REVIEW", reason: "POLICY_BLOCKED",
+        field_evidence: [{ field: "address", state: "DF", similarity: 0.3, left: "Hà Nội",
+          right: "Đà Nẵng", normalization_tags: [] }] }],
     });
     render(<ResolutionFlow user={steward} runId="run-1" stage="review" onChanged={vi.fn()} notify={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: /Xem so sánh/ }));
     const dialog = await screen.findByRole("dialog");
     const comparison = within(dialog.querySelector(".review-comparison-panel") as HTMLElement);
     const addressRow = comparison.getByText("Địa chỉ").closest<HTMLElement>(".resolution-field")!;
-    expect(within(addressRow).getByText("2 giá trị khác nhau")).toBeInTheDocument();
+    expect(within(addressRow).getByText("2 giá trị khác nhau (không phải xung đột)")).toBeInTheDocument();
     expect(within(addressRow).getAllByRole("radio")).toHaveLength(2);
     expect(within(addressRow).getAllByRole("radio")[0]).toBeChecked();
     expect(within(addressRow).getByText(/ERP · B/)).toBeInTheDocument();
@@ -275,6 +279,48 @@ describe("Resolution item flow", () => {
     expect(within(dialog).getByText(/Có thay đổi chưa lưu/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "Lưu lựa chọn" }));
     await waitFor(() => expect(getSavedChoices("run-1", "review", "case-1", ["a", "b"])).toEqual({ address: "b", phone: "b" }));
+  });
+
+  it("shows address as different value but not a conflict when only address differs", async () => {
+    vi.mocked(getResolutionItem).mockResolvedValue({ ...detail,
+      field_options: { ...detail.field_options, address: [
+        { source_record_id: "a", source_system: "CRM", external_id: "A", value: "268 đường Nguyễn Trãi" },
+        { source_record_id: "b", source_system: "ERP", external_id: "B", value: "683 đường Trần Phú" },
+      ] },
+      pairs: [{ id: "pair-1", left_external_id: "A", right_external_id: "B", score: 0.6,
+        decision: "REVIEW", reason: "POLICY_BLOCKED",
+        field_evidence: [{ field: "address", state: "DF", similarity: 0.3, left: "268 đường Nguyễn Trãi",
+          right: "683 đường Trần Phú", normalization_tags: [] }] }],
+    });
+    render(<ResolutionFlow user={steward} runId="run-1" stage="review" onChanged={vi.fn()} notify={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Xem so sánh/ }));
+    const dialog = await screen.findByRole("dialog");
+    const comparison = within(dialog.querySelector(".review-comparison-panel") as HTMLElement);
+    const addressRow = comparison.getByText("Địa chỉ").closest<HTMLElement>(".resolution-field")!;
+    expect(within(addressRow).getByText("2 giá trị khác nhau (không phải xung đột)")).toBeInTheDocument();
+    expect(comparison.queryByText("trường xung đột")).not.toBeInTheDocument();
+  });
+
+  it("counts a field as conflict when engine state is CF", async () => {
+    vi.mocked(getResolutionItem).mockResolvedValue({ ...detail,
+      field_options: { ...detail.field_options, phone: [
+        { source_record_id: "a", source_system: "CRM", external_id: "A", value: "0942963372" },
+        { source_record_id: "b", source_system: "ERP", external_id: "B", value: "0901234567" },
+      ] },
+      pairs: [{ id: "pair-1", left_external_id: "A", right_external_id: "B", score: 0.6,
+        decision: "REVIEW", reason: "POLICY_BLOCKED",
+        field_evidence: [{ field: "phone", state: "CF", similarity: 0.0, left: "0942963372",
+          right: "0901234567", normalization_tags: [] }] }],
+    });
+    render(<ResolutionFlow user={steward} runId="run-1" stage="review" onChanged={vi.fn()} notify={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Xem so sánh/ }));
+    const dialog = await screen.findByRole("dialog");
+    const comparison = within(dialog.querySelector(".review-comparison-panel") as HTMLElement);
+    const phoneRow = comparison.getByText("Điện thoại").closest<HTMLElement>(".resolution-field")!;
+    expect(within(phoneRow).getByText("2 giá trị khác nhau")).toBeInTheDocument();
+    expect(within(dialog).getByText(/trường xung đột/)).toBeInTheDocument();
+    expect(within(dialog).getByText("1 trường xung đột")).toBeInTheDocument();
+    expect(within(phoneRow).queryByText("không phải xung đột")).not.toBeInTheDocument();
   });
 
   it("allows saving an incomplete choice and discards unsaved edits on cancel", async () => {
@@ -378,7 +424,7 @@ describe("Resolution item flow", () => {
   });
 
   it("shows user-facing outcome metrics with separate records hidden", async () => {
-    localStorage.setItem("masterone.resolution-run.v1.user-1", "run-1");
+    window.history.replaceState({}, "", "/app?run=run-1");
     vi.mocked(getResolutionRuns).mockResolvedValue({ total: 0, items: [] });
     vi.mocked(getResolutionOverview).mockResolvedValue({ run_id: "run-1", status: "COMPLETED", phase: "DONE",
       processed_count: 4, total_count: 4, record_count: 4, file_count: 1, source_counts: { CRM: 4 },
@@ -392,6 +438,31 @@ describe("Resolution item flow", () => {
     expect(screen.queryByRole("button", { name: /Xem dòng thông tin được giữ riêng|Dự kiến giữ riêng/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Dự kiến giữ riêng" })).not.toBeInTheDocument();
     expect(getSeparateRecords).not.toHaveBeenCalled();
+  });
+
+  it("uses a direct run URL and does not auto-select on /app without run query", async () => {
+    window.history.replaceState({}, "", "/app");
+    vi.mocked(getResolutionRuns).mockResolvedValue({
+      total: 2,
+      items: [
+        {
+          run_id: "run-hub-1", name: "Đợt CRM và ERP tháng 10", status: "COMPLETED",
+          created_at: "2026-10-18T10:00:00Z", record_count: 500, file_count: 2,
+          files: ["crm.csv", "erp.csv"], owner_user_id: "user-1", updated_at: "2026-10-18T10:00:00Z",
+        },
+        {
+          run_id: "run-hub-2", name: "Đợt Billing tháng 9", status: "RUNNING",
+          created_at: "2026-10-17T09:00:00Z", record_count: 1200, file_count: 1,
+          files: ["billing.csv"], owner_user_id: "user-1", updated_at: "2026-10-17T09:00:00Z",
+        },
+      ],
+    });
+    render(<ResolutionWorkspace user={steward} onLogout={vi.fn()} />);
+    const heading = await screen.findByRole("heading", { name: "Quản lý các đợt xử lý dữ liệu" });
+    const landing = heading.closest("section")!;
+    expect(within(landing).getByText("Đợt CRM và ERP tháng 10")).toBeInTheDocument();
+    expect(within(landing).getByText("Đợt Billing tháng 9")).toBeInTheDocument();
+    expect(within(landing).getByRole("button", { name: /＋ Nạp dữ liệu mới/ })).toBeInTheDocument();
   });
 
   it("uses a direct run URL before the saved run hint", async () => {
@@ -413,7 +484,7 @@ describe("Resolution item flow", () => {
 
   it("keeps the last processing state and marks it stale when overview polling loses connection", async () => {
     vi.useFakeTimers();
-    localStorage.setItem("masterone.resolution-run.v1.user-1", "run-1");
+    window.history.replaceState({}, "", "/app?run=run-1");
     vi.mocked(getResolutionRuns).mockResolvedValue({ total: 0, items: [] });
     const running = { run_id: "run-1", status: "RUNNING", phase: "blocking", processed_count: 0, total_count: 4,
       record_count: 4, file_count: 1, source_counts: { CRM: 4 }, history_count: 0, candidate_count: 0,
@@ -432,7 +503,7 @@ describe("Resolution item flow", () => {
 
   it("shows a readable toast and dismisses it after six seconds", async () => {
     vi.useFakeTimers();
-    localStorage.setItem("masterone.resolution-run.v1.user-1", "run-1");
+    window.history.replaceState({}, "", "/app?run=run-1");
     vi.mocked(getResolutionRuns).mockResolvedValue({ total: 0, items: [] });
     vi.mocked(getResolutionOverview).mockRejectedValue(new Error("Item không còn ở tab Gộp"));
     render(<ResolutionWorkspace user={steward} onLogout={vi.fn()} />);

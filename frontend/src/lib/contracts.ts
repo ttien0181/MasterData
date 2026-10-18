@@ -51,7 +51,7 @@ export type ResolutionAnalytics = {
   decisions: { basis: "initial_classification"; unit: "source_record"; total: number;
     automatic: number; review: number; no_duplicate_detected: number; automatic_percent: number };
   conflicts: { basis: "pending_review_pairs"; unit: "pair"; review_pair_count: number;
-    fields: { field: string; count: number }[] };
+    fields: { field: string; count: number; difference_count?: number; conflict_count?: number }[] };
   quality: { basis: "valid_assessed_fields"; fields: string[];
     sources: { source: string; record_count: number; valid_fields: number; assessed_fields: number;
       expected_fields: number; score_percent: number | null; coverage_percent: number }[] };
