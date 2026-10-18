@@ -29,7 +29,7 @@ export default function SessionDock({ stage, canReadAudit, canEditPolicy, onNavi
     <div className={`dock-step-group ${decisionStages.some((item) => item.id === stage) ? "is-current" : ""}`} role="group" aria-label="Bước 2: Xử lý đề xuất">
       <span className="dock-step-group-title"><span className="dock-step-group-number">2</span> Xử lý đề xuất</span>
       <div className="dock-step-options">
-        {decisionStages.map((item) => <button key={item.id} type="button" className={`dock-step-option ${stage === item.id ? "active" : ""}`} aria-current={stage === item.id ? "page" : undefined} onClick={() => onNavigate(item.id)}>
+        {decisionStages.map((item) => <button key={item.id} type="button" className={`dock-step-option dock-step-option-${item.id} ${stage === item.id ? "active" : ""}`} aria-current={stage === item.id ? "page" : undefined} onClick={() => onNavigate(item.id)}>
           <ShellIcon name={item.id as ShellIconName} size={15} /><span>{item.label}</span>
         </button>)}
       </div>

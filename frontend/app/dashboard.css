@@ -423,14 +423,21 @@ button:focus-visible, input:focus-visible, select:focus-visible,
 .dock-step-marker { display: grid; place-items: center; width: 27px; height: 27px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink-3); font-size: 12px; }
 .dock-step.active .dock-step-marker { border-color: var(--primary); background: var(--primary); color: var(--surface); }
 .dock-step-connector { width: clamp(14px, 2.3vw, 34px); height: 2px; flex: none; border-radius: 2px; background: var(--line); }
-.dock-step-group { flex: none; padding: 7px 8px 8px; border: 1px solid var(--primary-border); border-radius: 13px; background: var(--primary-bg); }
-.dock-step-group.is-current { border-color: var(--primary); }
+.dock-step-group { flex: none; padding: 7px 8px 8px; border: 1px solid var(--line); border-radius: 13px; background: var(--bg-subtle); }
+.dock-step-group.is-current { border-color: var(--line-strong); }
 .dock-step-group-title { display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 5px; color: var(--ink-2); font-size: 10px; font-weight: 700; line-height: 1; white-space: nowrap; }
-.dock-step-group-number { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 5px; background: var(--primary); color: var(--surface); font-size: 10px; }
+.dock-step-group-number { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 5px; background: var(--ink-3); color: var(--surface); font-size: 10px; }
+.dock-step-group.is-current .dock-step-group-number { background: var(--primary); }
 .dock-step-options { display: flex; align-items: center; gap: 4px; }
-.app-shell .workspace-dock .dock-step-option { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 35px; padding: 7px 9px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--ink-2); cursor: pointer; font-size: 11px; font-weight: 600; white-space: nowrap; }
-.app-shell .workspace-dock .dock-step-option:hover { border-color: var(--primary-border); background: var(--surface); }
+.app-shell .workspace-dock .dock-step-option { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 35px; padding: 7px 9px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--ink-2); cursor: pointer; font-size: 11px; font-weight: 600; white-space: nowrap; transition: background 120ms ease, border-color 120ms ease, color 120ms ease; }
+.app-shell .workspace-dock .dock-step-option:hover { border-color: var(--line-strong); background: var(--surface); }
 .app-shell .workspace-dock .dock-step-option.active { border-color: var(--primary); background: var(--primary); color: var(--surface); }
+.app-shell .workspace-dock .dock-step-option-no_merge:hover { border-color: var(--red-border); background: var(--red-bg); color: var(--red); }
+.app-shell .workspace-dock .dock-step-option-no_merge.active { border-color: var(--red-border); background: var(--red-bg); color: var(--red); font-weight: 700; }
+.app-shell .workspace-dock .dock-step-option-review:hover { border-color: var(--amber-border); background: var(--amber-bg); color: var(--amber); }
+.app-shell .workspace-dock .dock-step-option-review.active { border-color: var(--amber-border); background: var(--amber-bg); color: var(--amber); font-weight: 700; }
+.app-shell .workspace-dock .dock-step-option-auto:hover { border-color: var(--green-border); background: var(--green-bg); color: var(--green); }
+.app-shell .workspace-dock .dock-step-option-auto.active { border-color: var(--green-border); background: var(--green-bg); color: var(--green); font-weight: 700; }
 .dock-step-extra { display: flex; align-items: center; gap: 2px; align-self: stretch; margin-left: 5px; padding-left: 9px; border-left: 1px solid var(--line); }
 .app-shell .workspace-dock .dock-extra-link { display: flex; align-items: center; gap: 6px; padding: 8px; border: 0; border-radius: 8px; background: transparent; color: var(--ink-3); cursor: pointer; font-size: 10px; font-weight: 600; white-space: nowrap; }
 .app-shell .workspace-dock .dock-extra-link.active { color: var(--primary); background: var(--primary-bg); }
