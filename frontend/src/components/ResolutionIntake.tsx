@@ -11,6 +11,8 @@ import {
   deleteUploadSession,
   getUploadSession,
   getUploadSessions,
+  getSampleCatalog,
+  requestResponse,
   presignUploadParts,
   putPartToStorage,
   renameUploadSession,
@@ -131,14 +133,32 @@ export default function ResolutionIntake({
   const [drafts, setDrafts] = useState<UploadSession[]>([]);
   const [session, setSession] = useState<UploadSession | null>(null);
   const [name, setName] = useState("");
-  const [useEmbedding, setUseEmbedding] = useState(true);
-  useEffect(()=>{setUseEmbedding(session?.use_embedding ?? true);},[session?.session_id,session?.use_embedding]);
+  const [useEmbedding, setUseEmbedding] = useState(false);
+  // Only a committed choice is persisted by the server. New drafts carry the server default.
+  useEffect(()=>{
+    if (session && ['COMMITTED', 'COMMITTING'].includes(session.status))
+      setUseEmbedding(session.use_embedding ?? false);
+  },[session?.session_id,session?.status,session?.use_embedding]);
+  const [guideRequested, setGuideRequested] = useState(false);
+  const [loadingSamples, setLoadingSamples] = useState(false);
+  const sampleRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => sampleRequest.current?.abort(), []);
+  useEffect(() => {
+    if (workflowVersion !== 2) return;
+    const startGuide = () => { if (!sampleRequest.current) setGuideRequested(true); };
+    window.addEventListener('masterone:start-guide', startGuide);
+    window.addEventListener('masterone:prepare-guide-upload', startGuide);
+    return () => {
+      window.removeEventListener('masterone:start-guide', startGuide);
+      window.removeEventListener('masterone:prepare-guide-upload', startGuide);
+    };
+  }, [workflowVersion]);
   const [dragging, setDragging] = useState(false);
   const [working, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(!!userId);
   const [restoreFailed, setRestoreFailed] = useState(false);
   const [restoreAttempt, setRestoreAttempt] = useState(0);
-  const busy = working || restoring;
+  const busy = working || restoring || loadingSamples;
   // Validation is a server-side state of the draft, so it survives reloads and is never tied to a button's lifetime.
   const validating = session?.status === "VALIDATING";
   const uploadInFlight = useRef(false);
@@ -259,7 +279,9 @@ export default function ResolutionIntake({
     active: UploadSession,
     target: UploadSessionFile,
     file: File,
+    signal?: AbortSignal,
   ) {
+    signal?.throwIfAborted();
     setUploadErrors((items) => withoutKey(items, target.file_id));
     let currentSession = active;
     let currentTarget = target.replacement ?? target;
@@ -327,6 +349,7 @@ export default function ResolutionIntake({
     let failure: unknown = null;
     const worker = async () => {
       while (failure === null && next < pending.length) {
+        signal?.throwIfAborted();
         const partNumber = pending[next++];
         const start = partNumber * CHUNK_BYTES;
         const blob = file.slice(start, Math.min(start + CHUNK_BYTES, file.size));
@@ -351,6 +374,7 @@ export default function ResolutionIntake({
       Array.from({ length: Math.min(concurrency, pending.length) }, worker),
     );
     if (failure !== null) throw failure;
+    signal?.throwIfAborted();
     currentSession = await getUploadSession(currentSession.session_id);
     setSession(currentSession);
     setDrafts((items) => [
@@ -416,7 +440,8 @@ export default function ResolutionIntake({
     };
   }, [jobSessionId, jobStatus]);
 
-  async function uploadFiles(incoming: File[]) {
+  async function uploadFiles(incoming: File[], signal?: AbortSignal) {
+    if (signal?.aborted) return;
     if (!incoming.length || busy || uploadInFlight.current || session && ['VALIDATING','COMMITTING','COMMITTED','CANCELLED'].includes(session.status)) return;
     if (incoming.some((file) => !file.name.toLowerCase().endsWith(".csv"))) {
       setMessage("Chỉ hỗ trợ tệp CSV. Hãy chọn lại các tệp cần phân giải.");
@@ -454,10 +479,12 @@ export default function ResolutionIntake({
       const unfinished: string[] = [];
       const targets = created.files.filter(file => !previousIds.has(file.file_id));
       for (let index = 0; index < targets.length; index += 1) {
+        if (signal?.aborted) return;
         const target = targets[index];
         try {
-          created = await transferFile(created, target, files[index]);
+          created = await transferFile(created, target, files[index], signal);
         } catch (error) {
+          if (signal?.aborted) return;
           unfinished.push(files[index].name);
           setUploadErrors((items) => ({
             ...items,
@@ -474,7 +501,7 @@ export default function ResolutionIntake({
         );
         return;
       }
-      await validateIfComplete(created);
+      if (!signal?.aborted) await validateIfComplete(created);
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -501,6 +528,41 @@ export default function ResolutionIntake({
       setProgress(null);
     }
   }
+
+  async function loadSamples() {
+    if (busy || session || sampleRequest.current) return;
+    const controller = new AbortController();
+    sampleRequest.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 30000);
+    setLoadingSamples(true);
+    setMessage('Đang chuẩn bị bộ dữ liệu mẫu…');
+    try {
+      const catalog = await getSampleCatalog(controller.signal);
+      if (!catalog.files.length || catalog.files.length > 10) throw new Error('Bộ dữ liệu mẫu chưa sẵn sàng.');
+      const files = await Promise.all(catalog.files.map(async file => {
+        const response = await requestResponse(`/demo/files/${encodeURIComponent(file.name)}`, {signal: controller.signal});
+        return new File([await response.blob()], file.name, {type: 'text/csv'});
+      }));
+      window.clearTimeout(timeout);
+      if (!controller.signal.aborted) await uploadFiles(files, controller.signal);
+    } catch (error) {
+      setMessage(controller.signal.aborted ? 'Chưa tải được dữ liệu mẫu. Bạn có thể thử lại.' : error instanceof Error ? error.message : 'Chưa tải được dữ liệu mẫu. Bạn có thể thử lại.');
+    } finally {
+      window.clearTimeout(timeout);
+      sampleRequest.current = null;
+      setLoadingSamples(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!guideRequested || busy) return;
+    setGuideRequested(false);
+    if (session) {
+      setMessage('Đang giữ dữ liệu của bạn. Để thực hành với bộ dữ liệu mẫu, hãy mở trang tải tệp mới rồi chạy hướng dẫn.');
+      return;
+    }
+    void loadSamples();
+  });
 
   async function openDraft(sessionId: string) {
     setBusy(true);
@@ -760,6 +822,9 @@ export default function ResolutionIntake({
               <br />
               Không giới hạn dung lượng từng tệp.
             </p>
+            {workflowVersion === 2 && <button type="button" className="secondary" disabled={busy} onClick={() => void loadSamples()}>
+              {loadingSamples ? 'Đang chuẩn bị dữ liệu mẫu…' : 'Dùng bộ dữ liệu mẫu'}
+            </button>}
             <details className="upload-schema-help">
               <summary>Định dạng CSV cần có</summary>
               <p>
