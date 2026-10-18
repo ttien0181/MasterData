@@ -17,8 +17,8 @@ const hints:Record<string,Hint[]>={
   {anchor:'sample-library',title:'Thử với dữ liệu mẫu',text:'Kho dữ liệu mẫu có các tệp giả lập để tải về và thực hành.',bot:'Nếu chưa có tệp để thử, bạn có thể tải dữ liệu trong Kho dữ liệu mẫu. Đây là dữ liệu giả lập để thực hành quy trình.'},
   {anchor:'session-search',title:'Tìm lại phiên làm việc',text:'Dùng Tìm phiên để tra cứu và mở nhanh phiên cần tiếp tục.',bot:'Bạn có thể dùng Tìm phiên để mở nhanh một phiên trước đó. Khi vào từng bước, mình sẽ hướng dẫn ngay tại màn hình đó nhé.'}],
  upload:[
-  {anchor:'upload-files',title:'Chuẩn bị dữ liệu',text:'Chọn hoặc kéo thả các tệp CSV. Hệ thống kiểm tra dữ liệu trước khi tạo phiên.',bot:'Bạn hãy chọn các tệp CSV cần đối chiếu. Có thể tải nhiều nguồn vào cùng một phiên; hệ thống sẽ kiểm tra dữ liệu trước khi bắt đầu.'},
-  {anchor:'upload-confirm',title:'Chọn cách đối chiếu rồi bắt đầu',text:'Có thể bật hoặc tắt Embedding. Khi dữ liệu đã được kiểm tra, chọn Tạo phiên.',bot:'Bạn có thể tắt Embedding để xử lý nhanh theo thông tin nghiệp vụ, hoặc bật để bổ sung so sánh tên và địa chỉ bằng AI. Khi dữ liệu sẵn sàng, chọn Tạo phiên để đi đến Bước 1.'}],
+  {anchor:'upload-files',title:'Chuẩn bị dữ liệu',text:'Ở trang tải mới, hướng dẫn tự nạp bộ CSV mẫu. Nếu đã có dữ liệu, hệ thống giữ nguyên dữ liệu của bạn.',bot:'Khi bạn chạy hướng dẫn ở trang tải mới, mình tự chuẩn bị bộ CSV mẫu để bạn thực hành, không cần chọn tệp trên máy. Nếu đã có dữ liệu đang chuẩn bị, mình sẽ giữ nguyên dữ liệu của bạn. Hệ thống kiểm tra dữ liệu trước khi tạo phiên.'},
+  {anchor:'upload-confirm',title:'Chọn cách đối chiếu rồi bắt đầu',text:'Embedding mặc định tắt. Bạn có thể bật thêm so sánh AI. Khi dữ liệu đã được kiểm tra, chọn Tạo phiên.',bot:'Embedding mặc định tắt để xử lý nhanh theo thông tin nghiệp vụ. Bạn có thể bật để bổ sung so sánh tên và địa chỉ bằng AI. Khi dữ liệu sẵn sàng, chọn Tạo phiên để đi đến Bước 1.'}],
  general:[{anchor:'window-main',title:'Khám phá màn hình',text:'Bạn có thể xem thông tin tại đây, rồi dùng thanh điều hướng để tiếp tục công việc.',bot:'Bạn có thể xem lại thông tin trên màn hình này rồi chọn mục cần làm tiếp. Mình luôn sẵn sàng giải thích các chỉ số khi bạn bấm vào chúng.'}],
  welcome:[
   {anchor:'demo-embedding',title:'Chọn cách trải nghiệm',text:'Mặc định tắt so sánh AI để xử lý nhanh. Bạn có thể bật nếu muốn thử thêm cách so sánh tên và địa chỉ.',bot:'Mình đã chuẩn bị bốn tệp dữ liệu mẫu cho bạn. Chế độ demo mặc định tắt Embedding để xử lý nhanh; bạn có thể bật nếu muốn thử thêm so sánh tên và địa chỉ bằng AI.'},
@@ -60,6 +60,9 @@ export default function DemoExperience({children,onEnd}:{children:ReactNode;onEn
   function startGuide(){setManualGuide(true);setEnabled(true);setLoaded(true);setIndices({});spoken.current='';scrolled.current='';bot?.showDemoGuide?.();}
   window.addEventListener('masterone:start-guide',startGuide);return()=>window.removeEventListener('masterone:start-guide',startGuide);
  },[bot?.showDemoGuide]);
+ useEffect(()=>{
+  if(manualGuide&&enabled&&step==='upload')window.dispatchEvent(new Event('masterone:prepare-guide-upload'));
+ },[manualGuide,enabled,step]);
  useEffect(()=>{if(!demo)return;try{const stored=JSON.parse(sessionStorage.getItem(key)??'{}');setEnabled(stored.enabled!==false);setIndices(stored.indices??{});setCompleted(!!stored.completed);}catch{}setLoaded(true);},[demo,key]);
  useEffect(()=>{if(demo&&loaded)sessionStorage.setItem(key,JSON.stringify({enabled,indices,completed}));},[demo,loaded,key,enabled,indices,completed]);
  const next=useCallback(()=>setIndices(previous=>({...previous,[scope]:(previous[scope]??0)+1})),[scope]);
