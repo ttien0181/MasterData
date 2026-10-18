@@ -25,8 +25,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MasterOne — Customer Master Data Command Center",
-  description: "Customer master data management, entity resolution, and survivorship workspace",
+  title: "MasterOne — Quản lý dữ liệu khách hàng",
+  description: "Tổng hợp dữ liệu khách hàng từ nhiều nguồn, đối chiếu hồ sơ và chọn thông tin đại diện.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

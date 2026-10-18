@@ -201,6 +201,10 @@ def _retire(db, task, attempt, code):
     if generation_attempt is not None and generation_attempt.status == "RUNNING":
         generation_attempt.status, generation_attempt.error_code = "FAILED", code
         generation_attempt.finished_at = now
+    if (task.operation_id and op.operation_type == 'CLUSTER_PREVIEW'
+            and task.status in ('CANCELLED', 'RETRYABLE_FAILED')):
+        from masterone.mdm.workflow_cluster_queue import activate_cluster_refresh
+        activate_cluster_refresh(db, run)
 
 
 def failed(factory, claim, code="PIPELINE_FAILED"):
@@ -265,4 +269,10 @@ def request_cancel(factory, run_id):
                         operation.status, operation.stage = 'CANCELLED', 'cancelled'
                         operation.error_code = 'JOB_CANCELLED'
             task.updated_at = now_utc()
+            if task.status == 'CANCELLED' and task.operation_id:
+                from masterone.mdm.workflow_models import WorkflowOperation
+                operation = db.get(WorkflowOperation, task.operation_id)
+                if operation is not None and operation.operation_type == 'CLUSTER_PREVIEW':
+                    from masterone.mdm.workflow_cluster_queue import activate_cluster_refresh
+                    activate_cluster_refresh(db, run)
         return task

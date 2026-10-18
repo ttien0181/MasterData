@@ -26,7 +26,7 @@ test("upload and session history open in a slide-out panel with full-screen expa
   const uploadPanel = page.getByRole("dialog", { name: "Nạp dữ liệu" });
   await expect(uploadPanel).toBeVisible();
   await expect(uploadPanel.getByRole("region", { name: "Dữ liệu đang chuẩn bị" })).toBeVisible();
-  await expect(uploadPanel.getByRole("button", { name: "Chọn file để bắt đầu" })).toBeDisabled();
+  await expect(uploadPanel.getByRole("button", { name: "Chọn tệp để bắt đầu" })).toBeDisabled();
   expect((await uploadPanel.boundingBox())!.x).toBeLessThan(30);
   await page.screenshot({ path: "test-results/workspace-upload-drawer.png" });
   await uploadPanel.getByRole("button", { name: "Phóng to toàn màn hình" }).click();
@@ -40,7 +40,7 @@ test("upload and session history open in a slide-out panel with full-screen expa
   const sessionsPanel = page.getByRole("dialog", { name: "Lịch sử phiên" });
   await expect(sessionsPanel).toBeVisible();
   await expect.poll(async () => (await sessionsPanel.boundingBox())!.x).toBeGreaterThan(600);
-  await expect(sessionsPanel.getByRole("region", { name: "Phiên phân giải" })).toBeVisible();
+  await expect(sessionsPanel.getByRole("region", { name: "Phiên xử lý dữ liệu" })).toBeVisible();
   await sessionsPanel.getByRole("button", { name: "Phóng to toàn màn hình" }).click();
   await expect(sessionsPanel).toHaveClass(/is-expanded/);
   await expect.poll(async () => Math.round((await sessionsPanel.boundingBox())?.width ?? 0)).toBe(viewportWidth);

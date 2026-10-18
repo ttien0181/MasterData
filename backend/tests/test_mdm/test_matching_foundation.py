@@ -152,6 +152,7 @@ def test_amend_supersedes_prior_positive_without_converting_rejection_to_negativ
     ready_decisions(client, workflow_run)
     first, _, _, pair = review(client, workflow_run, 'merge')
     assert first.status_code == 200
+    run_one(client)  # Wait for the automatic group refresh before amending a decision.
     amended, _, _, _ = review(client, workflow_run, 'no_merge', pair_id=pair['pair_id'], amend=True)
     assert amended.status_code == 200, amended.text
     with client.session_factory() as db:

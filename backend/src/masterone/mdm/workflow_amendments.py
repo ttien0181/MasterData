@@ -106,5 +106,9 @@ def amend_decision(db, run_id, pair_id, request, actor):
     audit(db, run, actor, 'WORKFLOW_AMEND_PAIR', {'pair_id': pair.id, 'before': before,
         'after': pair.decision, 'reason': request.reason.strip(), 'released_negative_edge_ids': released,
         'pair_revision': pair.revision})
+    if request.decision == 'merge':
+        from masterone.mdm.workflow_cluster_queue import schedule_cluster_refresh
+        schedule_cluster_refresh(db, run, op)
+        op.result = {**op.result, 'workflow_revision': run.workflow_revision}
     db.commit()
     return op.result

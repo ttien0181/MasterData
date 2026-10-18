@@ -1,10 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
 
 // Real client routing and query/UI stores; only HTTP responses are synthetic.
-async function fixture(page: Page) {
+async function fixture(page: Page, state = 'GOLDEN_REVIEW', flagged = false) {
   const reads: string[] = [], writes: string[] = [];
   let workflowRevision = 3, goldenRevision = 1, savedName = '', forbidden = false, expired = false;
-  const record = (id: number) => ({ record_id: `r${id}`, external_id: String(id), source_system: 'CRM', raw_fields: { name: `Raw ${id}`, email: `contact${id}@example.test`, phone: '0901234567', address: 'Synthetic address', dob: '2000-01-01', government_id: '012345678901' }, normalized_fields: { name: `Normalized ${id}` }, extra_fields: {}, quality_flags: [] });
+  const record = (id: number) => ({ record_id: `r${id}`, external_id: String(id), source_system: 'CRM', raw_fields: { name: `Raw ${id}`, email: `contact${id}@example.test`, phone: '0901234567', address: 'Synthetic address', dob: '2000-01-01', government_id: '012345678901' }, normalized_fields: { name: `Normalized ${id}` }, extra_fields: {}, quality_flags: flagged && id === 0 ? ['INVALID_GOV_ID_FORMAT'] : [] });
   const fields = (name: string) => ({ name: { value: name, source_record_id: 'r0', source_system: 'CRM' }, phone: { value: '0901234567' }, email: { value: 'contact@example.test' }, address: { value: 'Synthetic address' }, dob: { value: '2000-01-01' }, government_id: { value: '012345678901' } });
   await page.route('**/api/v1/**', async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
@@ -14,7 +14,7 @@ async function fixture(page: Page) {
     else if (path.endsWith('/upload-sessions') || path.endsWith('/runs')) body = { items: [], total: 0, next_cursor: null };
     else if (path.endsWith('/workflow')) {
       if (forbidden) { status = 403; body = { detail: 'Read access revoked' }; }
-      else body = { run_id: 'r', workflow_version: 2, workflow_state: 'GOLDEN_REVIEW', workflow_revision: workflowRevision, decision_revision: 1, cluster_revision: 1, golden_revision: goldenRevision, counts: { records: { value: 12, unit: 'records' } }, allowed_actions: ['save-golden', 'reopen-decisions'], blockers: [], active_operation: null, retryable_operation: null };
+      else body = { run_id: 'r', workflow_version: 2, workflow_state: state, workflow_revision: workflowRevision, decision_revision: 1, cluster_revision: 1, golden_revision: goldenRevision, counts: { records: { value: 12, unit: 'records' } }, allowed_actions: ['save-golden', 'reopen-decisions'], blockers: [], active_operation: null, retryable_operation: null, matching_agents: state === 'DATA_READY' ? { status: 'SKIPPED' } : undefined };
     } else if (path.endsWith('/data')) {
       const offset = Number(url.searchParams.get('offset') || 0);
       body = { files: [], schema: ['name', 'email', 'phone', 'address', 'dob', 'government_id'], profile: { record_count: 12, unit: 'records', quality_flags: {}, field_quality: {}, source_counts: { CRM: 12 } }, samples: { offset, items: Array.from({ length: offset ? 2 : 10 }, (_, i) => record(i + offset)), total: 12, next_cursor: offset ? null : '10' } };
@@ -30,13 +30,13 @@ async function fixture(page: Page) {
       if (request.method() === 'PUT') {
         if (expired) { status = 401; body = { detail: 'Login expired' }; }
         else { savedName = request.postDataJSON().selections.name.value; workflowRevision++; goldenRevision++; body = { workflow_revision: workflowRevision, golden_revision: goldenRevision }; }
-      } else body = { cluster_id: path.split('/').at(-2), cluster_revision: 1, golden_revision: goldenRevision, revision: goldenRevision, status: 'DRAFT', fields: fields(savedName || 'Original Golden'), alternatives: {}, selections: savedName ? { name: { selection_mode: 'MANUAL_OVERRIDE', value: savedName } } : {} };
+      } else body = { cluster_id: path.split('/').at(-2), cluster_revision: 1, golden_revision: goldenRevision, revision: goldenRevision, status: 'DRAFT', fields: fields(savedName || 'Original hồ sơ đại diện'), alternatives: {}, selections: savedName ? { name: { selection_mode: 'MANUAL_OVERRIDE', value: savedName } } : {} };
     } else if (/\/clusters\/[^/]+$/.test(path)) {
       const member = !!url.searchParams.get('cursor'), evidence = url.searchParams.get('evidence_cursor') !== '0';
       body = { cluster_id: path.split('/').at(-1), member_count: 2, singleton: false, status: 'READY', member_record_ids: [], members: { items: [record(member ? 1 : 0)], total: 2, next_cursor: member ? null : 'member2' }, pair_evidence: { items: [{ id: evidence ? 'e2' : 'e1', left_id: 'r0', right_id: 'r1', decision: 'REVIEW', score: 5 }], total: 2, next_cursor: evidence ? null : 'evidence2' }, evidence: {}, workflow_context: {}, llm_stats: {} };
     } else if (path.endsWith('/workflow/golden')) {
       const second = !!url.searchParams.get('cursor');
-      body = { items: [{ cluster_id: second ? 'c2' : 'c', status: 'DRAFT', fields: fields(second ? 'Second Golden' : savedName || 'Original Golden') }], total: 2, next_cursor: second ? null : 'golden2' };
+      body = { items: [{ cluster_id: second ? 'c2' : 'c', status: 'DRAFT', fields: fields(second ? 'Second hồ sơ đại diện' : savedName || 'Original hồ sơ đại diện') }], total: 2, next_cursor: second ? null : 'golden2' };
     }
     await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
   });
@@ -45,11 +45,11 @@ async function fixture(page: Page) {
 async function tab(page: Page, label: RegExp) {
   const menu = page.getByRole('complementary', { name: 'Điều hướng phiên' }).getByRole('button', { name: /ĐIỀU HƯỚNG PHIÊN/ });
   if (await menu.isVisible() && await menu.getAttribute('aria-expanded') === 'false') await menu.click();
-  if (label.source.includes('Duyệt') && await page.getByRole('button', { name: 'Mở mục con Phân loại các cặp bản ghi', exact: true }).isVisible()) {
-    await page.getByRole('button', { name: 'Mở mục con Phân loại các cặp bản ghi', exact: true }).click();
+  if (label.source.includes('Duyệt') && await page.getByRole('button', { name: 'Mở mục con Các cặp hồ sơ khách hàng', exact: true }).isVisible()) {
+    await page.getByRole('button', { name: 'Mở mục con Các cặp hồ sơ khách hàng', exact: true }).click();
   }
-  if(label.source.includes('Các nhóm bản ghi')) {
-    const toggle=page.getByRole('button',{name:'Mở mục con Các nhóm bản ghi',exact:true});
+  if(label.source.includes('Các nhóm hồ sơ')) {
+    const toggle=page.getByRole('button',{name:'Mở mục con Các nhóm hồ sơ',exact:true});
     if(await toggle.isVisible())await toggle.click();
     label=/^Danh sách nhóm$/;
   }
@@ -58,7 +58,7 @@ async function tab(page: Page, label: RegExp) {
   const href = await link.getAttribute('href');
   await link.evaluate(element => (element as HTMLElement).click());
   await expect(page).toHaveURL(new URL(href!, page.url()).href);
-  const heading = href!.endsWith('/data/records') ? 'Dữ liệu tải lên' : href!.endsWith('/data') ? 'Phân tích dữ liệu' : href!.endsWith('/decisions/pairs') ? 'Phân loại các cặp bản ghi' : href!.endsWith('/decisions') ? 'Tổng quan phân loại' : href!.endsWith('/clusters/records') ? 'Danh sách nhóm' : href!.endsWith('/clusters') ? 'Tổng quan nhóm' : 'Golden record';
+  const heading = href!.endsWith('/data') ? 'Hồ sơ khách hàng' : href!.endsWith('/decisions/pairs') ? 'Các cặp hồ sơ khách hàng' : href!.endsWith('/decisions') ? 'Các cặp hồ sơ khách hàng' : href!.endsWith('/clusters/records') ? 'Danh sách nhóm' : href!.endsWith('/clusters') ? 'Tổng quan nhóm' : 'Hồ sơ đại diện';
   await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
 }
 const details = (page: Page, key: string) => page.locator(`details[data-view-key="${key}"]`);
@@ -66,22 +66,19 @@ async function expand(page: Page, key: string) {
   await details(page, key).evaluate(element => { (element as HTMLDetailsElement).open = true; element.dispatchEvent(new Event('toggle')); });
 }
 
-test('all four URL tabs retain loaded pages, selections, drafts and view state; save refreshes the affected Golden revision', async ({ page }) => {
+test('all four URL tabs retain loaded pages, selections, drafts and view state; save refreshes the affected hồ sơ đại diện revision', async ({ page }) => {
   const mock = await fixture(page);
   await page.setViewportSize({ width: 900, height: 760 });
   await page.goto('/app/sessions/r/data/records');
   await expect(page.getByRole('cell', { name: 'Raw 0', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Trang sau', exact: true }).click();
   await expect(page.getByRole('cell', { name: 'Raw 10', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Chuẩn hóa', exact: true }).click();
-  await expand(page, 'r10:detail');
   const table = page.locator('[data-scroll-key="records"]');
   await table.evaluate(element => { element.scrollLeft = 150; element.dispatchEvent(new Event('scroll')); });
   await page.evaluate(() => { window.scrollTo(0, 350); window.dispatchEvent(new Event('scroll')); });
-  const dataY = await page.evaluate(() => window.scrollY);
-  await tab(page, /^Duyệt các cặp bản ghi$/);
+  await tab(page, /Các cặp hồ sơ khách hàng/);
   await expect(page.getByRole('checkbox', { name: 'Chọn cặp p1', exact: true })).toBeVisible();
-  await page.getByRole('group', { name: 'Group', exact: true }).getByRole('button', { name: /^Group B / }).click();
+  await page.getByRole('group', { name: 'Nhóm', exact: true }).getByRole('button', { name: /^Nhóm B / }).click();
   await expect(page.getByRole('button', { name: 'Trang tiếp', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Trang tiếp', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Chọn cặp p2', exact: true }).check();
@@ -89,7 +86,7 @@ test('all four URL tabs retain loaded pages, selections, drafts and view state; 
   const pairScroll = await page.locator('[data-scroll-key="pairs"]').evaluate(element => { element.scrollLeft = 120; element.dispatchEvent(new Event('scroll')); return element.scrollLeft; });
   await tab(page, /^Danh sách nhóm$/);
   await page.getByRole('button', { name: /Đối chiếu nhóm c$/ }).click();
-  await page.getByRole('textbox', { name: 'Chỉnh tay name' }).fill('Draft across tabs');
+  await page.getByRole('textbox', { name: 'Nhập trực tiếp name' }).fill('Draft across tabs');
   await expand(page, 'context:c');
   const groupDialog=page.getByRole('dialog');
   await groupDialog.getByRole('button', { name: 'Trang tiếp', exact: true }).first().click();
@@ -106,9 +103,9 @@ test('all four URL tabs retain loaded pages, selections, drafts and view state; 
   await expect(page.getByRole('button', { name: /Đối chiếu nhóm c2/ })).toBeVisible();
   await page.getByRole('checkbox', { name: 'Chọn nhóm c2' }).check();
   await tab(page, /Golden record/);
-  await expect(page.getByText('Original Golden', { exact: true })).toBeVisible();
+  await expect(page.getByText('Original hồ sơ đại diện', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Trang tiếp', exact: true }).click();
-  await expect(page.getByText('Second Golden', { exact: true })).toBeVisible();
+  await expect(page.getByText('Second hồ sơ đại diện', { exact: true })).toBeVisible();
   await expand(page, 'source:c2:name');
   await expand(page, 'reopen');
   await page.getByRole('textbox', { name: 'Lý do' }).fill('Preserved reason');
@@ -116,7 +113,7 @@ test('all four URL tabs retain loaded pages, selections, drafts and view state; 
   await page.goBack();
   await expect(page.getByRole('checkbox', { name: 'Chọn nhóm c2' })).toBeChecked();
   await page.getByRole('button',{name:'Mở lại bản nháp nhóm c',exact:true}).click();
-  await expect(page.getByRole('textbox', { name: 'Chỉnh tay name' })).toHaveValue('Draft across tabs');
+  await expect(page.getByRole('textbox', { name: 'Nhập trực tiếp name' })).toHaveValue('Draft across tabs');
   await expect(details(page, 'context:c')).toHaveAttribute('open', '');
   await expect(details(page, 'member-sources:c')).toHaveAttribute('open', '');
   await expect(details(page, 'member:c:r1')).toHaveAttribute('open', '');
@@ -124,25 +121,24 @@ test('all four URL tabs retain loaded pages, selections, drafts and view state; 
   page.once('dialog',dialog=>dialog.accept());
   await page.getByRole('button',{name:'Đóng chi tiết nhóm'}).click();
   await page.goForward();
-  await expect(page.getByText('Second Golden', { exact: true })).toBeVisible();
+  await expect(page.getByText('Second hồ sơ đại diện', { exact: true })).toBeVisible();
   await expect(details(page, 'source:c2:name')).toHaveAttribute('open', '');
   await expect(page.getByRole('textbox', { name: 'Lý do' })).toHaveValue('Preserved reason');
-  await tab(page, /^Duyệt các cặp bản ghi$/);
+  await tab(page, /Các cặp hồ sơ khách hàng/);
   await expect(page.getByRole('checkbox', { name: 'Chọn cặp p2' })).toBeChecked();
-  await expect(page.getByRole('group', { name: 'Group', exact: true }).getByRole('button', { name: /^Group B / })).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByRole('group', { name: 'Nhóm', exact: true }).getByRole('button', { name: /^Nhóm B / })).toHaveAttribute('aria-pressed','true');
   await expect(page.getByRole('textbox', { name: 'Tìm trong trang' })).toHaveValue('r0');
   await expect.poll(() => page.locator('[data-scroll-key="pairs"]').evaluate(element => element.scrollLeft)).toBe(pairScroll);
-  await tab(page, /^Dữ liệu tải lên$/);
-  await expect(page.getByRole('cell', { name: 'Normalized 10', exact: true })).toBeVisible();
-  await expect(details(page, 'r10:detail')).toHaveAttribute('open', '');
+  await tab(page, /Hồ sơ khách hàng/);
+  await expect(page.getByRole('cell', { name: 'Raw 10', exact: true })).toBeVisible();
   await expect.poll(() => table.evaluate(element => element.scrollLeft)).toBe(150);
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(dataY);
+  // The sidebar anchor intentionally takes the user to the record section.
   expect(mock.reads).toEqual(before);
   expect(mock.writes).toEqual([]);
   await tab(page, /^Danh sách nhóm$/);
   await page.getByRole('button',{name:'Mở lại bản nháp nhóm c',exact:true}).click();
-  await page.getByRole('button', { name: 'Lưu lựa chọn Golden' }).click();
-  await expect(page.getByText('Đã lưu lựa chọn trên server.', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Lưu lựa chọn hồ sơ đại diện' }).click();
+  await expect(page.getByText('Đã lưu lựa chọn trên hệ thống.', { exact: false })).toBeVisible();
   await page.getByRole('button',{name:'Đóng chi tiết nhóm'}).click();
   await tab(page, /Golden record/);
   await page.getByRole('button', { name: 'Trang đầu', exact: true }).click();
@@ -157,77 +153,128 @@ test('decision overview and review keep filters, page and selection across their
   await page.goto('/app/sessions/r/decisions');
   await expect(page.getByRole('heading', { name: 'Tổng quan phân loại', exact: true })).toBeVisible();
   await expect(page.getByRole('table')).toHaveCount(0);
-  await tab(page, /^Duyệt các cặp bản ghi$/);
-  await page.getByRole('group', { name: 'Group', exact: true }).getByRole('button', { name: /^Group B / }).click();
+  await tab(page, /Các cặp hồ sơ khách hàng/);
+  await page.getByRole('group', { name: 'Nhóm', exact: true }).getByRole('button', { name: /^Nhóm B / }).click();
   await page.getByRole('button', { name: 'Trang tiếp', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Chọn cặp p2', exact: true }).check();
   await page.getByRole('textbox', { name: 'Tìm trong trang' }).fill('r0');
   const currentPageReads = () => mock.reads.filter(path => path.includes('/workflow/pairs?') && path.includes('offset=10')).length;
   const count = currentPageReads();
-  await tab(page, /^Tổng quan phân loại$/);
+  await tab(page, /Các cặp hồ sơ khách hàng/);
   await expect(page.getByRole('table')).toHaveCount(0);
-  await tab(page, /^Duyệt các cặp bản ghi$/);
+  await tab(page, /Các cặp hồ sơ khách hàng/);
   await expect(page.getByRole('checkbox', { name: 'Chọn cặp p2', exact: true })).toBeChecked();
-  await expect(page.getByRole('group', { name: 'Group', exact: true }).getByRole('button', { name: /^Group B / })).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByRole('group', { name: 'Nhóm', exact: true }).getByRole('button', { name: /^Nhóm B / })).toHaveAttribute('aria-pressed','true');
   await expect(page.getByRole('textbox', { name: 'Tìm trong trang' })).toHaveValue('r0');
   expect(currentPageReads()).toBe(count);
   expect(mock.writes).toEqual([]);
 });
 
-test('analysis and uploaded data are separate windows and keep record page, mode and scroll without refetching', async ({ page }) => {
-  await page.clock.install();
-  const mock = await fixture(page);
+test('step one uses one customer workspace without submenus or refetching analysis on pagination', async ({ page }) => {
+  const mock = await fixture(page, 'DATA_READY');
   await page.setViewportSize({ width: 1100, height: 760 });
   await page.goto('/app/sessions/r/data');
-  await expect(page.getByRole('heading', { name: 'Phân tích dữ liệu', exact: true })).toBeVisible();
-  await expect(page.getByRole('table', { name: 'Bản ghi dữ liệu' })).toHaveCount(0);
-  const nav = page.getByRole('navigation', { name: 'Các bước trong phiên' });
-  const dataMenu = nav.locator('ol > li').first().locator('ul');
-  await expect(dataMenu.getByRole('link')).toHaveCount(2);
-  await tab(page, /^Dữ liệu tải lên$/);
-  await expect(page.getByRole('row')).toHaveCount(11);
-  await expect(page.getByLabel('Thống kê toàn bộ dữ liệu')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Tổng quan hồ sơ', exact: true })).toBeVisible();
+  await expect(page.getByRole('table', { name: 'Danh sách hồ sơ khách hàng' })).toHaveCount(1);
+  await expect(page.getByLabel('Thống kê toàn bộ dữ liệu')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Tìm hồ sơ trùng lặp', exact: true })).toHaveCount(1);
+  await expect(page.locator('.workflow-session-status')).toHaveCount(0);
+  await expect(page.locator('.workflow-session-content > .workflow-panel')).toHaveCount(1);
+  const firstStep = page.getByRole('navigation', { name: 'Các bước trong phiên' }).locator('ol > li').first();
+  await expect(firstStep.getByRole('link')).toHaveCount(1);
+  await expect(firstStep.getByRole('button')).toHaveCount(0);
+  await expect(page.getByLabel('Tiến trình tải dữ liệu')).toHaveCount(0);
+  await expect(page.getByText(/Demo fast mode/)).toHaveCount(0);
+  const profileReads = () => mock.reads.filter(path => path.includes('/workflow/data?') && path.includes('include_profile=true'));
+  const initialProfileReads = profileReads().length;
   await page.getByRole('button', { name: 'Trang sau', exact: true }).click();
   await expect(page.getByRole('cell', { name: 'Raw 10', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Chuẩn hóa', exact: true }).click();
-  await expand(page, 'r10:detail');
-  const table = page.locator('[data-scroll-key="records"]');
-  await table.evaluate(element => { element.scrollLeft = 180; element.dispatchEvent(new Event('scroll')); });
-  await page.evaluate(() => { window.scrollTo(0, 250); window.dispatchEvent(new Event('scroll')); });
-  const y = await page.evaluate(() => window.scrollY), before = [...mock.reads];
-  await tab(page, /^Phân tích dữ liệu$/);
-  await expect(page.getByRole('table')).toHaveCount(0);
-  await page.clock.fastForward(180000);
-  await tab(page, /^Dữ liệu tải lên$/);
-  await expect(page.getByRole('button', { name: 'Chuẩn hóa', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  const before = [...mock.reads];
+  await tab(page, /Hồ sơ khách hàng/);
+  await expect(page.getByRole('table')).toHaveCount(1);
+  await tab(page, /Hồ sơ khách hàng/);
   await expect(page.getByText('Trang 2 / 2', { exact: true })).toBeVisible();
-  await expect(details(page, 'r10:detail')).toHaveAttribute('open', '');
-  await expect.poll(() => table.evaluate(element => element.scrollLeft)).toBe(180);
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(y);
-  expect(mock.reads.filter(path=>!path.endsWith('/workflow'))).toEqual(before.filter(path=>!path.endsWith('/workflow')));
+  expect(mock.reads).toEqual(before);
+  expect(profileReads()).toHaveLength(initialProfileReads);
   expect(mock.writes).toEqual([]);
+});
+
+test('the old records URL redirects into the combined page', async ({ page }) => {
+  await fixture(page);
+  await page.goto('/app/sessions/r/data/records');
+  await expect(page).toHaveURL(/\/data$/);
+  await expect(page.getByRole('heading', { name: 'Tổng quan hồ sơ', exact: true })).toHaveCount(1);
+  await expect(page.getByRole('table', { name: 'Danh sách hồ sơ khách hàng' })).toHaveCount(1);
+});
+
+test('old records links open the single workspace even when analysis loads slowly', async ({ page }) => {
+  await fixture(page);
+  await page.setViewportSize({ width: 1100, height: 760 });
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/workflow/data?**', async route => {
+    if (new URL(route.request().url()).searchParams.get('include_profile') === 'true') await gate;
+    await route.fallback();
+  });
+  await page.goto('/app/sessions/r/data/records');
+  await expect(page.getByRole('table', { name: 'Danh sách hồ sơ khách hàng' })).toHaveCount(1);
+  release();
+  await expect(page.getByLabel('Thống kê toàn bộ dữ liệu')).toBeVisible();
+  await expect(page).toHaveURL(/\/data$/);
+  await expect(page.locator('.workflow-session-content > .workflow-panel')).toHaveCount(1);
+});
+
+test('combined step one fits mobile and keeps the record table horizontally scrollable', async ({ page }) => {
+  await fixture(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/app/sessions/r/data');
+  await expect(page.getByRole('table', { name: 'Danh sách hồ sơ khách hàng' })).toHaveCount(1);
+  await expect(page.getByLabel('Thống kê toàn bộ dữ liệu')).toHaveCount(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const table = page.locator('[data-scroll-key="records"]');
+  expect(await table.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
+  await tab(page, /Hồ sơ khách hàng/);
+  await expect(page.getByRole('heading', { name: 'Danh sách hồ sơ khách hàng', exact: true })).toBeVisible();
+  await page.screenshot({ path: 'test-results/step-one-mobile.png', fullPage: true });
 });
 
 test('expired login during save clears retained private draft and returns to login', async ({ page }) => {
   const mock = await fixture(page);
   await page.goto('/app/sessions/r/clusters?cluster=c');
-  await page.getByRole('textbox', { name: 'Chỉnh tay name' }).fill('Private draft');
+  await page.getByRole('textbox', { name: 'Nhập trực tiếp name' }).fill('Private draft');
   await tab(page, /Golden record/);
-  await expect(page.getByText('Original Golden', { exact: true })).toBeVisible();
-  await tab(page, /Các nhóm bản ghi/);
+  await expect(page.getByText('Original hồ sơ đại diện', { exact: true })).toBeVisible();
+  await tab(page, /Các nhóm hồ sơ/);
   mock.expire();
-  await page.getByRole('button', { name: 'Lưu lựa chọn Golden' }).click();
+  await page.getByRole('button', { name: 'Lưu lựa chọn hồ sơ đại diện' }).click();
   await expect(page).toHaveURL(/\/login/);
-  await expect(page.getByRole('textbox', { name: 'Chỉnh tay name' })).toHaveCount(0);
-  await expect(page.getByText('Original Golden', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Nhập trực tiếp name' })).toHaveCount(0);
+  await expect(page.getByText('Original hồ sơ đại diện', { exact: true })).toHaveCount(0);
 });
 
 test('read access revocation evicts the tab and cached private records', async ({ page }) => {
   const mock = await fixture(page);
   await page.goto('/app/sessions/r/clusters?cluster=c');
-  await page.getByRole('textbox', { name: 'Chỉnh tay name' }).fill('Private draft');
+  await page.getByRole('textbox', { name: 'Nhập trực tiếp name' }).fill('Private draft');
   mock.revoke();
-  await page.getByRole('button', { name: 'Đọc lại từ server' }).click();
+  await page.getByRole('button', { name: 'Đọc lại từ hệ thống' }).click();
   await expect(page.locator('.workflow-main').getByRole('alert')).toContainText('Không còn quyền đọc phiên');
-  await expect(page.getByRole('textbox', { name: 'Chỉnh tay name' })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Nhập trực tiếp name' })).toHaveCount(0);
+});
+
+
+test('customer notes show issues in amber and leave clean profiles blank without extra controls', async ({ page }) => {
+  await fixture(page, 'DATA_READY', true);
+  await page.goto('/app/sessions/r/data');
+  const table = page.getByRole('table', { name: 'Danh sách hồ sơ khách hàng' });
+  await expect(table.getByRole('columnheader', { name: 'Ghi chú', exact: true })).toBeVisible();
+  const rows = table.getByRole('row');
+  const issue = rows.nth(1).getByRole('cell').last();
+  await expect(issue).toHaveText('Số giấy tờ chưa đúng định dạng');
+  await expect(issue.locator('li')).toHaveCSS('color', 'rgb(161, 98, 7)');
+  await expect(rows.nth(2).getByRole('cell').last()).toBeEmpty();
+  await expect(page.getByRole('button', { name: 'Thông tin gốc', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Thông tin đã làm sạch', exact: true })).toHaveCount(0);
+  await expect(page.locator('.workflow-session-content details')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/customer-notes.png', fullPage: true });
 });

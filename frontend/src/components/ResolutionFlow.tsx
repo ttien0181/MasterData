@@ -20,7 +20,7 @@ const FIELDS = ["name", "phone", "email", "address"] as const;
 const labels: Record<string, string> = { name: "Tên khách hàng", phone: "Điện thoại", email: "Email", address: "Địa chỉ" };
 const categoryGroups: Record<string, string> = {
   A: "Nhiều thông tin trùng khớp", C: "Chưa đủ thông tin để xác nhận", D: "Thông tin khách hàng mâu thuẫn",
-  CONSTRAINT_OR_CLUSTER_RISK: "Các bản ghi có liên kết cần kiểm tra",
+  CONSTRAINT_OR_CLUSTER_RISK: "Các hồ sơ có liên kết cần kiểm tra",
   SINGLE_MAJOR_CONFLICT: "Có thông tin quan trọng khác nhau",
   SHARED_VALUE: "Thông tin liên hệ được dùng chung",
   VIETNAM_VARIANT: "Thông tin có cách viết khác nhau",
@@ -35,7 +35,7 @@ const subgroupLabels: Record<string, string> = {
   GENERIC_EMAIL: "Email có thể được dùng chung", TEXT_VARIANT: "Cách viết thông tin khác nhau",
   AMBIGUOUS_FIELD_EVIDENCE: "Thông tin đối chiếu chưa rõ ràng", WEAK_FIELD_EVIDENCE: "Thông tin trùng khớp còn ít",
   PHONE: "Số điện thoại có thể được dùng chung", EMAIL: "Email có thể được dùng chung",
-  CLUSTER_GUARD: "Cần kiểm tra các bản ghi liên quan",
+  CLUSTER_GUARD: "Cần kiểm tra các hồ sơ liên quan",
 };
 function categoryGroupLabel(value: string) {
   return categoryGroups[value] ?? "Cần kiểm tra thêm";
@@ -46,8 +46,8 @@ function subgroupLabel(value?: string) {
 
 const reviewReasons: Record<string, string> = {
   POLICY_BLOCKED: "Tên và thông tin liên hệ giống nhau, nhưng chưa đủ điều kiện gộp tự động",
-  CLUSTER_RISK: "Gộp các bản ghi này có thể tạo ra liên kết mâu thuẫn",
-  CLUSTER_NOT_CONFIRMED: "Nhóm bản ghi chưa đủ chắc chắn để gộp tự động",
+  CLUSTER_RISK: "Gộp các hồ sơ này có thể tạo ra liên kết mâu thuẫn",
+  CLUSTER_NOT_CONFIRMED: "Nhóm hồ sơ chưa đủ chắc chắn để gộp tự động",
   MISSING_REQUIRED_NAME_ANCHOR: "Tên chưa đủ rõ để xác nhận cùng khách hàng",
   NAME_CONFLICT: "Tên khách hàng khác nhau rõ rệt",
   AMBIGUOUS: "Chưa thể xác nhận từ các thông tin hiện có",
@@ -262,7 +262,7 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
       setActive(null); setSelected([]);
       await Promise.all([load(), onChanged()]);
       notify(`Đã ${decision === "merge" ? "đưa" : "đánh dấu"} ${result.changed_count} item ${decision === "merge" ? "sang Chờ gộp" : "là Không gộp"}.`);
-    } catch (error) { notify(error instanceof Error ? error.message : "Không chuyển được item"); }
+    } catch (error) { notify(error instanceof Error ? error.message : "Không chuyển được hồ sơ"); }
     finally { setBusy(false); }
   }
 
@@ -334,7 +334,7 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
     try {
       const result = await explainReviewCategory(runId, category.signature_hash);
       if (result.explanation && ["READY", "TEMPLATE"].includes(result.status)) setExplanations((current) => ({ ...current, [category.signature_hash]: { ...result.explanation!, status: result.status } }));
-      else notify(result.status === "STALE" ? "Dữ liệu đã thay đổi; hãy tải lại giải thích." : "Giải thích chưa sẵn sàng; hãy đối chiếu thông tin trong bản ghi.");
+      else notify(result.status === "STALE" ? "Dữ liệu đã thay đổi; hãy tải lại giải thích." : "Giải thích chưa sẵn sàng; hãy đối chiếu thông tin trong hồ sơ.");
     } catch (error) { notify(error instanceof Error ? error.message : "Không lấy được giải thích AI"); }
     finally { setBusy(false); }
   }
@@ -345,7 +345,7 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
     try {
       const result = await explainResolutionItem(runId, bucket, active.id);
       if (result.explanation && ["READY", "TEMPLATE"].includes(result.status)) setItemExplanation({ itemId: active.id, summary: result.explanation.summary_vi, status: result.status });
-      else notify(result.status === "STALE" ? "Dữ liệu đã thay đổi; hãy tải lại giải thích." : "Giải thích chưa sẵn sàng; hãy đối chiếu thông tin trong bản ghi.");
+      else notify(result.status === "STALE" ? "Dữ liệu đã thay đổi; hãy tải lại giải thích." : "Giải thích chưa sẵn sàng; hãy đối chiếu thông tin trong hồ sơ.");
     } catch (error) { notify(error instanceof Error ? error.message : "Không lấy được giải thích AI"); }
     finally { setBusy(false); }
   }
@@ -389,11 +389,11 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
   function renderItemList() {
     if (stage === "review") return <div className="review-table-region" aria-busy={loading}>
       {loading ? <ListSkeleton /> : loadError ? <ListLoadError message={loadError} onRetry={() => void load()} /> : !items.length ?
-        <div className="empty-state"><b>Không có hồ sơ cần review</b><p>Chọn nhóm khác để xem thêm hồ sơ.</p></div> :
-        <div className="review-table-scroll" tabIndex={0} role="region" aria-label="Bảng hồ sơ cần review">
+        <div className="empty-state"><b>Không có hồ sơ cần kiểm tra</b><p>Chọn nhóm khác để xem thêm hồ sơ.</p></div> :
+        <div className="review-table-scroll" tabIndex={0} role="region" aria-label="Bảng hồ sơ cần kiểm tra">
           <table className="review-table">
             <thead><tr>{canReview && <th scope="col" className="review-check-cell"><span className="review-visually-hidden">Chọn hồ sơ</span></th>}
-              <th scope="col">Hồ sơ cần kiểm tra</th><th scope="col" className="review-count-cell">Bản ghi</th>
+              <th scope="col">Hồ sơ cần kiểm tra</th><th scope="col" className="review-count-cell">Hồ sơ</th>
               <th scope="col">Lý do cần kiểm tra</th><th scope="col" className="review-action-cell"><span className="review-visually-hidden">Thao tác</span></th></tr></thead>
             <tbody>{items.map((item) => <tr key={item.id} className={selected.includes(item.id) ? "is-selected" : undefined}>
               {canReview && <td className="review-check-cell"><input type="checkbox" aria-label={`Chọn ${item.label}`} checked={selected.includes(item.id)} disabled={busy}
@@ -417,7 +417,7 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
           <button type="button" className="resolution-item-open" onClick={() => void openItem(item)}>
             <span className="resolution-item-title"><strong>{item.label || "Khách hàng"}</strong><span className="source-pill">{item.origin === "REVIEW" ? "Bạn đã xác nhận" : "Tự động"}</span></span>
             {item.status === "REVIEW_STAGED_CONFLICT" && <span className="resolution-conflict-badge">Cần tách cụm trước khi xuất CSV</span>}
-            <span className="resolution-item-meta">{item.member_count.toLocaleString("vi-VN")} bản ghi đầu vào → 1 hồ sơ sau gộp</span>
+            <span className="resolution-item-meta">{item.member_count.toLocaleString("vi-VN")} hồ sơ đầu vào → 1 hồ sơ sau gộp</span>
             <span className="resolution-item-link">Xem so sánh →</span>
           </button>
         </article>)}
@@ -443,24 +443,24 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
     <div className="resolution-flow-toolbar"><div><h2>Các bản CSV đã xuất</h2><p>Mỗi bản là ảnh chụp của dữ liệu tại thời điểm xuất. CSV nguồn được tái dựng từ các dòng đã nạp.</p></div>
       <button type="button" className="button outline" disabled={!canExport} title={!canExport ? "Tài khoản chưa có quyền xuất dữ liệu" : undefined} onClick={() => void downloadResolutionSource(runId).catch((error: unknown) => notify(error instanceof Error ? error.message : "Không tải được dữ liệu nguồn"))}>Tải CSV trước gộp</button></div>
     {loading ? <ListSkeleton /> : loadError ? <ListLoadError message={loadError} onRetry={() => void load()} /> : exports.map((item) => <article className="card resolution-item" key={item.id}>
-      <div><strong>{new Date(item.created_at).toLocaleString("vi-VN")}</strong><p>{item.row_count.toLocaleString("vi-VN")} dòng · {item.merged_group_count.toLocaleString("vi-VN")} nhóm gộp · {item.pending_review_count > 0 ? "Còn dữ liệu chưa được xác nhận gộp" : "Đã xem xét xong"}{item.parent_export_id ? " · sau khi tách bản ghi" : ""}</p></div>
+      <div><strong>{new Date(item.created_at).toLocaleString("vi-VN")}</strong><p>{item.row_count.toLocaleString("vi-VN")} dòng · {item.merged_group_count.toLocaleString("vi-VN")} nhóm gộp · {item.pending_review_count > 0 ? "Còn dữ liệu chưa được xác nhận gộp" : "Đã xem xét xong"}{item.parent_export_id ? " · sau khi tách hồ sơ" : ""}</p></div>
       <div className="resolution-flow-actions"><button type="button" className="button outline" disabled={busy} onClick={() => void compareResolutionExport(runId, item.id).then(setComparison).catch((error: unknown) => notify(error instanceof Error ? error.message : "Không xem được so sánh"))}>Xem trước / sau</button>
         <button type="button" className="button outline" disabled={busy || !canExport} title={!canExport ? "Tài khoản chưa có quyền xuất dữ liệu" : undefined} onClick={() => void downloadResolutionExport(runId, item.id).catch((error: unknown) => notify(error instanceof Error ? error.message : "Không tải được CSV"))}>Tải CSV sau gộp</button>
-        {canSplit && item.id === exports[0]?.id && item.merged_group_count > 0 && <button type="button" className="button outline" disabled={busy} onClick={() => setSplitExportId(item.id)}>Tách bản ghi</button>}</div>
+        {canSplit && item.id === exports[0]?.id && item.merged_group_count > 0 && <button type="button" className="button outline" disabled={busy} onClick={() => setSplitExportId(item.id)}>Tách hồ sơ</button>}</div>
     </article>)}
     {!loading && !loadError && !exports.length && <div className="card empty-state"><b>Chưa có bản xuất</b><p>Chọn giá trị, xem trước và xác nhận gộp để tạo CSV.</p></div>}
     {comparison && <div className="history-overlay" role="dialog" aria-modal="true" aria-labelledby="compare-heading"><div className="card resolution-item-dialog"><button type="button" className="dialog-close" aria-label="Đóng" onClick={() => setComparison(null)}>×</button><h2 id="compare-heading">Trước và sau khi gộp</h2><p className="muted-copy">Hiển thị 10 dòng đầu tiên của mỗi CSV.</p>
       <div className="resolution-compare-grid">{([{ title: `Trước · ${comparison.source_count} dòng`, rows: comparison.source_sample, fields: ["id", "source_system", "full_name", "phone_number"] },
         { title: `Sau · ${comparison.output_count} dòng`, rows: comparison.output_sample, fields: ["master_record_id", "source_systems", "full_name", "phone_number"] }]).map((table) =>
-        <div key={table.title}><h3>{table.title}</h3><div className="resolution-compare-table"><table><thead><tr>{table.fields.map((field) => <th key={field}>{field}</th>)}</tr></thead><tbody>{table.rows.map((row, index) => <tr key={index}>{table.fields.map((field) => <td key={field} title={row[field]}>{field === "master_record_id" && row[field]?.length > 24 ? <span className="history-long-id">{row[field].slice(0, 11)}…{row[field].slice(-10)}<button type="button" aria-label="Sao chép mã bản ghi" onClick={() => void navigator.clipboard.writeText(row[field]).then(() => notify("Đã sao chép mã bản ghi.")).catch(() => notify("Không sao chép được mã bản ghi."))}>Sao chép</button></span> : row[field]}</td>)}</tr>)}</tbody></table></div></div>)}</div>
+        <div key={table.title}><h3>{table.title}</h3><div className="resolution-compare-table"><table><thead><tr>{table.fields.map((field) => <th key={field}>{field}</th>)}</tr></thead><tbody>{table.rows.map((row, index) => <tr key={index}>{table.fields.map((field) => <td key={field} title={row[field]}>{field === "master_record_id" && row[field]?.length > 24 ? <span className="history-long-id">{row[field].slice(0, 11)}…{row[field].slice(-10)}<button type="button" aria-label="Sao chép mã hồ sơ" onClick={() => void navigator.clipboard.writeText(row[field]).then(() => notify("Đã sao chép mã hồ sơ.")).catch(() => notify("Không sao chép được mã hồ sơ."))}>Sao chép</button></span> : row[field]}</td>)}</tr>)}</tbody></table></div></div>)}</div>
     </div></div>}
     {canSplit && splitExportId && <SplitHistoryDialog runId={runId} exportId={splitExportId} onClose={() => setSplitExportId(null)}
-      onCompleted={async () => { setSplitExportId(null); await Promise.all([load(), onChanged()]); notify("Đã tách bản ghi và tạo một phiên bản CSV mới."); }} />}
+      onCompleted={async () => { setSplitExportId(null); await Promise.all([load(), onChanged()]); notify("Đã tách hồ sơ và tạo một phiên bản CSV mới."); }} />}
   </section>;
 
   return <section className={`resolution-flow ${stage === "review" ? "resolution-flow-review" : ""}`}>
     <div className={`resolution-sticky-head ${stage === "auto" || stage === "review" ? "is-sticky" : ""}`}>
-    {stage === "review" && <div className="card review-filters" aria-label="Nhóm trường hợp review">
+    {stage === "review" && <div className="card review-filters" aria-label="Nhóm trường hợp kiểm tra">
       <label htmlFor="review-category">Lọc theo lý do cần kiểm tra
         <select id="review-category" value={category?.signature_hash ?? ""} disabled={busy} onChange={(event) => {
           setCategory(categories.find((item) => item.signature_hash === event.target.value) ?? null); setOffset(0); setSelected([]);
@@ -472,10 +472,10 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
           </optgroup>)}
         </select>
       </label>
-      <p>Mỗi dòng là một nhóm bản ghi cần đối chiếu. Chọn <strong>Xem so sánh</strong> để kiểm tra và quyết định.</p>
+      <p>Mỗi dòng là một nhóm hồ sơ cần đối chiếu. Chọn <strong>Xem so sánh</strong> để kiểm tra và quyết định.</p>
     </div>}
     <div className="resolution-flow-toolbar">
-      <div><h2>{stage === "auto" ? "Hồ sơ sẽ hợp nhất" : "Danh sách cần review"}</h2><p>{loading ? "Đang tải…" : loadError ? "Không tải được dữ liệu" : `${total.toLocaleString("vi-VN")} hồ sơ${stage === "auto" ? " sau gộp trong danh sách này" : ""}`}</p>{stage === "auto" && <p>Mỗi dòng tập hợp các bản ghi của cùng một đối tượng để tạo một hồ sơ khi xuất CSV.</p>}</div>
+      <div><h2>{stage === "auto" ? "Hồ sơ sẽ hợp nhất" : "Danh sách cần kiểm tra"}</h2><p>{loading ? "Đang tải…" : loadError ? "Không tải được dữ liệu" : `${total.toLocaleString("vi-VN")} hồ sơ${stage === "auto" ? " sau gộp trong danh sách này" : ""}`}</p>{stage === "auto" && <p>Mỗi dòng tập hợp các hồ sơ của cùng một đối tượng để tạo một hồ sơ khi xuất CSV.</p>}</div>
       {stage === "auto" && <div className="resolution-flow-actions">
         <label>Nguồn quyết định <select value={origin} onChange={(event) => { setOrigin(event.target.value); setOffset(0); }}><option value="">Tất cả hồ sơ</option><option value="AUTO">Tự động</option><option value="REVIEW">Bạn đã xác nhận</option></select></label>
         <button type="button" className="button primary" disabled={busy || loading || !!loadError || !readiness?.can_export || !canExport} title={!canExport ? "Tài khoản chưa có quyền xuất dữ liệu" : !readiness?.can_export ? "Xem các vấn đề cần xử lý bên dưới" : undefined} onClick={() => readiness?.pending_review_count ? setConfirmExport(true) : void previewCsv(false)}>Xem trước CSV kết quả →</button>
@@ -493,10 +493,10 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
     {stage === "auto" && !loading && !loadError && readiness && <div className={`resolution-readiness ${!readiness.can_export ? "needs-input" : ""}`}>
       <strong>{readiness.can_export ? "Sẵn sàng xem trước CSV" : `${(readiness.blockers ?? []).length} vấn đề cần xử lý trước khi xuất CSV`}</strong>
       {!readiness.can_export && <ul className="resolution-blockers">{(readiness.blockers ?? []).map((blocker) => <li key={`${blocker.item_id}-${blocker.kind}`}><button type="button" onClick={() => void openBlocker(blocker.item_id)}><b>{blocker.label || blocker.item_id}</b><span>{blocker.message}{blocker.fields?.length ? ` ${blocker.fields.map((field) => labels[field] ?? field).join(", ")}.` : ""}</span><em>Mở hồ sơ →</em></button></li>)}</ul>}
-      {readiness.pending_review_count > 0 && <p>Vẫn còn bản ghi cần xem xét. Những bản ghi chưa được xác nhận gộp sẽ được giữ riêng trong CSV.</p>}
+      {readiness.pending_review_count > 0 && <p>Vẫn còn hồ sơ cần xem xét. Những hồ sơ chưa được xác nhận gộp sẽ được giữ riêng trong CSV.</p>}
     </div>}
     {stage === "review" ? <>
-      <section className="card review-list-panel" aria-label="Hồ sơ cần review">
+      <section className="card review-list-panel" aria-label="Hồ sơ cần kiểm tra">
         {renderItemList()}
         {renderPagination()}
       </section>
@@ -506,10 +506,10 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
         <section className="card review-comparison-panel">
           {active ? <>
             <div className="review-column-heading"><div><p className="section-kicker">SO SÁNH · {active.member_count.toLocaleString("vi-VN")} BẢN GHI</p>
-              <h2 id="resolution-item-heading">{active.label || active.records[0]?.raw_fields.name || "Bản ghi cần review"}</h2></div>
+              <h2 id="resolution-item-heading">{active.label || active.records[0]?.raw_fields.name || "Hồ sơ cần kiểm tra"}</h2></div>
               <button type="button" className="review-close-button" aria-label={choicesDirty ? "Hủy thay đổi" : "Đóng"} onClick={closeItem}>×</button></div>
             <div className="resolution-record-strip">{active.records.map((record) => <span key={record.id} className={`resolution-source ${sourceColor(record.source_system)}`}><b>{record.source_system}</b> · {record.external_id}</span>)}</div>
-            <div className="resolution-review-reason"><b>Lý do cần review:</b> {reviewReason(active.reason)}</div>
+            <div className="resolution-review-reason"><b>Lý do cần kiểm tra:</b> {reviewReason(active.reason)}</div>
             {active.merge_blocked_reason && <div className="resolution-readiness needs-input" role="alert">{active.merge_blocked_reason}</div>}
             {hasSemanticAddress && <p className="review-evidence-note">Địa chỉ đã được Gemini đối chiếu. Đây là tín hiệu hỗ trợ; hãy kiểm tra giá trị nguồn.</p>}
             <div className="resolution-field-list">
@@ -520,7 +520,7 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
             </div>
           </> : <div className="review-panel-empty"><span aria-hidden="true">◎</span><strong>{busy ? "Đang tải dữ liệu đối chiếu…" : "Chọn một hồ sơ trong danh sách"}</strong><p>Giá trị nguồn và các trường khác nhau sẽ hiện ở đây.</p></div>}
         </section>
-        <aside className="card review-decision-panel" aria-label="Quyết định review">
+        <aside className="card review-decision-panel" aria-label="Quyết định kiểm tra">
           {active ? <>
             <div className="review-column-heading"><div><p className="section-kicker">GIÁ TRỊ ĐANG CHỌN</p><h3>Hồ sơ hợp nhất</h3></div></div>
             <dl className="review-golden-summary">{FIELDS.map((field) => {
@@ -533,7 +533,7 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
               return <div key={field}><dt>{labels[field]}</dt><dd><strong>{value || "Chưa chọn"}</strong>
                 {sources.length > 0 && <small>{sources.map((source) => `${source.source_system} · ${source.external_id}`).join(", ")}</small>}</dd></div>;
             })}</dl>
-            <div className="review-assistant-card"><div><strong>Giải thích bằng chứng</strong><p>AI chỉ tóm tắt tín hiệu; quyết định cuối vẫn thuộc về bạn.</p></div>
+            <div className="review-assistant-card"><div><strong>Giải thích thông tin đối chiếu</strong><p>AI chỉ tóm tắt tín hiệu; quyết định cuối vẫn thuộc về bạn.</p></div>
               <button type="button" className="button outline" disabled={busy || !canExplain} onClick={() => void explainActiveItem()}>Giải thích bằng AI</button>
               {itemExplanation?.itemId === active.id && <div className="resolution-ai-review"><strong>{itemExplanation.status === "TEMPLATE" ? "Giải thích theo quy tắc" : "Giải thích từ AI"}</strong><p>{itemExplanation.summary}</p></div>}
             </div>
@@ -545,13 +545,13 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
               <button type="button" className="button outline" disabled={busy || !canReject} onClick={() => void transition([active.id], "no_merge")}>Không gộp</button>
               <button type="button" className="button primary" disabled={busy || !canApprove} onClick={() => void transition([active.id], "merge")}>Đưa sang Chờ gộp →</button>
             </div>
-          </> : <div className="review-panel-empty"><span aria-hidden="true">✓</span><strong>Quyết định có bằng chứng</strong><p>Đối chiếu các giá trị trước khi chọn Không gộp hoặc đưa sang Chờ gộp.</p></div>}
+          </> : <div className="review-panel-empty"><span aria-hidden="true">✓</span><strong>Quyết định có thông tin đối chiếu</strong><p>Đối chiếu các giá trị trước khi chọn Không gộp hoặc đưa sang Chờ gộp.</p></div>}
         </aside>
       </div></div></div>}
     </> : <>{renderItemList()}{renderPagination()}</>}
 
     {active && stage !== "review" && <div className="history-overlay" role="dialog" aria-modal="true" aria-labelledby="resolution-item-heading" onMouseDown={(event) => { if (event.target === event.currentTarget) closeItem(); }}>
-      <div className="card resolution-item-dialog"><div className="resolution-dialog-head"><div><p className="section-kicker">{stage === "auto" ? "CHỜ GỘP" : "CẦN REVIEW"} · {active.member_count} BẢN GHI</p><h2 id="resolution-item-heading">{active.label || active.records[0]?.raw_fields.name}</h2><p>So sánh các giá trị nguồn trước khi quyết định.</p></div><button type="button" className="dialog-close" aria-label="Đóng" onClick={closeItem}>×</button></div>
+      <div className="card resolution-item-dialog"><div className="resolution-dialog-head"><div><p className="section-kicker">{stage === "auto" ? "CHỜ GỘP" : "CẦN KIỂM TRA"} · {active.member_count} BẢN GHI</p><h2 id="resolution-item-heading">{active.label || active.records[0]?.raw_fields.name}</h2><p>So sánh các giá trị nguồn trước khi quyết định.</p></div><button type="button" className="dialog-close" aria-label="Đóng" onClick={closeItem}>×</button></div>
         <div className="resolution-record-strip">{active.records.map((record) => <span key={record.id} className={`resolution-source ${sourceColor(record.source_system)}`}><b>{record.source_system}</b> · {record.external_id}</span>)}</div>
         {hasSemanticAddress && <div className="resolution-review-reason"><b>Địa chỉ đã được Gemini đối chiếu.</b> Đây là tín hiệu hỗ trợ; hãy xem giá trị nguồn trước khi quyết định.</div>}
         <div className="resolution-review-reason"><button type="button" className="button outline" disabled={busy || !canExplain} onClick={() => void explainActiveItem()}>Giải thích hồ sơ bằng AI</button>
@@ -571,7 +571,7 @@ export default function ResolutionFlow({ user, runId, stage, onChanged, notify }
         </div>
       </div>
     </div>}
-    {confirmExport && <div className="history-overlay" role="dialog" aria-modal="true" aria-labelledby="export-warning-heading"><div className="card resolution-confirm-dialog"><h2 id="export-warning-heading">Còn bản ghi cần xem xét</h2><p>CSV vẫn bao gồm toàn bộ dữ liệu đầu vào. Những bản ghi chưa được xác nhận gộp sẽ được giữ riêng.</p><div><button type="button" className="button outline" onClick={() => setConfirmExport(false)}>Quay lại</button><button type="button" className="button primary" disabled={busy} onClick={() => void previewCsv(true)}>Tiếp tục xem trước</button></div></div></div>}
-    {preview && <div className="history-overlay" role="dialog" aria-modal="true" aria-labelledby="preview-heading"><div className="card resolution-confirm-dialog"><h2 id="preview-heading">Xem trước CSV kết quả</h2><p>{preview.eligible_count.toLocaleString("vi-VN")} hồ sơ hợp nhất. CSV dự kiến có {preview.estimated_output_rows.toLocaleString("vi-VN")} dòng, gồm {(preview.separate_record_count ?? Math.max(0, preview.estimated_output_rows - preview.eligible_count)).toLocaleString("vi-VN")} bản ghi giữ riêng.</p><p>{preview.review_required_count > 0 && "Những bản ghi chưa được xác nhận gộp sẽ được giữ riêng."} Bản xem trước hết hạn lúc {new Date(preview.expires_at).toLocaleTimeString("vi-VN")}.</p>{previewStale && <p role="alert">Bản xem trước đã cũ vì dữ liệu hoặc quyết định thay đổi. Tạo lại để tiếp tục.</p>}<div><button type="button" className="button outline" disabled={busy} onClick={() => { setPreview(null); setPreviewStale(false); }}>Quay lại</button>{previewStale ? <button type="button" className="button primary" disabled={busy} onClick={() => void previewCsv(preview.review_required_count > 0)}>Tạo lại bản xem trước</button> : <button type="button" className="button primary" disabled={busy} onClick={() => void executeCsv()}>Xác nhận gộp và xuất CSV</button>}</div></div></div>}
+    {confirmExport && <div className="history-overlay" role="dialog" aria-modal="true" aria-labelledby="export-warning-heading"><div className="card resolution-confirm-dialog"><h2 id="export-warning-heading">Còn hồ sơ cần xem xét</h2><p>CSV vẫn bao gồm toàn bộ dữ liệu đầu vào. Những hồ sơ chưa được xác nhận gộp sẽ được giữ riêng.</p><div><button type="button" className="button outline" onClick={() => setConfirmExport(false)}>Quay lại</button><button type="button" className="button primary" disabled={busy} onClick={() => void previewCsv(true)}>Tiếp tục xem trước</button></div></div></div>}
+    {preview && <div className="history-overlay" role="dialog" aria-modal="true" aria-labelledby="preview-heading"><div className="card resolution-confirm-dialog"><h2 id="preview-heading">Xem trước CSV kết quả</h2><p>{preview.eligible_count.toLocaleString("vi-VN")} hồ sơ hợp nhất. CSV dự kiến có {preview.estimated_output_rows.toLocaleString("vi-VN")} dòng, gồm {(preview.separate_record_count ?? Math.max(0, preview.estimated_output_rows - preview.eligible_count)).toLocaleString("vi-VN")} hồ sơ giữ riêng.</p><p>{preview.review_required_count > 0 && "Những hồ sơ chưa được xác nhận gộp sẽ được giữ riêng."} Bản xem trước hết hạn lúc {new Date(preview.expires_at).toLocaleTimeString("vi-VN")}.</p>{previewStale && <p role="alert">Bản xem trước đã cũ vì dữ liệu hoặc quyết định thay đổi. Tạo lại để tiếp tục.</p>}<div><button type="button" className="button outline" disabled={busy} onClick={() => { setPreview(null); setPreviewStale(false); }}>Quay lại</button>{previewStale ? <button type="button" className="button primary" disabled={busy} onClick={() => void previewCsv(preview.review_required_count > 0)}>Tạo lại bản xem trước</button> : <button type="button" className="button primary" disabled={busy} onClick={() => void executeCsv()}>Xác nhận gộp và xuất CSV</button>}</div></div></div>}
   </section>;
 }

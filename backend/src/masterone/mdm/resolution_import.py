@@ -198,7 +198,8 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
                                        owner_user_id: str, name: str | None = None,
                                        upload_session_id: str | None = None,
                                        known_hashes: Sequence[str | None] | None = None,
-                                       workflow_version: int = 1) -> tuple[ResolutionRun, dict]:
+                                       workflow_version: int = 1, reserved_run_id: str | None = None,
+                                       use_embedding: bool = True) -> tuple[ResolutionRun, dict]:
     from masterone.mdm.workflow_service import initialize_workflow, validate_version
     validate_version(workflow_version)
     if not files:
@@ -223,7 +224,7 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
 
     # Nothing is written yet. End the read transaction so no transaction stays open during uploads.
     db.commit()
-    run_id = str(uuid4())
+    run_id = reserved_run_id or str(uuid4())
     r2 = get_store(get_settings())
     uploaded_keys: list[str] = []
 
@@ -262,7 +263,7 @@ def create_resolution_run_from_streams(db: Session, files: Sequence[tuple[str, B
         raise
 
     run = ResolutionRun(id=run_id, owner_user_id=owner_user_id, upload_session_id=upload_session_id,
-                        name=normalized_name, record_count=0, workflow_version=workflow_version,
+                        name=normalized_name, record_count=0, workflow_version=workflow_version, use_embedding=use_embedding,
                         file_count=len(files), policy_version=POLICY_VERSION)
     db.add(run)
     total_rows = 0

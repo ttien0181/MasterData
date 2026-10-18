@@ -35,7 +35,7 @@ export default function SessionAnalytics({ runId, revision }: { runId: string; r
       <section className="card overview-insight-card analytics-decisions" aria-label="Phân bố quyết định">
         <h3>PHÂN BỐ QUYẾT ĐỊNH</h3>
         <div className="analytics-decision-content">
-          <div className={`analytics-donut ${decisions.total ? "" : "is-empty"}`} role="img" aria-label={`${number(decisions.automatic_percent)}% bản ghi được phân loại tự xử lý`}
+          <div className={`analytics-donut ${decisions.total ? "" : "is-empty"}`} role="img" aria-label={`${number(decisions.automatic_percent)}% hồ sơ được phân loại tự xử lý`}
             style={{ "--auto-share": `${autoShare}%`, "--review-end": `${reviewEnd}%` } as CSSProperties}>
             <span><strong>{number(decisions.automatic_percent)}%</strong><small>tự xử lý</small></span>
           </div>
@@ -45,7 +45,7 @@ export default function SessionAnalytics({ runId, revision }: { runId: string; r
             <div><dt><i className="is-separate" />Không phát hiện trùng</dt><dd>{number(decisions.no_duplicate_detected)}</dd></div>
           </dl>
         </div>
-        <p>Phân loại ban đầu · {number(decisions.total)} bản ghi, không đếm lặp.</p>
+        <p>Phân loại ban đầu · {number(decisions.total)} hồ sơ, không đếm lặp.</p>
       </section>
       <section className="card overview-insight-card analytics-conflicts" aria-label="Xung đột theo trường">
         <h3>XUNG ĐỘT THEO TRƯỜNG</h3>
@@ -54,21 +54,21 @@ export default function SessionAnalytics({ runId, revision }: { runId: string; r
         </div>)}</div>
         <p>{conflicts.review_pair_count ? `Trong ${number(conflicts.review_pair_count)} cặp chờ xem xét. Một cặp có thể xung đột nhiều trường.` : "Không còn cặp chờ xem xét."}</p>
       </section>
-      <section className="card overview-insight-card analytics-quality" aria-label="Số lượng bản ghi theo nguồn">
+      <section className="card overview-insight-card analytics-quality" aria-label="Số lượng hồ sơ theo nguồn">
         <h3>SỐ LƯỢNG BẢN GHI THEO NGUỒN</h3>
         <div className="analytics-quality-columns">{[...quality.sources].sort((a, b) => sourceOrder(a.source) - sourceOrder(b.source) || a.source.localeCompare(b.source)).map((source) => <div key={source.source} className="analytics-quality-column"
-          title={`${source.source}: ${number(source.record_count)} bản ghi`}>
+          title={`${source.source}: ${number(source.record_count)} hồ sơ`}>
           <strong>{number(source.record_count)}</strong>
           <div className="analytics-quality-track" aria-hidden="true"><i style={{ height: `${source.record_count / maxSourceCount * 100}%` }} /></div>
           <span>{source.source === "BILL" ? "Billing" : source.source}</span>
         </div>)}</div>
-        <p>{quality.sources.length ? `Tổng ${number(totalSourceRecords)} bản ghi đầu vào từ ${number(quality.sources.length)} nguồn.` : "Chưa có bản ghi đầu vào."}</p>
+        <p>{quality.sources.length ? `Tổng ${number(totalSourceRecords)} hồ sơ đầu vào từ ${number(quality.sources.length)} nguồn.` : "Chưa có hồ sơ đầu vào."}</p>
       </section>
     </div>
     <details className="analytics-definitions"><summary>Cách tính các chỉ số</summary>
-      <p><b>Phân bố quyết định:</b> tính trên bản ghi đầu vào theo kết quả phân loại ban đầu. Bản ghi liên quan đến cặp cần xem xét được ưu tiên xếp vào Cần xem xét, rồi đến Tự xử lý; phần còn lại là Không phát hiện trùng. Ba nhóm cộng lại bằng tổng bản ghi. Quyết định duyệt sau đó không đổi biểu đồ này.</p>
-      <p><b>Xung đột:</b> số cặp đang chờ xem xét được pipeline đánh dấu xung đột cho từng trường. Thiếu dữ liệu hoặc chỉ khác cách viết không tự động tính là xung đột.</p>
-      <p><b>Bản ghi theo nguồn:</b> số bản ghi đầu vào của từng nguồn trong phiên, trước khi gộp. Các file có cùng nguồn được cộng chung; chiều cao cột tỷ lệ với số lượng bản ghi.</p>
+      <p><b>Phân bố quyết định:</b> tính trên hồ sơ đầu vào theo kết quả phân loại ban đầu. Hồ sơ liên quan đến cặp cần xem xét được ưu tiên xếp vào Cần xem xét, rồi đến Tự xử lý; phần còn lại là Không phát hiện trùng. Ba nhóm cộng lại bằng tổng hồ sơ. Quyết định duyệt sau đó không đổi biểu đồ này.</p>
+      <p><b>Xung đột:</b> số cặp đang chờ xem xét được quy trình xử lý đánh dấu xung đột cho từng trường. Thiếu dữ liệu hoặc chỉ khác cách viết không tự động tính là xung đột.</p>
+      <p><b>Hồ sơ theo nguồn:</b> số hồ sơ đầu vào của từng nguồn trong phiên, trước khi gộp. Các tệp có cùng nguồn được cộng chung; chiều cao cột tỷ lệ với số lượng hồ sơ.</p>
     </details>
   </div>;
 }

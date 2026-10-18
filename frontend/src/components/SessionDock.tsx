@@ -20,7 +20,7 @@ export default function SessionDock({ stage, canReadAudit, canEditPolicy, onNavi
   onNavigate: (stage: Stage) => void;
 }) {
   const extraStages = [
-    ...(canReadAudit ? [{ id: "audit" as const, label: "Audit" }] : []),
+    ...(canReadAudit ? [{ id: "audit" as const, label: "Lịch sử thao tác" }] : []),
     ...(canEditPolicy ? [{ id: "policy" as const, label: "Chính sách" }] : []),
   ];
   return <nav className="app-sidebar workspace-dock" aria-label="Góc nhìn phiên hiện tại">

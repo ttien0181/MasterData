@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import EmbeddingOption from './EmbeddingOption';
 import {
   ApiError,
   addUploadSessionFiles,
@@ -59,7 +60,7 @@ function withoutKey(items: Record<string, string>, key: string) {
 function validationOutcome(status: UploadSession["status"]) {
   return status === "READY"
     ? "Kiểm tra xong: dữ liệu hợp lệ. Bạn có thể bắt đầu phân giải."
-    : "Kiểm tra xong: có file chưa hợp lệ. Xem lỗi ở từng file để sửa.";
+    : "Kiểm tra xong: có tệp chưa hợp lệ. Xem lỗi ở từng tệp để sửa.";
 }
 
 function isRetryable(error: unknown) {
@@ -130,6 +131,8 @@ export default function ResolutionIntake({
   const [drafts, setDrafts] = useState<UploadSession[]>([]);
   const [session, setSession] = useState<UploadSession | null>(null);
   const [name, setName] = useState("");
+  const [useEmbedding, setUseEmbedding] = useState(true);
+  useEffect(()=>{setUseEmbedding(session?.use_embedding ?? true);},[session?.session_id,session?.use_embedding]);
   const [dragging, setDragging] = useState(false);
   const [working, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(!!userId);
@@ -217,7 +220,7 @@ export default function ResolutionIntake({
                 ? "Đã khôi phục dữ liệu. Bạn có thể bắt đầu phân giải."
                 : restored.status === "COMMITTING"
                   ? "Phiên đang được tạo. Trang sẽ cập nhật khi xong."
-                  : "Đã khôi phục tiến độ. Chọn lại file để tiếp tục phần chưa tải xong.",
+                  : "Đã khôi phục tiến độ. Chọn lại tệp để tiếp tục phần chưa tải xong.",
           );
         }
       } catch (error) {
@@ -416,7 +419,7 @@ export default function ResolutionIntake({
   async function uploadFiles(incoming: File[]) {
     if (!incoming.length || busy || uploadInFlight.current || session && ['VALIDATING','COMMITTING','COMMITTED','CANCELLED'].includes(session.status)) return;
     if (incoming.some((file) => !file.name.toLowerCase().endsWith(".csv"))) {
-      setMessage("Chỉ hỗ trợ file CSV. Hãy chọn lại các file cần phân giải.");
+      setMessage("Chỉ hỗ trợ tệp CSV. Hãy chọn lại các tệp cần phân giải.");
       return;
     }
     const files = incoming.filter(
@@ -429,7 +432,7 @@ export default function ResolutionIntake({
         ) === index,
     );
     if (files.length + (session?.files.length || 0) > 10) {
-      setMessage("Mỗi phiên hiện hỗ trợ tối đa 10 file CSV.");
+      setMessage("Mỗi phiên hiện hỗ trợ tối đa 10 tệp CSV.");
       return;
     }
     uploadInFlight.current = true;
@@ -458,7 +461,7 @@ export default function ResolutionIntake({
           unfinished.push(files[index].name);
           setUploadErrors((items) => ({
             ...items,
-            [target.file_id]: error instanceof Error ? error.message : "Không tải được file.",
+            [target.file_id]: error instanceof Error ? error.message : "Không tải được tệp.",
           }));
           created = await getUploadSession(created.session_id).catch(() => created);
           setSession(created);
@@ -467,7 +470,7 @@ export default function ResolutionIntake({
       if (unfinished.length) {
         setMessage(
           `Chưa tải xong ${unfinished.length} file: ${unfinished.join(", ")}. ` +
-            `Bấm "Tiếp tục" ở file đó để tải lại phần còn thiếu.`,
+            `Bấm "Tiếp tục" ở tệp đó để tải lại phần còn thiếu.`,
         );
         return;
       }
@@ -476,7 +479,7 @@ export default function ResolutionIntake({
       setMessage(
         error instanceof Error
           ? error.message
-          : "Không thể tải dữ liệu lên. Hãy chọn lại file để thử lại.",
+          : "Không thể tải dữ liệu lên. Hãy chọn lại tệp để thử lại.",
       );
       if (draftId) {
         try {
@@ -521,7 +524,7 @@ export default function ResolutionIntake({
   async function chooseFileForDraft(target: UploadSessionFile, file?: File) {
     if (!session || !file || busy) return;
     if (!file.name.toLowerCase().endsWith(".csv")) {
-      setMessage("Chỉ hỗ trợ file CSV.");
+      setMessage("Chỉ hỗ trợ tệp CSV.");
       return;
     }
     setBusy(true);
@@ -531,9 +534,9 @@ export default function ResolutionIntake({
       const updated = await transferFile(session, target, file);
       await validateIfComplete(updated);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Không tải được file.";
+      const detail = error instanceof Error ? error.message : "Không tải được tệp.";
       setUploadErrors((items) => ({ ...items, [target.file_id]: detail }));
-      setMessage(`Chưa tải xong file ${target.filename}. Bấm "Tiếp tục" để thử lại.`);
+      setMessage(`Chưa tải xong tệp ${target.filename}. Bấm "Tiếp tục" để thử lại.`);
     } finally {
       setBusy(false);
       setActivity(null);
@@ -608,7 +611,7 @@ export default function ResolutionIntake({
         name.trim() !== (session.name || "")
       )
         await renameUploadSession(session.session_id, name.trim());
-      const accepted = workflowVersion === 2 ? await commitUploadSession(session.session_id, 2) : await commitUploadSession(session.session_id);
+      const accepted = workflowVersion === 2 ? await commitUploadSession(session.session_id, 2, useEmbedding) : await commitUploadSession(session.session_id);
       const created: CreatedRun =
         accepted.run_id && accepted.profile
           ? { run_id: accepted.run_id, status: accepted.status, profile: accepted.profile }
@@ -621,7 +624,7 @@ export default function ResolutionIntake({
       setSession(null);
       setName("");
       setMessage(
-        `Đã tạo phiên với ${created.profile.row_count.toLocaleString("vi-VN")} bản ghi.`,
+        `Đã tạo phiên với ${created.profile.row_count.toLocaleString("vi-VN")} hồ sơ.`,
       );
     } catch (error) {
       setMessage(
@@ -660,7 +663,7 @@ export default function ResolutionIntake({
         : activity === "uploading"
           ? "Chờ tải lên hoàn tất"
           : !session
-            ? "Chọn file để bắt đầu"
+            ? "Chọn tệp để bắt đầu"
             : session.status === "COMMITTED"
               ? "Tiếp tục phiên phân giải"
               : workflowVersion === 2 ? "Tạo phiên từ dữ liệu đã kiểm tra" : "Bắt đầu phân giải";
@@ -668,6 +671,7 @@ export default function ResolutionIntake({
   return (
     <section
       className="resolution-intake upload-session-intake"
+      data-demo="upload-files"
       aria-label="Dữ liệu đang chuẩn bị"
     >
       <div className="upload-intake-body">
@@ -681,7 +685,7 @@ export default function ResolutionIntake({
               maxLength={255}
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="Mặc định dùng tên file"
+              placeholder="Mặc định dùng tên tệp"
             />
             {session && name.trim() !== (session.name || "") && (
               <button
@@ -698,14 +702,14 @@ export default function ResolutionIntake({
         <div className="upload-source">
           <span className="upload-field-label">Nguồn dữ liệu</span>
           <span className="upload-source-chip">
-            <ShellIcon name="file" size={15} /> File CSV
+            <ShellIcon name="file" size={15} /> Tệp CSV
           </span>
         </div>
         <div className="upload-files-heading">
-          <span className="upload-field-label">File dữ liệu</span>
+          <span className="upload-field-label">Tệp dữ liệu</span>
           {session && (
             <small>
-              {session.files.length} file · {formatBytes(session.total_bytes)}
+              {session.files.length} tệp · {formatBytes(session.total_bytes)}
             </small>
           )}
         </div>
@@ -732,14 +736,14 @@ export default function ResolutionIntake({
                 <ShellIcon name="import" size={25} />
               </span>
               <strong>
-                {busy ? "Đang chuẩn bị tải lên…" : "Kéo thả file vào đây"}
+                {busy ? "Đang chuẩn bị tải lên…" : "Kéo thả tệp vào đây"}
               </strong>
               <span className="upload-drop-hint">
-                hoặc <b>chọn file</b>
+                hoặc <b>chọn tệp</b>
               </span>
               <span className="upload-format">CSV</span>
               <input
-                aria-label="Chọn các file CSV"
+                aria-label="Chọn các tệp CSV"
                 type="file"
                 accept=".csv,text/csv"
                 multiple
@@ -752,14 +756,14 @@ export default function ResolutionIntake({
               />
             </label>
             <p className="upload-help">
-              Chọn cùng lúc tối đa 10 file. Tự tải lên và kiểm tra.
+              Chọn cùng lúc tối đa 10 tệp. Tự tải lên và kiểm tra.
               <br />
-              Không giới hạn dung lượng từng file.
+              Không giới hạn dung lượng từng tệp.
             </p>
             <details className="upload-schema-help">
               <summary>Định dạng CSV cần có</summary>
               <p>
-                Mỗi dòng là một bản ghi. Cột source xác định nguồn CRM, ERP hoặc
+                Mỗi dòng là một hồ sơ. Cột source xác định nguồn CRM, ERP hoặc
                 BILL.
               </p>
               <div className="intake-schema" aria-label="Các cột CSV">
@@ -804,8 +808,8 @@ export default function ResolutionIntake({
         )}
         {session && (
           <>
-            {!['COMMITTED','CANCELLED'].includes(session.status) && <label className="upload-add-control">Thêm file vào dữ liệu đang chuẩn bị
-              <input type="file" accept=".csv,text/csv" multiple aria-label="Thêm các file CSV" disabled={busy || ['VALIDATING','COMMITTING'].includes(session.status) || session.files.length >= 10}
+            {!['COMMITTED','CANCELLED'].includes(session.status) && <label className="upload-add-control">Thêm tệp vào dữ liệu đang chuẩn bị
+              <input type="file" accept=".csv,text/csv" multiple aria-label="Thêm các tệp CSV" disabled={busy || ['VALIDATING','COMMITTING'].includes(session.status) || session.files.length >= 10}
                 onChange={event => { const files = Array.from(event.target.files || []); event.target.value = ''; void uploadFiles(files); }} />
             </label>}
             <div className="upload-session-files">
@@ -847,7 +851,7 @@ export default function ResolutionIntake({
                         </strong>
                         <small>
                           {error
-                            ? "Không thể dùng file này"
+                            ? "Không thể dùng tệp này"
                             : uploadError
                               ? "Chưa tải xong"
                               : valid
@@ -860,7 +864,7 @@ export default function ResolutionIntake({
                         aria-disabled={busy || session.status === "COMMITTED"}
                       >
                         <ShellIcon name="replace" size={14} />
-                        {error ? "Đổi file" : valid ? "Đổi file" : "Tiếp tục"}
+                        {error ? "Đổi tệp" : valid ? "Đổi tệp" : "Tiếp tục"}
                         <input
                           aria-label={`Đổi hoặc tiếp tục tải ${candidate.filename}`}
                           type="file"
@@ -923,8 +927,8 @@ export default function ResolutionIntake({
                     )}
                     {file.replacement && (
                       <p className="upload-replacement-note">
-                        Đang thay thế <b>{file.filename}</b>. File cũ được giữ
-                        đến khi file mới hợp lệ.
+                        Đang thay thế <b>{file.filename}</b>. Tệp cũ được giữ
+                        đến khi tệp mới hợp lệ.
                       </p>
                     )}
                   </article>
@@ -943,12 +947,12 @@ export default function ResolutionIntake({
               )}
             {validating && (
               <p className="upload-info-note" role="status">
-                Đang kiểm tra dữ liệu trong các file CSV. File lớn có thể mất vài phút; trang sẽ tự cập nhật.
+                Đang kiểm tra dữ liệu trong các tệp CSV. Tệp lớn có thể mất vài phút; trang sẽ tự cập nhật.
               </p>
             )}
             {session.status === "READY" && !busy && (
               <p className="upload-info-note">
-                Chưa bắt đầu phân giải. Bạn có thể đổi file trước khi xử lý.
+                Chưa bắt đầu phân giải. Bạn có thể đổi tệp trước khi xử lý.
               </p>
             )}
             {!ready && complete && !busy && (
@@ -964,7 +968,7 @@ export default function ResolutionIntake({
                     setMessage(
                       error instanceof Error
                         ? error.message
-                        : "Không kiểm tra được file.",
+                        : "Không kiểm tra được tệp.",
                     );
                   } finally {
                     setBusy(false);
@@ -1017,9 +1021,11 @@ export default function ResolutionIntake({
         )}
       </div>
       <footer className="upload-intake-footer">
+        {workflowVersion===2&&<EmbeddingOption checked={useEmbedding} onChange={setUseEmbedding} disabled={busy||session?.status==='COMMITTED'||session?.status==='COMMITTING'}/>}
         <button
           type="button"
           className="button primary"
+          data-demo="upload-confirm"
           disabled={busy || !ready}
           onClick={() => void commitDraft()}
         >

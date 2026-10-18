@@ -24,10 +24,10 @@ export function putToSignedUrl(
     request.onload = () =>
       request.status >= 200 && request.status < 300
         ? resolve()
-        : reject(new Error(`R2 upload failed (${request.status})`));
+        : reject(new Error(`Chưa tải được tệp (${request.status})`));
     request.onerror = () =>
-      reject(new Error("Network error while uploading to R2"));
-    request.onabort = () => reject(new Error("Upload cancelled"));
+      reject(new Error("Đường truyền bị gián đoạn khi tải tệp. Bạn hãy thử lại."));
+    request.onabort = () => reject(new Error("Đã dừng tải tệp"));
     request.send(file);
   });
 }
@@ -96,7 +96,7 @@ export async function uploadFilesToR2(
     });
     if (!completeResponse.ok) {
       const result = await completeResponse.json().catch(() => null);
-      const detail = typeof result?.detail === "string" ? result.detail : `Không xác nhận được upload (${completeResponse.status})`;
+      const detail = typeof result?.detail === "string" ? result.detail : `Không xác nhận được tải dữ liệu (${completeResponse.status})`;
       throw new Error(`${file.name}: ${detail}`);
     }
     uploads.push({ object_name, filename: file.name });

@@ -8,7 +8,7 @@ export function useWorkflowRead<T>(load: (signal: AbortSignal) => Promise<T>, en
   }, [load, enabled, attempt, keepPrevious]);
   return { data, error, retry: () => setAttempt(n => n + 1) };
 }
-export function ReadNotice({ error, retry }: { error: string; retry: () => void }) { return <p role={error ? 'alert' : 'status'}>{error || 'Đang đọc dữ liệu…'}{error && <button onClick={retry}>Thử đọc lại</button>}</p>; }
+export function ReadNotice({ error, retry }: { error: string; retry: () => void }) { return <p role={error ? 'alert' : 'status'}>{error || 'Đang tải dữ liệu…'}{error && <button onClick={retry}>Tải lại</button>}</p>; }
 export function CachedReadStatus({ read }: { read: { data: unknown; error: string; fetching: boolean; previous: boolean; retry: () => void } }) {
   if (!read.data) return null;
   return <>{read.previous && <p role="status">{read.fetching ? 'Đang tải trang đã chọn… ' : ''}Đang hiển thị trang đã đọc trước đó.</p>}{read.error && <ReadNotice error={read.error} retry={read.retry} />}</>;

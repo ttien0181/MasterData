@@ -29,9 +29,8 @@ test('desktop sidebar sticks, collapses and retains its width across all four pa
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/app/sessions/r/data');
   await expect(roots(page)).toHaveCount(4);
-  await page.getByRole('heading', { name: 'Phân tích dữ liệu', exact: true }).waitFor();
-  await page.getByRole('link', { name: 'Dữ liệu tải lên', exact: true }).click();
-  await page.getByRole('table', { name: 'Bản ghi dữ liệu' }).waitFor();
+  await page.getByRole('heading', { name: 'Tổng quan hồ sơ', exact: true }).waitFor();
+  await page.getByRole('table', { name: 'Danh sách hồ sơ khách hàng' }).waitFor();
   await page.evaluate(() => window.scrollTo(0, 600));
   await expect.poll(async () => Math.round((await sidebar(page).boundingBox())!.y)).toBe(94);
   const width = (await page.locator('.workflow-session-content').boundingBox())!.width;
@@ -46,24 +45,17 @@ test('desktop sidebar sticks, collapses and retains its width across all four pa
   expect(writes).toEqual([]);
 });
 
-test('nested links navigate to real sections, support reload and never compute', async ({ page }) => {
+test('step one has one destination and keeps analysis and customer profiles together after reload', async ({ page }) => {
   const writes = await session(page);
   await page.goto('/app/sessions/r/data');
-  const records = page.getByRole('link', { name: 'Dữ liệu tải lên', exact: true });
-  await expect(page.getByRole('link', { name: 'Phân tích dữ liệu', exact: true })).toBeVisible();
-  await records.click();
-  await expect(page).toHaveURL(/\/data\/records$/);
-  await expect(page.locator('#data-records')).toBeInViewport();
+  const firstStep = page.getByRole('navigation', { name: 'Các bước trong phiên' }).locator('ol > li').first();
+  await expect(firstStep.getByRole('link')).toHaveCount(1);
+  await expect(firstStep.getByRole('button')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Hồ sơ khách hàng', exact: true })).toBeVisible();
+  await expect(page.getByRole('table', { name: 'Danh sách hồ sơ khách hàng' })).toHaveCount(1);
   await page.reload();
-  await expect(page.locator('#data-records')).toBeInViewport();
-  await page.getByRole('button', { name: 'Thu gọn mục con Tổng quan dữ liệu', exact: true }).click();
-  await expect(records).not.toBeVisible();
-  await page.getByRole('button', { name: 'Mở mục con Tổng quan dữ liệu', exact: true }).click();
-  await expect(records).toBeVisible();
-  await page.getByRole('button', { name: 'Mở mục con Golden record', exact: true }).click();
-  await page.getByRole('link', { name: 'Giá trị và nguồn gốc', exact: true }).click();
-  await expect(page).toHaveURL(/\/golden#golden-records$/);
-  await expect(page.locator('#golden-records')).toBeInViewport();
+  await expect(page.locator('.workflow-session-content > .workflow-panel')).toHaveCount(1);
+  await expect(page.getByRole('table', { name: 'Danh sách hồ sơ khách hàng' })).toHaveCount(1);
   expect(writes).toEqual([]);
 });
 
@@ -75,6 +67,29 @@ test('pending steps stay readable and show readiness without nested actions', as
   await expect(page.getByRole('button', { name: /mục con Golden record/ })).toHaveCount(0);
   await roots(page).nth(2).click();
   await expect(page.getByText('Chưa có nhóm được tạo.',{exact:true})).toBeVisible();
+  expect(writes).toEqual([]);
+});
+
+test('step two combines classification and profile pairs in one destination, including old links', async ({ page }) => {
+  const writes = await session(page);
+  await page.route('**/pairs/summary?**', route => route.fulfill({ json: { total: 0, needs_review: 0, accepted: 0, denied: 0, kept_separate: 0, deferred: 0, blocked: 0, manual_available: 0, auto_available: 0, decision_revision: 1, groups: [{ key: 'A', total: 0, subgroups: [] }] } }));
+  await page.goto('/app/sessions/r/decisions/pairs');
+  await expect(page).toHaveURL(/\/decisions$/);
+  const step = page.getByRole('navigation', { name: 'Các bước trong phiên' }).locator('ol > li').nth(1);
+  await expect(step.getByRole('link')).toHaveCount(1);
+  await expect(step.getByRole('button')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Các cặp hồ sơ khách hàng', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Tổng quan phân loại', exact: true })).toBeVisible();
+  await expect(page.getByRole('table', { name: 'Danh sách cặp hồ sơ' })).toHaveCount(1);
+  await page.locator('#decisions-summary').getByRole('button', { name: /Nhóm A/ }).click();
+  await expect(page.getByRole('group', { name: 'Nhóm', exact: true }).getByRole('button', { name: /^Nhóm A/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page).toHaveURL(/\/decisions$/);
+  await page.reload();
+  await expect(page.locator('.workflow-session-content > .workflow-panel')).toHaveCount(1);
+  await page.screenshot({ path: '../artifacts/step2-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: '../artifacts/step2-mobile.png', fullPage: true });
   expect(writes).toEqual([]);
 });
 

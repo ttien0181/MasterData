@@ -8,7 +8,7 @@ const base = 'http://localhost:8001/api/v1/mdm';
 function fixture(input: object) { return JSON.parse(execFileSync(path.join(root, '.venv/Scripts/python.exe'), ['scripts/session_workflow_browser_fixture.py'], { cwd: root, input: JSON.stringify(input), env: { ...process.env, PYTHONPATH: path.join(root, 'backend/src') }, encoding: 'utf8' })); }
 const expect = baseExpect.configure({ timeout: 20_000 });
 test.use({ trace: 'off', screenshot: 'off' }); // Auth cookies, CSRF and signed upload URLs must never enter traces.
-test('live QA upload through finalized server Golden, fresh context and CSV history', async ({ page, browser }) => {
+test('live QA upload through finalized hệ thống hồ sơ đại diện, fresh context and CSV history', async ({ page, browser }) => {
   test.skip(process.env.SESSION_WORKFLOW_QA !== '1', 'Requires existing .env.qa API/worker and QA frontend port13000');
   test.setTimeout(600_000); mkdirSync(out, { recursive: true });
   const credentials = fixture({ action: 'seed' }); const checks: Record<string, unknown> = {};
@@ -68,28 +68,28 @@ test('live QA upload through finalized server Golden, fresh context and CSV hist
   expect(clusters.reduce((n: number, c: any) => n + c.member_count, 0)).toBe(3); expect(clusters.some((c: any) => c.singleton)).toBe(true);
   const duplicate = clusters.find((c: any) => c.member_count > 1); expect(duplicate).toBeTruthy();
   await page.getByRole('button', { name: new RegExp(`Nhóm ${duplicate.cluster_id}`) }).click();
-  await page.getByRole('textbox', { name: 'Chỉnh tay name', exact: true }).fill('Browser Server Golden');
+  await page.getByRole('textbox', { name: 'Nhập trực tiếp name', exact: true }).fill('Browser Hệ thống hồ sơ đại diện');
   await page.getByRole('button', { name: /Chọn loyalty từ CRM: Gold/ }).click();
   await page.getByRole('button', { name: /Chọn phone từ CRM:/ }).first().click();
-  await page.getByRole('button', { name: 'Lưu lựa chọn Golden' }).click();
+  await page.getByRole('button', { name: 'Lưu lựa chọn hồ sơ đại diện' }).click();
   await expect(page.getByText(/Đã lưu lựa chọn trên server/)).toBeVisible();
-  await page.getByRole('button', { name: 'Auto chọn Golden của nhóm' }).click();
-  await expect.poll(async () => (await (await page.request.get(url + `/clusters/${duplicate.cluster_id}/golden`)).json()).fields.name.value).toBe('Browser Server Golden');
-  await page.reload(); await expect(page.getByText('Browser Server Golden', { exact: true }).first()).toBeVisible();
+  await page.getByRole('button', { name: 'Auto chọn hồ sơ đại diện của nhóm' }).click();
+  await expect.poll(async () => (await (await page.request.get(url + `/clusters/${duplicate.cluster_id}/golden`)).json()).fields.name.value).toBe('Browser Hệ thống hồ sơ đại diện');
+  await page.reload(); await expect(page.getByText('Browser Hệ thống hồ sơ đại diện', { exact: true }).first()).toBeVisible();
   const fresh = await browser.newContext({ baseURL: 'http://localhost:13000' }); const freshPage = await fresh.newPage();
   await login(freshPage); await freshPage.goto(`/app/sessions/${run}/clusters?cluster=${duplicate.cluster_id}`);
-  await expect(freshPage.getByText('Browser Server Golden', { exact: true }).first()).toBeVisible();
+  await expect(freshPage.getByText('Browser Hệ thống hồ sơ đại diện', { exact: true }).first()).toBeVisible();
   const persisted = await (await freshPage.request.get(url + `/clusters/${duplicate.cluster_id}/golden`)).json();
   expect(persisted.selections.loyalty.selection_mode).toBe('SOURCE_CHOICE'); expect(persisted.selections.name.selection_mode).toBe('MANUAL_OVERRIDE'); await fresh.close(); checks.fresh_context_choices = true;
   for (const c of clusters) {
     await page.getByRole('button', { name: new RegExp(`${c.singleton ? 'Singleton' : 'Nhóm'} ${c.cluster_id}`) }).click();
     await expect(page.getByRole('heading', { name: `Chi tiết nhóm ${c.cluster_id}`, exact: true })).toBeVisible();
-    const confirm = page.getByRole('button', { name: 'Xác nhận Golden của nhóm' });
+    const confirm = page.getByRole('button', { name: 'Xác nhận hồ sơ đại diện của nhóm' });
     const firstResponse = page.waitForResponse(r => r.url().endsWith(`/clusters/${c.cluster_id}/golden/confirm`) && r.request().method() === 'POST');
     await confirm.click(); const response = await firstResponse;
     if (response.status() === 409) {
       const detail = (await response.json()).detail; expect(detail.code).toBe('STALE_REVISION');
-      await expect(page.locator('.workflow-main').getByRole('alert')).toContainText('Đã đọc lại server');
+      await expect(page.locator('.workflow-main').getByRole('alert')).toContainText('Đã tải lại dữ liệu');
       await expect(confirm).toBeEnabled();
       // A second explicit user confirmation after the stale read; FE never replays it.
       const reviewedResponse = page.waitForResponse(r => r.url().endsWith(`/clusters/${c.cluster_id}/golden/confirm`) && r.request().method() === 'POST');
@@ -98,15 +98,15 @@ test('live QA upload through finalized server Golden, fresh context and CSV hist
     await expect.poll(async () => (await (await page.request.get(url + `/clusters/${c.cluster_id}/golden`)).json()).status).toBe('CONFIRMED');
     await expect(confirm).toBeEnabled();
   }
-  await page.getByRole('link', { name: 'Golden record', exact: true }).click(); await page.getByRole('button', { name: 'Chốt phiên' }).click();
+  await page.getByRole('link', { name: 'Hồ sơ đại diện', exact: true }).click(); await page.getByRole('button', { name: 'Chốt phiên' }).click();
   await expect.poll(async () => (await state()).workflow_state).toBe('FINALIZED');
   await page.getByRole('button', { name: 'Chuẩn bị xuất CSV' }).click();
   const download = page.waitForEvent('download', { timeout: 60_000 }); await page.getByRole('button', { name: 'Xuất CSV', exact: true }).click(); const exported = await download; await exported.saveAs(path.join(out, 'browser-export.csv'));
-  const text = readFileSync(path.join(out, 'browser-export.csv'), 'utf8'); expect(text).toContain('Browser Server Golden'); expect(text).toContain('Tran Thi Binh');
+  const text = readFileSync(path.join(out, 'browser-export.csv'), 'utf8'); expect(text).toContain('Browser Hệ thống hồ sơ đại diện'); expect(text).toContain('Tran Thi Binh');
   checks.csv_server_equivalence = fixture({ action: 'csv', email: credentials.email, run_id: run });
   await page.screenshot({ path: path.join(out, 'qa-final-desktop.png'), fullPage: true });
   await page.getByRole('button', { name: 'Bật giao diện tối' }).click(); await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: path.join(out, 'qa-final-mobile-dark.png'), fullPage: true });
-  await page.getByRole('link', { name: 'Lịch sử xuất / Audit / Chính sách' }).click();
+  await page.getByRole('link', { name: 'Lịch sử xuất / Lịch sử thao tác / Chính sách' }).click();
   const historyDownload = page.waitForEvent('download', { timeout: 60_000 }); await page.getByRole('button', { name: /Tải CSV lịch sử/ }).first().click(); await (await historyDownload).saveAs(path.join(out, 'browser-history.csv'));
   expect(readFileSync(path.join(out, 'browser-history.csv'), 'utf8')).toBe(text);
   const legacy = fixture({ action: 'legacy', ...credentials });

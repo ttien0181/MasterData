@@ -27,6 +27,53 @@ def published_groups(db, run):
     return db.query(WorkflowCluster).filter_by(generation_id=generation.id).all()
 
 
+def schedule_cluster_refresh(db, run, parent):
+    """Commit the accepted review and its full-refresh job in one transaction.
+
+    An optional preview may already own the task. Retain one durable continuation
+    until it finishes, coalescing reviews into the latest decision revision.
+    """
+    from masterone.mdm.workflow_jobs import authorize_job
+    from masterone.mdm.workflow_models import WorkflowOperation
+    from masterone.mdm.workflow_service import new_operation
+
+    child = db.query(WorkflowOperation).filter_by(run_id=run.id, operation_type='CLUSTER',
+        status='WAITING').filter(WorkflowOperation.payload['automatic_cluster_refresh'].as_boolean().is_(True)).one_or_none()
+    if child is None:
+        request_id = 'auto-clusters:' + parent.id
+        payload = {'request_id': request_id, 'expected_workflow_revision': run.workflow_revision,
+                   'expected_decision_revision': run.decision_revision, 'queue_mode': 'all',
+                   'automatic_cluster_refresh': True, 'review_parent_id': parent.id}
+        child = new_operation(db, run, 'CLUSTER', request_id, payload, parent.actor_user_id)
+        child.status, child.stage = 'WAITING', 'waiting'
+        authorize_job(db, run, child)
+    parent.result = {**parent.result, 'cluster_refresh_operation_id': child.id}
+    activate_cluster_refresh(db, run)
+    return child
+
+
+def activate_cluster_refresh(db, run):
+    from masterone.mdm.workflow_models import WorkflowOperation
+    from masterone.mdm.workflow_service import active_operation, audit, enqueue
+
+    if active_operation(db, run.id):
+        return
+    child = db.query(WorkflowOperation).filter_by(run_id=run.id, operation_type='CLUSTER',
+        status='WAITING').filter(WorkflowOperation.payload['automatic_cluster_refresh'].as_boolean().is_(True)).one_or_none()
+    if child is None:
+        return
+    child.payload = {**child.payload, 'expected_workflow_revision': run.workflow_revision,
+                     'expected_decision_revision': run.decision_revision}
+    child.payload_hash = digest({key: value for key, value in child.payload.items() if key not in
+        ('matching_binding_id', 'matching_binding_revision', 'matching_profile_digest')})
+    child.status, child.stage = 'QUEUED', 'queued'
+    enqueue(db, run, child)
+    run.workflow_state = 'CLUSTER_QUEUED'
+    run.workflow_revision += 1
+    audit(db, run, child.actor_user_id, 'WORKFLOW_AUTO_CLUSTER_REFRESH', {'operation_id': child.id,
+        'decision_revision': run.decision_revision, 'queue_mode': 'all'})
+
+
 def accepted_edges(db, run_id):
     return db.query(WorkflowPair.id,WorkflowPair.baseline['left_id'].as_string(),
                     WorkflowPair.baseline['right_id'].as_string()).filter_by(run_id=run_id,decision='ACCEPTED').all()

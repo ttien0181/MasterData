@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import * as api from './workflowApi';
 import { tabReadiness } from './workflowNavigation';
 import {reasonLabel} from './pairReview';
-it('explains a missing soft Accept reason as required review evidence',()=>{
- expect(reasonLabel('SOFT_ACCEPT_REASON_REQUIRED')).toBe('Cần bổ sung lý do đối chiếu cho quyết định Accept có xung đột mềm');
+it('explains a missing soft Đồng ý gộp reason as required review evidence',()=>{
+ expect(reasonLabel('SOFT_ACCEPT_REASON_REQUIRED')).toBe('Cần bổ sung lý do đối chiếu cho quyết định Đồng ý gộp có xung đột mềm');
 });
 it.each(['CLUSTER_GUARD_UNION_BUDGET','CLUSTER_GUARD_RUN_BUDGET'])('explains %s as an unfinished check with a recovery action',code=>{
  expect(reasonLabel(code)).toMatch(/Chưa kiểm tra xong/);expect(reasonLabel(code)).toMatch(/Tạo các nhóm đủ điều kiện.*thử lại/);

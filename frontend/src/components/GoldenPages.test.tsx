@@ -20,7 +20,7 @@ function show(ui:React.ReactNode,state=w){
 }
 it('shows progress with a direct path to required reviews and keeps export actions on their own page',async()=>{
  show(<GoldenOverview/>);
- expect(await screen.findByRole('progressbar',{name:'Golden đã xác nhận'})).toHaveAttribute('value','7');
+ expect(await screen.findByRole('progressbar',{name:'hồ sơ đại diện đã xác nhận'})).toHaveAttribute('value','7');
  expect(screen.getByRole('link',{name:/Tiếp tục duyệt/})).toHaveAttribute('href','/app/sessions/r/golden/records?status=review');
  expect(screen.queryByRole('button',{name:'Chốt phiên'})).not.toBeInTheDocument();
 });

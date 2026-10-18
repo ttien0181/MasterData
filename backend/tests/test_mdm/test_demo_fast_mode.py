@@ -9,7 +9,9 @@ from tests.test_mdm.test_workflow_contract import request
 from tests.test_mdm.test_workflow_stages import read, run_one
 
 
-def test_fast_processing_opens_real_pairs_without_optional_jobs(client, workflow_run, monkeypatch):
+def test_legacy_fast_processing_opens_real_pairs_without_optional_jobs(client, workflow_run, monkeypatch):
+    from tests.test_mdm.test_workflow_processing import legacy_processing_payload
+    legacy_processing_payload.__wrapped__(monkeypatch)
     monkeypatch.setattr(get_settings(), 'demo_fast_mode', True)
     run_one(client)
     root = f'/api/v1/mdm/runs/{workflow_run}/workflow'

@@ -18,11 +18,11 @@ describe("AuditTrail", () => {
 
   it("shows recorded action details and filters by action type", async () => {
     render(<AuditTrail runId="run-1" />);
-    expect(await screen.findByText("Đổi tên phiên")).toBeInTheDocument();
-    expect(screen.getByText("SESSION_RENAMED")).toBeInTheDocument();
+    expect(await screen.findByText("Đổi tên phiên", {selector: "strong"})).toBeInTheDocument();
+    expect(screen.queryByText("SESSION_RENAMED")).not.toBeInTheDocument();
     expect(screen.getByText("1 sự kiện")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Chi tiết sự kiện"));
+    fireEvent.click(screen.getByText("Thông tin tra cứu chi tiết"));
     expect(screen.getByText(/October contacts/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Loại thao tác"), { target: { value: "SESSION_CREATED" } });
     fireEvent.click(screen.getByRole("button", { name: "Lọc" }));
@@ -37,6 +37,6 @@ describe("AuditTrail", () => {
     const alert = await screen.findByRole("alert");
     expect(within(alert).getByText("Tạm mất kết nối")).toBeInTheDocument();
     fireEvent.click(within(alert).getByRole("button", { name: "Thử lại" }));
-    expect(await screen.findByText("Đổi tên phiên")).toBeInTheDocument();
+    expect(await screen.findByText("Đổi tên phiên", {selector: "strong"})).toBeInTheDocument();
   });
 });

@@ -1,36 +1,31 @@
 'use client';
 import Link from 'next/link';
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { sessionPath } from '@/lib/workflowNavigation';
 import { number } from '@/lib/pairReview';
 import { useWorkflow } from './SessionWorkspace';
-import { useTabView } from './useTabView';
 import ClusterQueue from './ClusterQueue';
+import ClusterWorkspace from './ClusterWorkspace';
 import GenerationStatus from './GenerationStatus';
+import MetricHelp from './MetricHelp';
+import {metricNumber,metricPercent,metricExplanation as explain} from '@/lib/metricInsights';
 import styles from './ClusterOverview.module.css';
 
-export default function ClusterOverview() {
-  const { workflow: w } = useWorkflow(), router = useRouter();
+export default function ClusterOverview({ initialClusterId = '' }: { initialClusterId?: string }) {
+  const { workflow: w } = useWorkflow();
   const generation = w.cluster_result;
-  const base = sessionPath(w.run_id, 'clusters');
-  const view = useTabView(w.run_id, 'clusters:overview', true);
-  useEffect(() => {
-    if (['#clusters-list', '#clusters-structure'].includes(window.location.hash)) router.replace(`${base}/records`, { scroll: false });
-  }, [base, router]);
-  return <section id="clusters-overview" ref={view} className={styles.overview}>
-    <header className={styles.heading}><h2>Tổng quan nhóm</h2><Link className="workflow-button" scroll={false} href={`${base}/records`}>Danh sách nhóm</Link></header>
+  return <section id="clusters-overview" className={styles.overview}>
+    <header className={styles.heading}><h1>Các nhóm hồ sơ khách hàng</h1><Link className={styles.history} href="/app">Lịch sử phiên</Link></header>
     <ClusterQueue />
-    {generation ? <>
+    {generation && <>
       <div className={styles.metrics}>{[
-        [generation.total_records, 'Tổng bản ghi'], [generation.multi_record_groups, 'Nhóm nhiều bản ghi'],
-        [generation.singletons, 'Nhóm một bản ghi'], [generation.unresolved_records, 'Chưa giải quyết'],
-      ].map(([value, label]) => <section key={label} className="workflow-panel" aria-label={String(label)}><span>{label}</span><strong>{number(Number(value))}</strong></section>)}</div>
-      <section className={`workflow-panel ${styles.coverage}`} aria-label="Biểu đồ độ phủ"><h3>Độ phủ kết quả</h3><strong>{number(generation.covered_records)} / {number(generation.total_records)} bản ghi</strong><progress aria-label="Bản ghi đã có kết quả" value={generation.covered_records} max={Math.max(1, generation.total_records)} /><div className={styles.distribution}>
-        <div><span>Nhóm nhiều bản ghi</span><strong>{number(generation.multi_record_groups)}</strong><progress aria-label="Nhóm nhiều bản ghi" value={generation.multi_record_groups} max={Math.max(1, generation.clusters)} /></div>
-        <div><span>Nhóm một bản ghi</span><strong>{number(generation.singletons)}</strong><progress aria-label="Nhóm một bản ghi" value={generation.singletons} max={Math.max(1, generation.clusters)} /></div>
-      </div></section>
-    </> : <section className="workflow-panel"><p>Chưa có nhóm được tạo.</p></section>}
-    <GenerationStatus runId={w.run_id} generation={generation} operation={w.latest_cluster_operation} compact />
+        [number(generation.total_records), 'Tổng hồ sơ','Số hồ sơ đầu vào thuộc phiên tổng hợp hiện tại, gồm cả hồ sơ chưa có nhóm.'],
+        [number(generation.multi_record_groups), 'Nhóm có hồ sơ trùng','Số nhóm chứa từ hai hồ sơ trở lên. Một nhóm đại diện cho một khách hàng theo các quyết định hiện tại; số nhóm khác với số cặp đã gộp.'],
+        [number(generation.singletons), 'Hồ sơ riêng lẻ','Số nhóm chỉ có một hồ sơ. Hồ sơ này vẫn được giữ làm khách hàng riêng theo kết quả xử lý hiện tại.'],
+        [number(generation.unresolved_records), 'Hồ sơ chưa có nhóm','Số hồ sơ chưa nằm trong kết quả nhóm đang công bố. Bạn cần xem lại các cặp hoặc tác vụ xử lý trước khi coi danh sách là đầy đủ.'],
+        [metricPercent(generation.covered_records,generation.total_records),'Tỷ lệ hồ sơ đã có nhóm','Số hồ sơ đã có nhóm chia cho tổng hồ sơ đầu vào. Chỉ số phản ánh độ phủ xử lý, không phải độ chính xác của việc gộp.'],
+        [metricNumber(generation.covered_records-generation.clusters),'Số hồ sơ giảm sau tổng hợp','Số hồ sơ đã có nhóm trừ số nhóm khách hàng. Chỉ số cho biết số dòng giảm khi chuyển từ hồ sơ nguồn sang hồ sơ đại diện, chưa quy đổi thành chi phí tiết kiệm.'],
+      ].map(([value,label,meaning]) => <div data-bot-metric key={label} role="group" aria-label={label}><span>{label}</span><strong>{value}</strong><MetricHelp label={label} message={explain(label,value,meaning)}/></div>)}</div>
+    </>}
+    <ClusterWorkspace initialClusterId={initialClusterId} />
+    {(generation || w.latest_cluster_operation) && <details className={styles.processing}><summary>Chi tiết xử lý</summary><GenerationStatus runId={w.run_id} generation={generation} operation={w.latest_cluster_operation} compact /></details>}
   </section>;
 }

@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from masterone.api.auth import router as auth_router
+from masterone.api.mdm_demo import router as demo_router
 from masterone.api.mdm_resolution import router as mdm_resolution_router
 from masterone.api.mdm_resolution import ws_router as mdm_resolution_ws_router
 from masterone.api.mdm_runs import router as mdm_runs_router
@@ -19,6 +20,7 @@ from masterone.auth import models as auth_models  # noqa: F401 - registers auth 
 from masterone.config import LOCAL_DEV_ORIGIN_REGEX, get_settings
 from masterone.db.session import create_database
 from masterone.mdm import models as mdm_models  # noqa: F401 - registers SQLAlchemy models
+from masterone.mdm import demo_retention as _demo_retention  # noqa: F401
 from masterone.mdm.input_schema import InputMappingError
 from masterone.mdm.migrate import require_current, validate_current
 
@@ -74,6 +76,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=['Content-Disposition'],
 )
 
 app.include_router(router, prefix="/api/v1")
@@ -84,6 +87,7 @@ app.include_router(mdm_uploads_router, prefix="/api/v1")
 app.include_router(mdm_resolution_router, prefix="/api/v1")
 app.include_router(mdm_resolution_ws_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(demo_router, prefix="/api/v1")
 
 
 @app.get("/health")

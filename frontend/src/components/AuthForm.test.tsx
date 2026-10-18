@@ -48,6 +48,6 @@ describe("authentication presentation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Hiện mật khẩu" }));
     expect(password).toHaveAttribute("type", "text");
     expect(screen.getByRole("button", { name: "Quên mật khẩu?" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Đăng nhập bằng SSO/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Đăng nhập bằng tài khoản công ty/ })).toBeDisabled();
   });
 });

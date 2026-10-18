@@ -11,12 +11,13 @@ from pwdlib import PasswordHash
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from masterone.auth.models import AuthSession, LoginAttempt, User
+from masterone.auth.models import AuthSession, DemoGrant, LoginAttempt, User
 from masterone.config import LOCAL_DEV_ORIGIN_REGEX, get_settings
 from masterone.db.session import get_session
 
 password_hash = PasswordHash.recommended()
 COOKIE = "masterone_session"
+DEMO_COOKIE = "masterone_demo"
 SESSION_SECONDS = 7 * 24 * 60 * 60
 LOGIN_WINDOW = 15 * 60
 
@@ -26,6 +27,7 @@ class CurrentSession:
     user: User
     session: AuthSession
     token: str
+    demo: DemoGrant | None = None
 
 
 def allowed_origins() -> set[str]:
@@ -49,7 +51,7 @@ def csrf_token(raw_token: str) -> str:
 
 
 def current_session(request: Request, db: Session = Depends(get_session)) -> CurrentSession:
-    token = request.cookies.get(COOKIE)
+    token = request.cookies.get(DEMO_COOKIE) or request.cookies.get(COOKIE)
     if not token:
         raise HTTPException(401, "Authentication required")
     digest = hashlib.sha256(token.encode()).hexdigest()
@@ -59,7 +61,16 @@ def current_session(request: Request, db: Session = Depends(get_session)) -> Cur
     user = db.get(User, auth_session.user_id)
     if not user or not user.is_active:
         raise HTTPException(401, "Authentication required")
-    return CurrentSession(user=user, session=auth_session, token=token)
+    demo = db.get(DemoGrant, user.id)
+    if demo is not None:
+        now = int(time.time())
+        if (demo.session_id != auth_session.id or demo.state in ('ENDED', 'EXPIRED', 'PURGED')
+                or demo.expires_at_epoch <= now or demo.last_seen_epoch + get_settings().demo_idle_seconds <= now):
+            raise HTTPException(401, 'Phiên demo đã kết thúc. Bạn có thể bắt đầu một phiên mới.')
+        if now - demo.last_seen_epoch >= 60:
+            demo.last_seen_epoch = now
+            db.commit()
+    return CurrentSession(user=user, session=auth_session, token=token, demo=demo)
 
 
 def require_mutation(request: Request, auth: CurrentSession = Depends(current_session)) -> CurrentSession:
@@ -96,8 +107,17 @@ def capabilities_for_role(role: str) -> list[str]:
     return sorted(ROLE_CAPABILITIES.get(role, frozenset()))
 
 
+DEMO_CAPABILITIES = frozenset({'read', 'read_audit', 'start_run', 'approve_pair',
+    'reject_pair', 'edit_golden', 'explain', 'export_data'})
+
+
+def effective_capabilities(auth: CurrentSession) -> list[str]:
+    capabilities = ROLE_CAPABILITIES.get(auth.user.role, frozenset())
+    return sorted(capabilities & DEMO_CAPABILITIES if auth.demo else capabilities)
+
+
 def check_capability(auth: CurrentSession, capability: str) -> None:
-    if capability not in ROLE_CAPABILITIES.get(auth.user.role, frozenset()):
+    if capability not in effective_capabilities(auth):
         raise HTTPException(403, f"Capability '{capability}' required")
 
 

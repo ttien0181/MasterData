@@ -122,7 +122,7 @@ export class PairReviewQueue {
   }
   private checkWorkflow(item:ReviewIntent,w:WorkflowRead,allowQueue=false){
     this.checkAssessment(item,w);
-    const canQueue=allowQueue&&w.active_operation?.operation_type==='BULK_DECISIONS'&&w.allowed_actions.includes('queue-decisions');
+    const canQueue=allowQueue&&['BULK_DECISIONS','CLUSTER'].includes(w.active_operation?.operation_type||'')&&w.allowed_actions.includes('queue-decisions');
     if(!canQueue&&!w.allowed_actions.includes(item.pair?'decide-pair':'bulk-decisions'))throw new Error('Phiên đang ở bước khác hoặc bạn không còn quyền duyệt.');
     const decisionRevision=item.expectedDecisionRevision??(item.request&&!item.pair?(item.request as BulkRequest).expected_decision_revision:undefined);
     if(!item.pair&&decisionRevision!==undefined&&decisionRevision!==w.decision_revision)throw new Error('Kết quả xem trước đã đổi. Hãy kiểm tra lại phạm vi trước khi gửi.');
@@ -187,7 +187,7 @@ export class PairReviewQueue {
           const w=await this.services.workflow();if(!this.isAlive())break;
           if(!this.items.some(next=>next.id===item.id&&next.status==='WAITING'))continue;
           this.checkAssessment(item,w);
-          if(w.active_operation?.operation_type==='BULK_DECISIONS'){await this.delay();continue;}
+          if(['BULK_DECISIONS','CLUSTER'].includes(w.active_operation?.operation_type||'')){await this.delay();continue;}
           this.checkWorkflow(item,w);
           const revision={...mutation(w),request_id:item.id,...(item.reason?{reason:item.reason}:{})};
           const body=item.request||(item.pair?

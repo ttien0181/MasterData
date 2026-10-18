@@ -150,7 +150,7 @@ def approve_group(db, run_id, request, actor, *, commit=True, _run=None, _contex
     if prior:
         return operation_read(prior)
     check_revision(run, payload)
-    if run.workflow_state != 'DECIDE_REVIEW' or active_operation(db, run_id):
+    if run.workflow_state not in ('DECIDE_REVIEW', 'GOLDEN_REVIEW') or active_operation(db, run_id):
         conflict('DECISIONS_LOCKED')
     ids = sorted(request.record_ids)
     snapshot = group_snapshot(db, run, ids, _context=_context)
@@ -213,6 +213,9 @@ def approve_group(db, run_id, request, actor, *, commit=True, _run=None, _contex
     run.decision_revision += 1
     run.workflow_revision += 1
     audit(db, run, actor, 'WORKFLOW_GROUP_APPROVAL', op.result)
+    if commit:
+        from masterone.mdm.workflow_cluster_queue import schedule_cluster_refresh
+        schedule_cluster_refresh(db, run, op)
     db.commit() if commit else db.flush()
     return operation_read(op)
 
@@ -246,6 +249,10 @@ def approve_groups(db, run_id, request, actor):
         op.result = {'approved_count': len(items), 'items': items,
                      'workflow_revision': run.workflow_revision, 'decision_revision': run.decision_revision}
         audit(db, run, actor, 'WORKFLOW_BULK_GROUP_APPROVAL', {'operation_id': op.id, 'approved_count': len(items)})
+        if items:
+            from masterone.mdm.workflow_cluster_queue import schedule_cluster_refresh
+            schedule_cluster_refresh(db, run, op)
+            op.result = {**op.result, 'workflow_revision': run.workflow_revision}
         db.commit()
         return operation_read(op)
     except Exception:

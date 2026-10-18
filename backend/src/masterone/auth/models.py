@@ -40,3 +40,18 @@ class LoginAttempt(Base):
     email_normalized: Mapped[str] = mapped_column(String(320))
     ip_address: Mapped[str] = mapped_column(String(64))
     created_at_epoch: Mapped[int] = mapped_column(Integer)
+
+
+class DemoGrant(Base):
+    """One temporary identity owns at most one fixed sample run."""
+    __tablename__ = "demo_grants"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("auth_sessions.id"), unique=True)
+    # Reserved before import, including while the run has not been committed yet.
+    run_id: Mapped[str | None] = mapped_column(String(36), nullable=True, unique=True)
+    state: Mapped[str] = mapped_column(String(24), default="NEW")
+    dataset_version: Mapped[str] = mapped_column(String(40), default="customer-demo-v1")
+    expires_at_epoch: Mapped[int] = mapped_column(Integer, index=True)
+    last_seen_epoch: Mapped[int] = mapped_column(Integer)
+    created_at_epoch: Mapped[int] = mapped_column(Integer)

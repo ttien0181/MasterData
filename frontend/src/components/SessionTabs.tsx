@@ -53,7 +53,7 @@ export default function SessionTabs({ runId, state, clusterRevision = 0, collaps
     function schedule() { cancelAnimationFrame(frame); frame = requestAnimationFrame(update); }
     function hashChange() { reachedHash = ''; schedule(); }
     const observer = new MutationObserver(schedule);
-    observer.observe(content, { childList: true, subtree: true });
+    observer.observe(content, { childList: true, subtree: true, attributes: true, attributeFilter: ['id'] });
     window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', schedule);
     window.addEventListener('hashchange', hashChange);
@@ -85,7 +85,7 @@ export default function SessionTabs({ runId, state, clusterRevision = 0, collaps
     </button>
     <div id={bodyId} className={styles.body}>
       <header className={styles.header}>
-        <div className={styles.heading}><strong>Phiên phân giải</strong></div>
+        <div className={styles.heading}><strong>Phiên xử lý dữ liệu</strong></div>
         <button type="button" className={styles.collapseToggle} onClick={onToggle} aria-label={collapsed ? 'Mở rộng thanh điều hướng' : 'Thu gọn thanh điều hướng'} aria-expanded={!collapsed} title={collapsed ? 'Mở rộng thanh điều hướng' : 'Thu gọn thanh điều hướng'}>
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M9 4v16" /><path d={collapsed ? 'm13 9 3 3-3 3' : 'm16 9-3 3 3 3'} /></svg>
         </button>
@@ -100,20 +100,20 @@ export default function SessionTabs({ runId, state, clusterRevision = 0, collaps
           const childrenId = `${bodyId}-${tab.id}`;
           return <li key={tab.id} className={`${styles.step} ${active ? styles.active : ''} ${!gate.ready ? styles.pending : ''}`}>
             <div className={styles.stepRow}>
-              <Link scroll={false} prefetch={false} href={sessionPath(runId, tab.id)} className={styles.pageLink} aria-current={active ? 'page' : undefined} title={`${tab.label}${gate.reason ? ' — ' + gate.reason : ''}`} onClick={() => { setMobileOpen(false); setExpanded(previous => ({ ...previous, [tab.id]: true })); }}>
+              <Link data-demo={`step-${tab.id}`} scroll={false} prefetch={false} href={sessionPath(runId, tab.id)} className={styles.pageLink} aria-current={active ? 'page' : undefined} title={`${tab.label}${gate.reason ? ' — ' + gate.reason : ''}`} onClick={() => { setMobileOpen(false); setExpanded(previous => ({ ...previous, [tab.id]: true })); }}>
                 <span className={styles.stepIcon}><ShellIcon name={icons[tab.id]} size={20} />{!gate.ready && <i className={styles.pendingDot} />}</span>
                 <span className={styles.stepCopy}><span className={styles.stepNumber}>BƯỚC {String(index + 1).padStart(2, '0')}</span><strong>{tab.label}</strong>{!gate.ready && <small>Chưa sẵn sàng</small>}</span>
               </Link>
-              {navigable && <button type="button" className={styles.groupToggle} aria-expanded={open} aria-controls={childrenId} aria-label={`${open ? 'Thu gọn' : 'Mở'} mục con ${tab.label}`} onClick={() => setExpanded(previous => ({ ...previous, [tab.id]: !open }))}><ShellIcon name="chevron" size={15} /></button>}
+              {navigable && sections.length > 0 && <button type="button" className={styles.groupToggle} aria-expanded={open} aria-controls={childrenId} aria-label={`${open ? 'Thu gọn' : 'Mở'} mục con ${tab.label}`} onClick={() => setExpanded(previous => ({ ...previous, [tab.id]: !open }))}><ShellIcon name="chevron" size={15} /></button>}
             </div>
-            {navigable && <ul id={childrenId} className={styles.children} hidden={!open}>{sections.map(section => <li key={section.id}>
+            {navigable && sections.length > 0 && <ul id={childrenId} className={styles.children} hidden={!open}>{sections.map(section => <li key={section.id}>
               <Link scroll={section.path !== undefined ? false : undefined} prefetch={false} href={`${sessionPath(runId, tab.id)}${section.path ?? `#${section.id}`}`} aria-current={section.path !== undefined ? pathname === `${sessionPath(runId, tab.id)}${section.path}` ? 'page' : undefined : active && activeSection === section.id ? 'location' : undefined} onClick={() => setMobileOpen(false)}>{section.label}</Link>
             </li>)}</ul>}
           </li>;
         })}</ol>
       </nav>
       <footer className={styles.footer}>
-        <Link href={`/app/sessions/${encodeURIComponent(runId)}/utilities`} prefetch={false} aria-current={pathname.endsWith('/utilities') ? 'page' : undefined} title="Lịch sử xuất, Audit và Chính sách" onClick={() => setMobileOpen(false)}><ShellIcon name="history" size={18} /><span>Lịch sử và tiện ích</span></Link>
+        <Link href={`/app/sessions/${encodeURIComponent(runId)}/utilities`} prefetch={false} aria-current={pathname.endsWith('/utilities') ? 'page' : undefined} title="Lịch sử xuất, Lịch sử thao tác và Chính sách" onClick={() => setMobileOpen(false)}><ShellIcon name="history" size={18} /><span>Lịch sử và tiện ích</span></Link>
         <Link href="/app" title="Tất cả phiên" onClick={() => setMobileOpen(false)}><ShellIcon name="file" size={18} /><span>Tất cả phiên</span></Link>
       </footer>
     </div>

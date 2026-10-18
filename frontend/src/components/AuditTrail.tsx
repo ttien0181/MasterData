@@ -6,28 +6,28 @@ import type { ResolutionAuditEvent } from "@/lib/contracts";
 
 const PAGE_SIZE = 25;
 const ACTION_LABELS: Record<string, string> = {
-  SESSION_CREATED: "Tạo phiên phân giải",
+  SESSION_CREATED: "Tạo phiên xử lý dữ liệu",
   SESSION_RENAMED: "Đổi tên phiên",
   SESSION_ARCHIVED: "Lưu trữ phiên",
   SESSION_RESTORED: "Khôi phục phiên",
   RUN_STARTED: "Bắt đầu xử lý",
   RUN_RETRIED: "Chạy lại phiên",
-  CSV_EXPORTED: "Xuất CSV",
+  CSV_EXPORTED: "Xuất CSV", EXPORT_GOLDEN_SELECTION:"Xuất hồ sơ đại diện", SAVE_GOLDEN:"Lưu thông tin đại diện", CONFIRM_GOLDEN:"Xác nhận hồ sơ đại diện", CONFIRM_SELECTED_GOLDEN:"Xác nhận các hồ sơ đã chọn", CLUSTER:"Cập nhật nhóm khách hàng", BULK_DECISIONS:"Lưu quyết định cho nhiều cặp",
   PREVIEW_EXECUTED: "Xác nhận bản xem trước",
   PAIR_REJECTED: "Từ chối ghép cặp",
-  PAIR_ACCEPTED: "Xác nhận gộp cặp bản ghi",
-  REVIEW_CASE_APPROVED: "Duyệt trường hợp review",
+  PAIR_ACCEPTED: "Xác nhận gộp cặp hồ sơ",
+  REVIEW_CASE_APPROVED: "Duyệt trường hợp kiểm tra",
   DEFERRED_PROPOSAL_APPROVED: "Duyệt đề xuất",
   REVIEW_TO_MERGE: "Chuyển sang Chờ gộp",
   REVIEW_STAGED_CONFLICT: "Đưa cụm xung đột sang Chờ gộp",
   STAGED_CONFLICT_SPLIT: "Tách cụm xung đột",
   GOLDEN_RECORD_OVERRIDE: "Chỉnh giá trị hợp nhất",
   PROPOSAL_SPLIT: "Tách đề xuất",
-  ENTITY_SPLIT: "Tách bản ghi đã gộp",
+  ENTITY_SPLIT: "Tách hồ sơ đã gộp",
 };
 
 function actionLabel(action: string) {
-  return ACTION_LABELS[action] ?? "Thao tác: " + action;
+  return ACTION_LABELS[action] ?? "Cập nhật dữ liệu";
 }
 
 function formatTime(value: string) {
@@ -40,7 +40,7 @@ function AuditRow({ event }: { event: ResolutionAuditEvent }) {
     <div className="audit-event-marker" aria-hidden="true" />
     <div className="audit-event-main">
       <div className="audit-event-heading">
-        <div><strong>{actionLabel(event.action)}</strong><span>{event.action}</span></div>
+        <div><strong>{actionLabel(event.action)}</strong></div>
         <time dateTime={event.created_at}>{formatTime(event.created_at)}</time>
       </div>
       <p className="audit-event-actor">Tài khoản <code title={event.actor_user_id}>{event.actor_user_id.slice(0, 8)}</code></p>
@@ -50,7 +50,7 @@ function AuditRow({ event }: { event: ResolutionAuditEvent }) {
         {event.proposal_id && <>Đề xuất <code title={event.proposal_id}>{event.proposal_id.slice(0, 12)}</code></>}
       </p>}
       <details className="audit-event-details">
-        <summary>Chi tiết sự kiện</summary>
+        <summary>Thông tin tra cứu chi tiết</summary>
         <pre>{JSON.stringify(event.details, null, 2)}</pre>
       </details>
     </div>
@@ -80,7 +80,7 @@ export default function AuditTrail({ runId }: { runId: string }) {
         setTotal(result.total);
       })
       .catch((reason: unknown) => {
-        if (current) setError(reason instanceof Error ? reason.message : "Không tải được audit của phiên.");
+        if (current) setError(reason instanceof Error ? reason.message : "Chưa tải được lịch sử thao tác. Hãy thử lại.");
       })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
@@ -100,29 +100,28 @@ export default function AuditTrail({ runId }: { runId: string }) {
     setFilters({});
   }
 
-  return <section className="audit-trail" aria-label="Audit phiên">
+  return <section className="audit-trail" aria-label="Lịch sử thao tác trong phiên">
     <div className="audit-trail-intro">
-      <div><p className="section-kicker">LỊCH SỬ THAO TÁC</p><h2>Audit phiên</h2>
+      <div><p className="section-kicker">LỊCH SỬ THAO TÁC</p><h2>Lịch sử thao tác trong phiên</h2>
         <p>Các sự kiện đã được hệ thống ghi nhận cho phiên này. Dữ liệu chỉ đọc và được tải theo trang.</p></div>
       <strong className="audit-total">{total.toLocaleString("vi-VN")} sự kiện</strong>
     </div>
 
     <form className="audit-filters card" onSubmit={applyFilters}>
-      <label>Loại thao tác<input value={actionInput} onChange={(event) => setActionInput(event.target.value)}
-        placeholder="Ví dụ: RUN_STARTED" /></label>
-      <label>ID cặp<input value={pairInput} onChange={(event) => setPairInput(event.target.value)} placeholder="Không bắt buộc" /></label>
-      <label>ID đề xuất<input value={proposalInput} onChange={(event) => setProposalInput(event.target.value)} placeholder="Không bắt buộc" /></label>
+      <label>Loại thao tác<select aria-label="Loại thao tác" value={actionInput} onChange={event=>setActionInput(event.target.value)}><option value="">Tất cả thao tác</option>{Object.entries(ACTION_LABELS).map(([code,label])=><option key={code} value={code}>{label}</option>)}</select></label>
+      <label>Mã cặp hồ sơ<input value={pairInput} onChange={(event) => setPairInput(event.target.value)} placeholder="Không bắt buộc" /></label>
+      <label>Mã đề xuất<input value={proposalInput} onChange={(event) => setProposalInput(event.target.value)} placeholder="Không bắt buộc" /></label>
       <div className="audit-filter-actions"><button className="button primary" type="submit">Lọc</button>
         <button className="button outline" type="button" onClick={clearFilters}>Xóa lọc</button></div>
     </form>
 
-    {loading ? <div className="card audit-state" role="status">Đang tải audit…</div>
+    {loading ? <div className="card audit-state" role="status">Đang tải lịch sử thao tác…</div>
       : error ? <div className="card audit-state" role="alert"><p>{error}</p>
         <button type="button" className="button outline" onClick={() => setRetry((value) => value + 1)}>Thử lại</button></div>
         : events.length ? <div className="audit-event-list">{events.map((item) => <AuditRow key={item.id} event={item} />)}</div>
           : <div className="card audit-state"><strong>Chưa có sự kiện phù hợp</strong><p>Thử xóa bộ lọc hoặc xem lại sau khi có thao tác được ghi nhận.</p></div>}
 
-    {!loading && !error && total > 0 && <nav className="audit-pagination" aria-label="Phân trang audit">
+    {!loading && !error && total > 0 && <nav className="audit-pagination" aria-label="Phân trang lịch sử thao tác">
       <span>{(offset + 1).toLocaleString("vi-VN")}–{Math.min(offset + events.length, total).toLocaleString("vi-VN")} / {total.toLocaleString("vi-VN")}</span>
       <button type="button" className="button outline" disabled={offset === 0}
         onClick={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}>Trước</button>

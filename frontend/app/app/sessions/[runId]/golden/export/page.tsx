@@ -1,2 +1,2 @@
-import GoldenExport from '@/components/GoldenExport';
-export default function Page(){return <GoldenExport/>;}
+import {redirect} from 'next/navigation';
+export default async function Page({params}:{params:Promise<{runId:string}>}){const {runId}=await params;redirect(`/app/sessions/${encodeURIComponent(runId)}/golden`);}

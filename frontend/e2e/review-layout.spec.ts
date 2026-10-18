@@ -63,7 +63,7 @@ for (const theme of ["light", "dark"]) {
       }))).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await page.getByRole("button", { name: "So sánh cặp pair-1", exact: true }).click();
-      const dialog = page.getByRole("dialog", { name: "So sánh hai bản ghi" });
+      const dialog = page.getByRole("dialog", { name: "So sánh hai hồ sơ" });
       await expect(dialog.locator("thead th")).toHaveCount(3);
       await expect(dialog.locator("tbody tr")).toHaveCount(4);
       await expect(dialog.getByText(/tổng cộng 3 bản ghi/)).toBeVisible();

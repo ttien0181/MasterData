@@ -134,6 +134,7 @@ def bulk_run_action(body: BulkRunRequest, db: Session = Depends(get_session),
 def create_run(
     files: list[UploadFile] = File(...),
     workflow_version: int = Form(1, ge=1, le=2),
+    use_embedding: bool = Form(True),
     db: Session = Depends(get_session),
     auth: CurrentSession = Depends(require_mutation_capability("create_run")),
 ):
@@ -141,7 +142,7 @@ def create_run(
     validate_version(workflow_version)
     run, profile = create_resolution_run_from_streams(
         db, [(file.filename or "records.csv", file.file) for file in files], auth.user.id,
-        workflow_version=workflow_version)
+        workflow_version=workflow_version, use_embedding=use_embedding)
     return {"run_id": run.id, "status": run.status, "profile": profile}
 
 

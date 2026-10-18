@@ -192,10 +192,26 @@ def bind_new_run(db, run, op):
         return
     authorize(db, run.owner_user_id, 'create_run', owner=run.owner_user_id)
     pointer = db.get(MatchingProfileDefault, (run.owner_user_id, SCOPE))
-    if pointer is None:
+    profile = owned(db, MatchingProfile, pointer.profile_id, run.owner_user_id) if pointer else None
+    embedding_kind = profile and profile.config_json['kind'] in ('RULE_WITH_EMBEDDING_EVIDENCE', 'RULE_HYBRID_DETERMINISTIC')
+    needs_choice = ((not run.use_embedding and (profile is None or embedding_kind)) or
+                    (run.use_embedding and get_settings().workflow_auto_process and
+                     get_settings().advanced_matching_agents_enabled and not embedding_kind))
+    if needs_choice:
+        # Pin this run's choice without replacing an existing owner-wide default.
+        from masterone.mdm.matching_foundation_contracts import ProfileCreate, DefaultApply
+        actor = db.get(User, run.owner_user_id)
+        if actor and {'learn_match_profile','apply_match_profile'} <= ROLE_CAPABILITIES.get(actor.role,frozenset()):
+            from sqlalchemy import func
+            version=(db.query(func.max(MatchingProfile.version)).filter_by(
+                owner_user_id=run.owner_user_id,data_scope=SCOPE).scalar() or 0)+1
+            profile=create_profile(db,run.owner_user_id,ProfileCreate(version=version,advanced_agents=run.use_embedding,fallback_mode='fail_operation'))
+            transition_profile(db,run.owner_user_id,profile.id,1,'VALIDATED')
+            if pointer is None and run.use_embedding:
+                apply_default(db,run.owner_user_id,SCOPE,DefaultApply(profile_id=profile.id,expected_revision=0))
+    if profile is None:
         return  # No implicit profile/backfill; existing rule path remains available.
-    profile = owned(db, MatchingProfile, pointer.profile_id, run.owner_user_id)
-    if profile.lifecycle != 'ACTIVE':
+    if profile.lifecycle not in ('ACTIVE', 'VALIDATED'):
         raise HTTPException(409, 'Default profile is not active')
     verify_profile(profile, current=True)
     selection = db.get(ResolutionEngineSelection, run.id)

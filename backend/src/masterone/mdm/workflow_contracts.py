@@ -61,7 +61,7 @@ class GroupAnnotationRequest(Mutation):
 
 class PairFilter(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    taxonomy: Literal['actions_v1'] | None = None
+    taxonomy: Literal['actions_v1', 'mvp_v1'] | None = None
     visibility: Literal['review'] | None = None
     group: str | None = None
     subgroup: str | None = None

@@ -1,4 +1,6 @@
 import { request } from './api';
+import { readExplanationStream } from './explanationStream';
+import { requestResponse } from './api';
 import type {ClusterPreviewRequest,FinalizeRequest,GroupApprovalRequest} from './workflowContracts';
 import type { BulkPreview, BulkRequest, ConflictRead, GenerationPage, ClusterDetail, ClusterRead, DataRead, DecisionRequest, GoldenRead, GoldenRequest, GoldenResult, GoldenRevision, Mutation, OperationRead, PageRead, PairRead, PairSummary, RecordRead, WorkflowRead } from './workflowContracts';
 const path = (run: string, suffix = '') => `/runs/${encodeURIComponent(run)}/workflow${suffix}`;
@@ -12,7 +14,7 @@ export const goldenRevision = (w: WorkflowRead): GoldenRevision => ({ ...mutatio
 export const getWorkflow = (run: string, signal?: AbortSignal) => get<WorkflowRead>(run, '', signal);
 export const getData = (run: string, query = new URLSearchParams(), signal?: AbortSignal) => get<DataRead>(run, `/data?${query}`, signal);
 export const getPairs = (run: string, query = new URLSearchParams(), signal?: AbortSignal) => get<PageRead<PairRead> & { offset?: number }>(run, `/pairs?${query}`, signal);
-export const getPairSummary = (run: string, signal?: AbortSignal) => get<PairSummary>(run, '/pairs/summary?visibility=review&taxonomy=actions_v1', signal);
+export const getPairSummary = (run: string, signal?: AbortSignal, taxonomy: 'actions_v1'|'mvp_v1' = 'actions_v1') => get<PairSummary>(run, `/pairs/summary?visibility=review&taxonomy=${taxonomy}`, signal);
 export const previewBulkDecisions = (run: string, body: BulkRequest, signal?: AbortSignal) => request<BulkPreview>(path(run, '/bulk-decisions/preview'), { method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal });
 export const getClusters = (run: string, query = new URLSearchParams(), signal?: AbortSignal) => get<GenerationPage<ClusterRead>>(run, `/clusters?${query}`, signal);
 export const getCluster = (run: string, id: string, query = new URLSearchParams(), signal?: AbortSignal) => get<ClusterDetail>(run, `/clusters/${encodeURIComponent(id)}?${query}`, signal);
@@ -47,6 +49,13 @@ export const resolveGolden = (run: string, body: ResolveBody) => write<Operation
 export const getGoldenResolution = (run: string, signal?: AbortSignal) => get<ResolutionRead>(run, '/golden/resolution', signal);
 export const applyGoldenRepair = (run: string, body: ResolveBody & { operation_id: string }, undo = false) => write<OperationRead>(run, `/golden/resolution/${undo ? 'undo' : 'apply'}`, body);
 export const explainWorkflowPair = (run: string, id: string, body: Mutation, signal?: AbortSignal) => write<ExplanationRead>(run, `/pairs/${encodeURIComponent(id)}/explanation`, body, 'POST', signal);
+export async function streamWorkflowPairExplanation(run: string, id: string, body: Mutation, onDelta: (text: string) => void, signal?: AbortSignal): Promise<ExplanationRead> {
+  if(process.env.NEXT_PUBLIC_BUFFER_EXPLANATIONS==='true')return explainWorkflowPair(run,id,body,signal);
+  const response = await requestResponse(path(run, `/pairs/${encodeURIComponent(id)}/explanation/stream`), {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' }, body: JSON.stringify(body), signal,
+  });
+  return readExplanationStream(response, onDelta, signal);
+}
 export const finalizeGolden = (run: string, body: Mutation & { expected_golden_revision: number }) => write<{ result_hash: string } | OperationRead>(run, '/finalize-golden', body);
 export const reopenDecisions = (run: string, body: Mutation & { reason: string }) => write<WorkflowRead>(run, '/reopen-decisions', body);
 export const retryOperation = (run: string, id: string, body: Mutation) => write<OperationRead>(run, `/operations/${encodeURIComponent(id)}/retry`, body);
@@ -67,3 +76,11 @@ export const requestGroupAnnotations = (run:string,body:Mutation & {expected_clu
 export type ClusterQueueSummary={pending_count:number;accepted_count:number;published_count:number;decision_revision:number;cluster_revision:number};
 export const getClusterQueue=(run:string,signal?:AbortSignal)=>get<ClusterQueueSummary>(run,'/cluster-queue',signal);
 export const buildClusterQueue=(run:string,body:Mutation & {expected_decision_revision:number;queue_mode:'pending'|'all'})=>write<OperationRead>(run,'/cluster-queue',body);
+
+export async function exportSelectedGolden(run:string,body:GoldenRevision & ClusterScope) {
+ const response=await requestResponse(path(run,'/golden/export'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');
+ link.href=url;link.download='golden-records.csv';document.body.append(link);link.click();link.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+ return true;
+}

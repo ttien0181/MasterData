@@ -1,7 +1,7 @@
 import {fieldLabels} from '@/lib/pairReview';
 export default function PairEvidenceTags({tags=[]}:{tags?:string[]}){
  const labels=tags.flatMap(tag=>{
-  if(tag==='AGENT_DISAGREEMENT')return ['Agent bất đồng'];
+  if(tag==='AGENT_DISAGREEMENT')return ['Kết quả đối chiếu khác nhau'];
   const match=/^FIELD_STATE_(NAME|PHONE|EMAIL|ADDRESS|DOB|GOVERNMENT_ID)_(EX|NX|NA|HS|CL|CF)$/.exec(tag);
   if(!match)return [];
   const suffix=match[2]==='CF'?'mâu thuẫn':['EX','NX'].includes(match[2])?'khớp':'tương đồng';

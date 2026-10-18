@@ -1,5 +1,6 @@
 "use client";
 
+import {baselineLabels,groupLabel} from '@/lib/pairReview';
 import { useState, useEffect, useCallback } from "react";
 import type { AuthUser } from "@/lib/api";
 import { getPolicyYaml, simulatePolicy, type PolicySimulateResult } from "@/lib/api";
@@ -77,7 +78,7 @@ export default function PolicyAdmin({ user, runId }: { user: AuthUser; runId: st
         <p role="status" className="muted-copy">Đang tải chính sách…</p>
       ) : (
         <div className="policy-yaml-editor">
-          <label htmlFor="policy-yaml-textarea" className="visually-hidden">Nội dung YAML chính sách</label>
+          <label htmlFor="policy-yaml-textarea" className="visually-hidden">Nội dung thiết lập quy tắc</label>
           <textarea
             id="policy-yaml-textarea"
             className="policy-yaml-textarea"
@@ -86,7 +87,7 @@ export default function PolicyAdmin({ user, runId }: { user: AuthUser; runId: st
             onChange={(e) => setYamlContent(e.target.value)}
             rows={30}
             spellCheck={false}
-            aria-label="Nội dung YAML chính sách"
+            aria-label="Nội dung thiết lập quy tắc"
           />
         </div>
       )}
@@ -107,11 +108,11 @@ export default function PolicyAdmin({ user, runId }: { user: AuthUser; runId: st
             </div>
             <div className="stat-card">
               <span className="stat-value">{simResult.review_to_merge.toLocaleString("vi-VN")}</span>
-              <span className="stat-label">Review → Gộp</span>
+              <span className="stat-label">Cần kiểm tra → Đề xuất gộp</span>
             </div>
             <div className="stat-card">
               <span className="stat-value">{simResult.merge_to_review.toLocaleString("vi-VN")}</span>
-              <span className="stat-label">Gộp → Review</span>
+              <span className="stat-label">Đề xuất gộp → Cần kiểm tra</span>
             </div>
           </div>
           {simResult.details.length > 0 && (
@@ -130,9 +131,9 @@ export default function PolicyAdmin({ user, runId }: { user: AuthUser; runId: st
                   {simResult.details.filter(d => d.changed).slice(0, 100).map(d => (
                     <tr key={d.pair_id}>
                       <td><code>{d.pair_id.slice(0, 8)}…</code></td>
-                      <td>{d.primary_group}</td>
-                      <td>{d.current_decision}</td>
-                      <td>{d.new_decision}</td>
+                      <td>{groupLabel(d.primary_group)}</td>
+                      <td>{baselineLabels[d.current_decision]??'Cần xem lại'}</td>
+                      <td>{baselineLabels[d.new_decision]??'Cần xem lại'}</td>
                     </tr>
                   ))}
                 </tbody>

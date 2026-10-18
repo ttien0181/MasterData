@@ -12,8 +12,8 @@ test('shows field cosine and unavailable evidence without enabling acceptance', 
   const reviewGroup=vi.fn();
   render(<PairComparison pair={pair} close={() => undefined} reviewGroup={reviewGroup} />);
   expect(screen.getByText('Tên: 0,900')).toBeInTheDocument();
-  expect(screen.getByText('Địa chỉ: Chưa có bằng chứng')).toBeInTheDocument();
-  expect(screen.getByText('Bằng chứng quy tắc và độ tương đồng chưa thống nhất.')).toBeInTheDocument();
+  expect(screen.getByText('Địa chỉ: Chưa có')).toBeInTheDocument();
+  expect(screen.getByText('Chưa thống nhất')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Đối chiếu nhóm' }));
   expect(reviewGroup).toHaveBeenCalledTimes(1);
 });

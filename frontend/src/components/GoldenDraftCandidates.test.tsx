@@ -10,8 +10,8 @@ it('saving another field does not acknowledge an inherited pending choice',async
   selections:{name:{selection_mode:'MANUAL_OVERRIDE',value:'Inherited'}},requires_manual_review:['name']};
  const save=vi.fn().mockResolvedValue(true);
  render(<SessionCacheProvider userId="candidate-editor"><GoldenFieldEditor golden={golden} editable busy={false} onSave={save} runId="run"/></SessionCacheProvider>);
- fireEvent.change(screen.getByRole('textbox',{name:'Chỉnh tay email'}),{target:{value:'chosen@example.net'}});
- fireEvent.click(screen.getByRole('button',{name:'Lưu lựa chọn Golden'}));
+ fireEvent.change(screen.getByRole('textbox',{name:'Nhập trực tiếp email'}),{target:{value:'chosen@example.net'}});
+ fireEvent.click(screen.getByRole('button',{name:'Lưu lựa chọn hồ sơ đại diện'}));
  await waitFor(()=>expect(save).toHaveBeenCalledWith({email:{selection_mode:'MANUAL_OVERRIDE',value:'chosen@example.net'}},1,1));
 });
 it('shows an orphaned extra candidate and requires an explicit reason before discarding',async()=>{
@@ -27,6 +27,6 @@ it('shows an orphaned extra candidate and requires an explicit reason before dis
  fireEvent.change(screen.getByRole('textbox',{name:'Lý do bỏ lựa chọn obsolete_extra'}),{target:{value:'Nguồn đã bị loại'}});
  fireEvent.click(discard);
  expect(save).not.toHaveBeenCalled();
- fireEvent.click(screen.getByRole('button',{name:'Lưu lựa chọn Golden'}));
+ fireEvent.click(screen.getByRole('button',{name:'Lưu lựa chọn hồ sơ đại diện'}));
  await waitFor(()=>expect(save).toHaveBeenCalledWith({obsolete_extra:{selection_mode:'DISCARD_PENDING',reason:'Nguồn đã bị loại'}},2,3));
 });

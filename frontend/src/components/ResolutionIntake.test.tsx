@@ -55,7 +55,20 @@ describe("ResolutionIntake", () => {
     api.getUploadSessions.mockResolvedValue({items:[ready]});
     api.getUploadSession.mockResolvedValue(ready);
     render(<ResolutionIntake userId="u" initialSessionId="upload-1" onRunCreated={vi.fn()} />);
-    expect(await screen.findByLabelText('Thêm các file CSV')).toBeEnabled();
+    expect(await screen.findByLabelText('Thêm các tệp CSV')).toBeEnabled();
+  });
+
+  it('sends the chosen rule-only mode when creating a workflow session', async () => {
+    const ready=uploadSession(3,'READY',3);
+    api.getUploadSessions.mockResolvedValue({items:[ready]});
+    api.getUploadSession.mockResolvedValue(ready);
+    render(<ResolutionIntake userId="u" initialSessionId="upload-1" workflowVersion={2} onRunCreated={vi.fn()}/>);
+    const toggle=await screen.findByRole('checkbox',{name:/So sánh tên và địa chỉ bằng AI/});
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Tạo phiên từ dữ liệu đã kiểm tra'})).toBeEnabled());
+    expect(toggle).toBeChecked();
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('button',{name:'Tạo phiên từ dữ liệu đã kiểm tra'}));
+    await waitFor(()=>expect(api.commitUploadSession).toHaveBeenCalledWith('upload-1',2,false));
   });
 
   it('disables adding files until asynchronous validation finishes', async () => {
@@ -63,13 +76,13 @@ describe("ResolutionIntake", () => {
     api.getUploadSessions.mockResolvedValue({items:[validating]});
     api.getUploadSession.mockResolvedValue(validating);
     render(<ResolutionIntake userId="u" initialSessionId="upload-1" onRunCreated={vi.fn()} />);
-    expect(await screen.findByLabelText('Thêm các file CSV')).toBeDisabled();
+    expect(await screen.findByLabelText('Thêm các tệp CSV')).toBeDisabled();
   });
 
   it("uploads and commits a file larger than the old 5 MiB limit", async () => {
     const onRunCreated = vi.fn().mockResolvedValue(undefined);
     const { container } = render(<ResolutionIntake onRunCreated={onRunCreated} />);
-    expect(screen.getByText(/Không giới hạn dung lượng từng file/)).toBeInTheDocument();
+    expect(screen.getByText(/Không giới hạn dung lượng từng tệp/)).toBeInTheDocument();
 
     const size = 5 * 1024 * 1024 + 1;
     const file = new File([new Uint8Array(size)], "large.csv", { type: "text/csv" });
@@ -82,7 +95,7 @@ describe("ResolutionIntake", () => {
     );
     await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu phân giải" })).toBeEnabled());
     expect(api.commitUploadSession).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByPlaceholderText("Mặc định dùng tên file"), { target: { value: "Customer tháng 10" } });
+    fireEvent.change(screen.getByPlaceholderText("Mặc định dùng tên tệp"), { target: { value: "Customer tháng 10" } });
     fireEvent.click(screen.getByRole("button", { name: "Bắt đầu phân giải" }));
     await waitFor(() => expect(onRunCreated).toHaveBeenCalledWith(expect.objectContaining({ run_id: "run-1" })));
     expect(api.validateUploadSession).toHaveBeenCalledWith("upload-1");
@@ -111,7 +124,7 @@ describe("ResolutionIntake", () => {
     const { container } = render(<ResolutionIntake onRunCreated={vi.fn()} />);
     fireEvent.drop(container.querySelector(".resolution-dropzone")!, { dataTransfer: { files } });
 
-    expect(await screen.findByText("Đang kiểm tra dữ liệu trong các file CSV. File lớn có thể mất vài phút; trang sẽ tự cập nhật."))
+    expect(await screen.findByText("Đang kiểm tra dữ liệu trong các tệp CSV. Tệp lớn có thể mất vài phút; trang sẽ tự cập nhật."))
       .toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Đang kiểm tra dữ liệu…" })).toBeDisabled();
     expect(api.createUploadSession).toHaveBeenCalledExactlyOnceWith("", files);
@@ -148,9 +161,9 @@ describe("ResolutionIntake", () => {
     const { container } = render(<ResolutionIntake onRunCreated={vi.fn()} />);
     const input = container.querySelector('input[type="file"][multiple]')!;
     fireEvent.change(input, { target: { files: [new File(["csv"], "one.csv"), new File(["txt"], "two.txt")] } });
-    expect(screen.getByText(/Chỉ hỗ trợ file CSV/)).toBeInTheDocument();
+    expect(screen.getByText(/Chỉ hỗ trợ tệp CSV/)).toBeInTheDocument();
     fireEvent.change(input, { target: { files: Array.from({ length: 11 }, (_, index) => new File(["csv"], `${index}.csv`)) } });
-    expect(screen.getByText("Mỗi phiên hiện hỗ trợ tối đa 10 file CSV.")).toBeInTheDocument();
+    expect(screen.getByText("Mỗi phiên hiện hỗ trợ tối đa 10 tệp CSV.")).toBeInTheDocument();
     expect(api.createUploadSession).not.toHaveBeenCalled();
     expect(api.uploadResolutionUploadPart).not.toHaveBeenCalled();
   });
@@ -210,7 +223,7 @@ describe("ResolutionIntake", () => {
   it("does not restore another account's upload hint", async () => {
     localStorage.setItem("masterone.upload-session.v1.other-user", "other-upload");
     render(<ResolutionIntake userId="user-1" onRunCreated={vi.fn()} />);
-    await waitFor(() => expect(screen.getByLabelText("Chọn các file CSV")).toBeEnabled());
+    await waitFor(() => expect(screen.getByLabelText("Chọn các tệp CSV")).toBeEnabled());
     expect(api.getUploadSession).not.toHaveBeenCalled();
   });
 

@@ -1,0 +1,3 @@
+export const userRoleLabel=(role:string)=>({VIEWER:'Người xem',STEWARD:'Phụ trách dữ liệu',SENIOR_STEWARD:'Quản lý dữ liệu',POLICY_ADMIN:'Quản trị quy tắc',AUDITOR:'Kiểm tra viên'}[role]??'Thành viên');
+export const goldenStatusLabel=(status:string)=>({DRAFT:'Đang hoàn thiện',CONFIRMED:'Đã xác nhận',FINALIZED:'Đã chốt'}[status]??'Đang cập nhật');
+export const sourceChoiceLabel=(value?:string)=>({SOURCE_CHOICE:'Chọn từ hồ sơ nguồn',STEWARD_OVERRIDE:'Người phụ trách nhập',MANUAL_OVERRIDE:'Nhập trực tiếp',AUTO_RULE:'Hệ thống đề xuất',SURVIVORSHIP:'Hệ thống đề xuất'}[value??'']??'Thông tin nguồn');

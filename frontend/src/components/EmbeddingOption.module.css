@@ -1,0 +1,4 @@
+.option{display:flex;align-items:flex-start;gap:12px;margin:18px 0;padding:14px 16px;border:1px solid var(--line,#dce4ef);border-radius:12px;background:var(--surface,#fff);color:var(--ink,#12304c);cursor:pointer;text-align:left}
+.option input{flex:0 0 auto;width:18px;height:18px;margin:2px 0 0;accent-color:#0794af}
+.option span{min-width:0}.option strong{display:block;font-size:14px;line-height:1.5}.option span small{display:block;margin-top:4px;font-size:12px;line-height:1.6;text-align:left;color:var(--ink-3,#64748b)}
+.option:focus-within{outline:2px solid #0794af;outline-offset:2px}

@@ -15,7 +15,7 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  webServer: {
+  webServer: process.env.DEMO_BASE_URL ? undefined : {
     command: `npm run ${qa ? 'start' : 'dev'} -- --hostname 127.0.0.1 --port ${port}`,
     url: `http://localhost:${port}`,
     reuseExistingServer: !process.env.CI,

@@ -159,7 +159,7 @@ def serialize_upload_session(db: Session, session: ResolutionUploadSession,
         if run is not None and include_parts:
             committed_profile = run_profile(db, run)
     return {
-        "session_id": session.id, "name": session.name, "status": session.status,
+        "session_id": session.id, "name": session.name, "status": session.status, "use_embedding": session.use_embedding,
         "total_bytes": session.total_bytes, "upload_mode": "direct" if session.storage_backend == "r2" else "proxy",
         "committed_run_id": committed_run,
         "committed_profile": committed_profile,
@@ -716,7 +716,7 @@ def _commit_files(db: Session, session: ResolutionUploadSession,
         streams = [(filename, path.open("rb")) for filename, path in paths]
         run, profile = create_resolution_run_from_streams(
             db, streams, owner_user_id, session.name, upload_session_id=session.id, known_hashes=known_hashes,
-            workflow_version=session.workflow_version)
+            workflow_version=session.workflow_version, use_embedding=session.use_embedding)
         session.status = "COMMITTED"
         db.commit()
     finally:

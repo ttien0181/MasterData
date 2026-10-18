@@ -10,13 +10,15 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from masterone.auth.models import AuthSession, LoginAttempt, User
+from masterone.auth.models import AuthSession, DemoGrant, LoginAttempt, User
 from masterone.auth.security import (
     COOKIE,
+    DEMO_COOKIE,
     LOGIN_WINDOW,
     SESSION_SECONDS,
     CurrentSession,
     capabilities_for_role,
+    effective_capabilities,
     check_rate_limit,
     csrf_token,
     current_session,
@@ -43,6 +45,7 @@ class AuthUserResponse(BaseModel):
     csrf_token: str
     role: str
     capabilities: list[str]
+    demo: dict | None = None
 
 
 def auth_user_response(user: User, token: str) -> AuthUserResponse:
@@ -79,23 +82,89 @@ def login(body: Credentials, request: Request, response: Response, db: Session =
         db.add(LoginAttempt(email_normalized=email, ip_address=ip, created_at_epoch=now))
         db.commit()
         raise HTTPException(401, "Invalid email or password")
+    demo_token = request.cookies.get(DEMO_COOKIE)
+    if demo_token:
+        old = db.scalar(select(AuthSession).where(AuthSession.token_hash == hashlib.sha256(demo_token.encode()).hexdigest()))
+        if old:
+            from masterone.mdm.demo_service import end_demo
+            grant = db.get(DemoGrant, old.user_id)
+            if grant: end_demo(db, grant)
     raw_token = secrets.token_urlsafe(32)
     db.add(AuthSession(user_id=user.id, token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
                        expires_at_epoch=now + SESSION_SECONDS))
     db.commit()
     response.set_cookie(COOKIE, raw_token, max_age=SESSION_SECONDS, httponly=True,
                         secure=get_settings().app_env == "production", samesite="lax", path="/")
+    response.delete_cookie(DEMO_COOKIE, path='/', samesite='lax', secure=get_settings().app_env == 'production')
     return auth_user_response(user, raw_token)
 
 
 @router.get("/me", response_model=AuthUserResponse)
 def me(auth: CurrentSession = Depends(current_session)):
-    return auth_user_response(auth.user, auth.token)
+    result = auth_user_response(auth.user, auth.token)
+    result.capabilities = effective_capabilities(auth)
+    if auth.demo:
+        result.demo = {'run_id': auth.demo.run_id, 'state': auth.demo.state,
+                       'expires_at_epoch': auth.demo.expires_at_epoch, 'dataset_version': auth.demo.dataset_version}
+    return result
+
+
+@router.post('/demo', response_model=AuthUserResponse, status_code=201)
+def enter_demo(request: Request, response: Response, db: Session = Depends(get_session)):
+    require_origin(request)
+    settings = get_settings()
+    if not settings.demo_enabled:
+        raise HTTPException(404, 'Chế độ demo chưa được bật.')
+    now = int(time.time())
+    # Serialize admission on PostgreSQL; no unbounded anonymous AI sessions.
+    if db.get_bind().dialect.name == 'postgresql':
+        from sqlalchemy import text
+        db.execute(text('SELECT pg_advisory_xact_lock(1190035)'))
+    ip = request.client.host if request.client else 'unknown'
+    recent = db.query(LoginAttempt).filter_by(email_normalized='product-demo', ip_address=ip).filter(
+        LoginAttempt.created_at_epoch > now - LOGIN_WINDOW).count()
+    if recent >= 20:
+        raise HTTPException(429, 'Bạn đã mở nhiều phiên demo liên tiếp. Vui lòng chờ một chút rồi thử lại.')
+    # Re-entering the login page does not leak another slot/session.
+    old_token = request.cookies.get(DEMO_COOKIE)
+    if old_token:
+        old = db.scalar(select(AuthSession).where(AuthSession.token_hash == hashlib.sha256(old_token.encode()).hexdigest()))
+        if old:
+            from masterone.mdm.demo_service import end_demo
+            grant = db.get(DemoGrant, old.user_id)
+            if grant: end_demo(db, grant)
+    db.flush()
+    active = db.query(DemoGrant).filter(DemoGrant.expires_at_epoch > now,
+        DemoGrant.last_seen_epoch > now - settings.demo_idle_seconds,
+        DemoGrant.state.in_(('NEW', 'STARTING', 'READY'))).count()
+    if active >= settings.demo_max_active_sessions:
+        raise HTTPException(429, 'Các phiên demo đang được sử dụng. Bạn chờ một chút rồi thử lại nhé.')
+    identity = secrets.token_hex(16)
+    user = User(email=f'demo-{identity}@example.test', email_normalized=f'demo-{identity}@example.test',
+                password_hash=password_hash.hash(secrets.token_urlsafe(32)), role='STEWARD')
+    db.add(user)
+    db.flush()
+    raw_token = secrets.token_urlsafe(32)
+    session = AuthSession(user_id=user.id, token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
+                          expires_at_epoch=now + settings.demo_session_seconds)
+    db.add(session)
+    db.flush()
+    grant = DemoGrant(user_id=user.id, session_id=session.id, state='NEW',
+        expires_at_epoch=session.expires_at_epoch, last_seen_epoch=now, created_at_epoch=now)
+    db.add(grant)
+    db.add(LoginAttempt(email_normalized='product-demo', ip_address=ip, created_at_epoch=now))
+    db.commit()
+    response.set_cookie(DEMO_COOKIE, raw_token, httponly=True, secure=settings.app_env == 'production',
+                        samesite='lax', path='/')
+    return me(CurrentSession(user=user, session=session, token=raw_token, demo=grant))
 
 
 @router.post("/logout")
 def logout(response: Response, auth: CurrentSession = Depends(require_mutation), db: Session = Depends(get_session)):
     auth.session.revoked_at = now_utc()
+    if auth.demo:
+        from masterone.mdm.demo_service import end_demo
+        end_demo(db, db.get(DemoGrant, auth.user.id))
     db.commit()
-    response.delete_cookie(COOKIE, path="/", samesite="lax", secure=get_settings().app_env == "production")
+    response.delete_cookie(DEMO_COOKIE if auth.demo else COOKIE, path="/", samesite="lax", secure=get_settings().app_env == "production")
     return {"ok": True}

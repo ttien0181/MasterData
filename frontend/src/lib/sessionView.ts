@@ -2,7 +2,7 @@ import type { AuthUser, ResolutionOverview, ResolutionRunHistory, RunStatus } fr
 import { can } from "./permissions";
 
 const STATUS_LABELS: Record<RunStatus, string> = {
-  UPLOADED: "Đã nạp, chưa xử lý", IMPORTING: "Đang nạp dữ liệu", QUEUED: "Đang chờ xử lý", RUNNING: "Đang phân giải",
+  UPLOADED: "Đã nạp, chưa xử lý", IMPORTING: "Đang nạp dữ liệu", QUEUED: "Đang chờ xử lý", RUNNING: "Đang đối chiếu dữ liệu",
   COMPLETED: "Đã xử lý", DEGRADED: "Đối chiếu nâng cao chưa đầy đủ", RETRYABLE_FAILED: "Xử lý bị gián đoạn", FAILED: "Xử lý thất bại",
 };
 export function runStatusLabel(status: string) {
@@ -14,7 +14,7 @@ export function runPhaseLabel(phase?: string | null) {
   const labels: Record<string, string> = {
     uploaded: "Sẵn sàng bắt đầu",
     idle: "Sẵn sàng bắt đầu",
-    queued: "Đang chờ worker",
+    queued: "Đang chờ hệ thống xử lý",
     loading: "Đang nạp dữ liệu",
     blocking: "Đang đối chiếu",
     persisting: "Đang lưu kết quả",
@@ -64,12 +64,12 @@ export function toSessionViewModel(overview: ResolutionOverview, user: AuthUser,
       prepareExport: completed && can(user, "export_data"),
     },
     metrics: {
-      records: { value: overview.record_count, unit: "record", label: "Bản ghi đầu vào" },
-      files: { value: overview.file_count, unit: "file", label: "File đã nạp" },
+      records: { value: overview.record_count, unit: "record", label: "Hồ sơ đầu vào" },
+      files: { value: overview.file_count, unit: "file", label: "Tệp đã nạp" },
       candidates: { value: overview.candidate_count, unit: "pair", label: "Cặp được đối chiếu" },
       merge: { value: overview.counts.auto, unit: "merge_group", label: "Cụm chờ gộp" },
-      review: { value: overview.counts.review, unit: "review_item", label: "Item cần review" },
-      separate: { value: overview.counts.separate, unit: "record", label: "Bản ghi dự kiến giữ riêng" },
+      review: { value: overview.counts.review, unit: "review_item", label: "Hồ sơ cần kiểm tra" },
+      separate: { value: overview.counts.separate, unit: "record", label: "Hồ sơ dự kiến giữ riêng" },
       exports: { value: overview.history_count, unit: "snapshot", label: "CSV đã xuất" },
     },
   };

@@ -1,10 +1,22 @@
-"""A processing command chains durable jobs without authorizing merges."""
+"""Persisted legacy processing jobs retain their durable continuation semantics."""
 import pytest
 from masterone.config import get_settings
 from masterone.mdm.workflow_models import WorkflowOperation, WorkflowPair
 
 from tests.test_mdm.test_workflow_contract import request
 from tests.test_mdm.test_workflow_stages import read, run_one
+
+
+@pytest.fixture(autouse=True)
+def legacy_processing_payload(monkeypatch):
+    """Exercise operations persisted before the opt-in MVP contract was added."""
+    from masterone.mdm import workflow_processing
+    from masterone.mdm.workflow_service import begin_operation
+    def legacy(db, run_id, body, actor):
+        payload = {**body.model_dump(), 'processing': True, 'demo_fast_mode': get_settings().demo_fast_mode}
+        return begin_operation(db, run_id, 'DECIDE', body.request_id, payload,
+                               body.expected_workflow_revision, actor)
+    monkeypatch.setattr(workflow_processing, 'begin_processing', legacy)
 
 
 def test_processing_chains_to_preview_and_replays_without_decisions(client, workflow_run, monkeypatch):

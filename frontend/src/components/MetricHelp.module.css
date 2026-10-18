@@ -1,0 +1,5 @@
+:global([data-bot-metric]):has(.action){position:relative;border-radius:10px}
+.action{position:absolute;inset:0;width:100%;height:100%;padding:0!important;margin:0!important;border:1px solid transparent!important;border-radius:inherit;background:transparent!important;cursor:pointer;z-index:1;transition:box-shadow 160ms ease,border-color 160ms ease,background-color 160ms ease}
+.action:hover{border-color:var(--primary,#078fae)!important;box-shadow:0 3px 12px #0b789614;background:color-mix(in srgb,var(--primary,#078fae) 4%,transparent)!important}
+.action:focus-visible{outline:3px solid var(--primary,#078fae);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){.action{transition:none}}

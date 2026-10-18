@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ApiError, getBackendHealth, login, register, setCsrfToken } from "@/lib/api";
+import { ApiError, getBackendHealth, enterProductDemo, login, register, setCsrfToken } from "@/lib/api";
 import { setActiveImportUser } from "@/lib/activeImport";
 import MoMark from "./MoMark";
 import ThemeToggle from "./ThemeToggle";
@@ -41,12 +41,17 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
       setActiveImportUser(user.id);
       router.replace("/app");
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "Không thể kết nối máy chủ. Hãy thử lại.");
+      setError(cause instanceof ApiError ? cause.message : "Chưa kết nối được hệ thống. Bạn kiểm tra đường truyền rồi thử lại nhé.");
     } finally {
       setBusy(false);
     }
   }
 
+  async function demo() {
+    if(busy)return;setBusy(true);setError('');
+    try {const user=await enterProductDemo();setCsrfToken(user.csrf_token);setActiveImportUser(user.id);router.replace('/app/demo');}
+    catch(cause){setError(cause instanceof Error?cause.message:'Chưa mở được demo. Bạn thử lại nhé.');setBusy(false);}
+  }
   const healthLabel = health === "online" ? "Hệ thống hoạt động" : health === "checking" ? "Đang kiểm tra hệ thống" : "Không thể kết nối hệ thống";
 
   return <main className="auth-page">
@@ -56,25 +61,25 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           <MoMark size={42} /><strong>Master<span>One</span></strong>
         </Link>
         <div className="auth-story-copy">
-          <p className="auth-story-eyebrow">PHÂN GIẢI DỮ LIỆU CÓ KIỂM SOÁT</p>
-          <h1 id="auth-story-title">Một nguồn dữ liệu.<br /><span>Một sự thật.</span></h1>
-          <p>Đối chiếu dữ liệu khách hàng từ nhiều nguồn, xem bằng chứng và kiểm soát từng quyết định.</p>
+          <p className="auth-story-eyebrow">QUẢN LÝ DỮ LIỆU KHÁCH HÀNG</p>
+          <h1 id="auth-story-title">Nhiều nguồn dữ liệu.<br /><span>Thông tin nhất quán.</span></h1>
+          <p>Đối chiếu dữ liệu khách hàng từ nhiều nguồn, xem thông tin đối chiếu và kiểm soát từng quyết định.</p>
         </div>
-        <div className="auth-illustration" role="img" aria-label="Mo kết nối các nguồn CRM, ERP và Billing với Golden Record">
+        <div className="auth-illustration" role="img" aria-label="Mo kết nối các nguồn CRM, ERP và Thanh toán với Hồ sơ đại diện">
           <div className="auth-source-stack" aria-hidden="true">
             <span><i className="source-dot crm" />CRM</span>
             <span><i className="source-dot erp" />ERP</span>
-            <span><i className="source-dot bill" />Billing</span>
+            <span><i className="source-dot bill" />Thanh toán</span>
           </div>
           <svg className="auth-connectors" viewBox="0 0 440 220" fill="none" aria-hidden="true">
             <path d="M94 48C150 48 150 108 200 108M94 110H198M94 172C150 172 150 112 200 112M252 110C300 110 303 76 350 76" stroke="currentColor" strokeWidth="2" strokeDasharray="5 6" />
             <circle cx="200" cy="110" r="5" fill="currentColor" /><circle cx="350" cy="76" r="5" fill="currentColor" />
           </svg>
           <MoMark size={150} />
-          <div className="auth-golden-card"><span>GOLDEN RECORD</span><strong>Hồ sơ đã đối chiếu</strong><i aria-hidden="true">✓</i></div>
+          <div className="auth-golden-card"><span>HỒ SƠ ĐẠI DIỆN</span><strong>Hồ sơ đã đối chiếu</strong><i aria-hidden="true">✓</i></div>
         </div>
         <div className="auth-trust-list">
-          <div><span aria-hidden="true">◇</span><p><strong>Phân quyền</strong><small>Theo vai trò và năng lực</small></p></div>
+          <div><span aria-hidden="true">◇</span><p><strong>Phân quyền</strong><small>Theo trách nhiệm được giao</small></p></div>
           <div><span aria-hidden="true">✓</span><p><strong>Kiểm soát</strong><small>Duyệt trước khi xuất dữ liệu</small></p></div>
           <div><span aria-hidden="true">⌁</span><p><strong>Truy vết</strong><small>Ghi nhận quyết định xử lý</small></p></div>
         </div>
@@ -88,9 +93,9 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           <ThemeToggle className="auth-theme-toggle" />
         </div>
         <div className="auth-form-content">
-          <p className="auth-eyebrow">MASTERONE WORKSPACE</p>
+          <p className="auth-eyebrow">KHÔNG GIAN LÀM VIỆC</p>
           <h2 id="auth-title">{isRegister ? "Tạo tài khoản" : "Đăng nhập"}</h2>
-          <p className="auth-description">{isRegister ? "Tạo tài khoản để bắt đầu làm việc với dữ liệu của bạn." : "Truy cập không gian phân giải dữ liệu của bạn."}</p>
+          <p className="auth-description">{isRegister ? "Tạo tài khoản để bắt đầu làm việc với dữ liệu của bạn." : "Đăng nhập để tiếp tục làm việc với dữ liệu khách hàng."}</p>
           <form onSubmit={(event) => void submit(event)}>
             <label htmlFor="email">Email</label>
             <input className="auth-input" id="email" type="email" autoComplete="email" required value={email}
@@ -107,7 +112,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
               </button>
             </div>
             {error && <p className="auth-error" role="alert">{error}</p>}
-            {!isRegister && <button className="auth-secondary-link" type="button" disabled title="Chức năng khôi phục mật khẩu chưa được cấu hình">
+            {!isRegister && <button className="auth-secondary-link" type="button" disabled title="Chưa hỗ trợ đặt lại mật khẩu. Bạn vui lòng liên hệ người quản lý.">
               Quên mật khẩu?
             </button>}
             <button className="button primary auth-submit" type="submit" disabled={busy}>
@@ -116,16 +121,18 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
             </button>
           </form>
           {!isRegister && <>
-            <div className="auth-divider" aria-hidden="true">Hoặc</div>
+            <div className="auth-divider" aria-hidden="true">Hoặc trải nghiệm không cần tài khoản</div>
+            <button className="auth-demo-button" type="button" disabled={busy} onClick={()=>void demo()}>Demo sản phẩm <span aria-hidden="true">→</span></button>
+            <p className="auth-demo-note">Dữ liệu mẫu có sẵn · Master Bot hướng dẫn từng bước</p>
             <button className="auth-sso-button" type="button" disabled
-              title="Đăng nhập SSO chưa được cấu hình">
+              title="Chưa hỗ trợ đăng nhập bằng tài khoản công ty.">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4" /></svg>
-              Đăng nhập bằng SSO
+              Đăng nhập bằng tài khoản công ty
             </button>
           </>}
           <p className="auth-switch">{isRegister ? "Đã có tài khoản?" : "Chưa có tài khoản?"} <Link href={isRegister ? "/login" : "/register"}>{isRegister ? "Đăng nhập" : "Đăng ký"}</Link></p>
         </div>
-        <footer className="auth-footer">© 2026 MasterOne <span>·</span> Phân giải dữ liệu</footer>
+        <footer className="auth-footer">© 2026 MasterOne <span>·</span> Quản lý dữ liệu khách hàng</footer>
       </section>
     </div>
   </main>;

@@ -31,35 +31,35 @@ async function fixture(page: Page,completed=false) {
 }
 const row=(page:Page,id:string)=>page.getByRole('checkbox',{name:`Chọn cặp ${id}`,exact:true});
 
-test('ineligible Group C explains the block immediately without a bulk preview request',async({page})=>{
+test('ineligible Nhóm C explains the block immediately without a bulk preview request',async({page})=>{
   const mock=await fixture(page,true),previews:string[]=[];
   page.on('request',request=>{if(request.url().endsWith('/bulk-decisions/preview'))previews.push(request.url());});
   await page.goto('/app/sessions/r/decisions/pairs');
   await group(page,'C');await expect(row(page,'C-0')).toBeVisible();
-  await expect(page.getByRole('button',{name:'Accept Group C',exact:true})).toBeDisabled();
-  await expect(page.getByText('Group C chưa đủ bằng chứng để Accept. Cần bổ sung dữ liệu hoặc đối chiếu.',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Đồng ý gộp Nhóm C',exact:true})).toBeDisabled();
+  await expect(page.getByText('Nhóm C chưa đủ thông tin đối chiếu để Đồng ý gộp. Cần bổ sung dữ liệu hoặc đối chiếu.',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Chọn bộ lọc (25)',exact:true}).click();
-  await expect(page.getByRole('button',{name:'Accept theo phạm vi',exact:true})).toBeDisabled();
-  await expect(page.getByRole('dialog',{name:'Xác nhận Accept'})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Đồng ý gộp theo phạm vi',exact:true})).toBeDisabled();
+  await expect(page.getByRole('dialog',{name:'Xác nhận Đồng ý gộp'})).toHaveCount(0);
   expect(previews).toEqual([]);expect(mock.writes).toEqual([]);expect(mock.errors).toEqual([]);
 });
 
-test('completed Group A remains readable and the required-review card stays fixed on Group C',async({page})=>{
+test('completed Nhóm A remains readable and the required-review card stays fixed on Nhóm C',async({page})=>{
   const mock=await fixture(page,true);
   await page.goto('/app/sessions/r/decisions/pairs');
   await expect(page.getByText('Không còn cặp cần duyệt.',{exact:true})).toBeVisible();
-  const required=page.getByRole('group',{name:'Group',exact:true}).getByRole('button',{name:'Cần duyệt 0',exact:true});
+  const required=page.getByRole('group',{name:'Nhóm',exact:true}).getByRole('button',{name:'Cần duyệt 0',exact:true});
   await expect(required).toHaveAttribute('aria-pressed','true');
   await group(page,'A');await expect(row(page,'A-0')).toBeVisible();
-  await expect(page.getByRole('group',{name:'Group',exact:true}).getByRole('button',{name:/^Group A /}).locator('strong')).toHaveText('0');
+  await expect(page.getByRole('group',{name:'Nhóm',exact:true}).getByRole('button',{name:/^Nhóm A /}).locator('strong')).toHaveText('0');
   await expect(page.getByRole('combobox',{name:'Quyết định',exact:true})).toHaveValue('');
   expect(mock.reads.filter(read=>read.group==='A').every(read=>read.resolution==='')).toBe(true);
   await page.getByRole('combobox',{name:'Quyết định',exact:true}).selectOption('REQUIRED');
-  await expect(page.getByText('Không còn cặp cần duyệt trong Group A.',{exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'Xem tất cả Group A',exact:true}).click();
+  await expect(page.getByText('Không còn cặp cần duyệt trong Nhóm A.',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Xem tất cả Nhóm A',exact:true}).click();
   await expect(row(page,'A-0')).toBeVisible();
   await group(page,'C');await expect(row(page,'C-0')).toBeVisible();
-  await expect(page.getByRole('group',{name:'Group',exact:true}).getByRole('button',{name:/^Group C /}).locator('strong')).toHaveText('25');
+  await expect(page.getByRole('group',{name:'Nhóm',exact:true}).getByRole('button',{name:/^Nhóm C /}).locator('strong')).toHaveText('25');
   await expect(required).toBeVisible();await expect(required).toHaveAttribute('aria-pressed','false');
   await required.click();
   await expect(page.getByRole('combobox',{name:'Quyết định',exact:true})).toHaveValue('REQUIRED');
@@ -68,7 +68,7 @@ test('completed Group A remains readable and the required-review card stays fixe
   expect(mock.writes).toEqual([]);expect(mock.errors).toEqual([]);
 });
 
-test('Accept Group previews every matching page without selecting rows or sending a decision',async({page})=>{
+test('Đồng ý gộp Nhóm previews every matching page without selecting rows or sending a decision',async({page})=>{
   const mock=await fixture(page),previews:Record<string,unknown>[]=[];
   await page.route('**/workflow/bulk-decisions/preview',async route=>{
     previews.push(route.request().postDataJSON());
@@ -77,8 +77,8 @@ test('Accept Group previews every matching page without selecting rows or sendin
   await page.goto('/app/sessions/r/decisions/pairs');
   await expect(row(page,'ALL-0')).toBeVisible();
   await group(page,'A');await expect(row(page,'A-0')).toBeVisible();
-  await page.getByRole('button',{name:'Accept Group A',exact:true}).click();
-  await expect(page.getByText('34 cặp có thể Accept',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Đồng ý gộp Nhóm A',exact:true}).click();
+  await expect(page.getByText('34 cặp có thể Đồng ý gộp',{exact:true})).toBeVisible();
   expect(previews).toHaveLength(1);
   expect(previews[0].scope).toEqual({filter:{group:'A',visibility:'review',taxonomy:'actions_v1'}});
   await page.getByRole('button',{name:'Hủy',exact:true}).click();
@@ -105,18 +105,18 @@ test('unchanged classification survives three minutes and a step switch without 
   expect(mock.errors).toEqual([]);
 });
 async function group(page:Page,value:string) {
-  await page.getByRole('group',{name:'Group',exact:true}).getByRole('button',{name:new RegExp(`^Group ${value} `)}).evaluate(element=>(element as HTMLButtonElement).click());
+  await page.getByRole('group',{name:'Nhóm',exact:true}).getByRole('button',{name:new RegExp(`^Nhóm ${value} `)}).evaluate(element=>(element as HTMLButtonElement).click());
 }
 
-test('Group return restores cached page, filters, search and table view without another read',async({page})=>{
+test('Nhóm return restores cached page, filters, search and table view without another read',async({page})=>{
   const mock=await fixture(page);
   await page.setViewportSize({width:700,height:760});
   await page.goto('/app/sessions/r/decisions/pairs');
   await expect(row(page,'ALL-0')).toBeVisible();
   await group(page,'A');
   await expect(row(page,'A-0')).toBeVisible();
-  await page.getByRole('button',{name:'Subgroup Group A',exact:true}).click();
-  await page.getByRole('group',{name:'Subgroup của Group A',exact:true}).getByRole('button',{name:'Tên và điện thoại 34',exact:true}).click();
+  await page.getByRole('button',{name:'Nhóm chi tiết Nhóm A',exact:true}).click();
+  await page.getByRole('group',{name:'Nhóm chi tiết của Nhóm A',exact:true}).getByRole('button',{name:'Tên và điện thoại 34',exact:true}).click();
   await page.getByRole('button',{name:'Trang tiếp',exact:true}).click(); await expect(row(page,'A-10')).toBeVisible();
   await page.getByRole('button',{name:'Trang tiếp',exact:true}).click(); await expect(row(page,'A-20')).toBeVisible();
   const table=page.locator('[data-scroll-key="pairs"]');
@@ -141,31 +141,31 @@ test('Group return restores cached page, filters, search and table view without 
   expect(mock.writes).toEqual([]);expect(mock.errors).toEqual([]);
 });
 
-test('an uncached delayed Group shows its own loading area, never the previous Group rows',async({page})=>{
+test('an uncached delayed Nhóm shows its own loading area, never the previous Nhóm rows',async({page})=>{
   const mock=await fixture(page);
   await page.goto('/app/sessions/r/decisions/pairs');await expect(row(page,'ALL-0')).toBeVisible();
   mock.hold();
   await group(page,'C');
-  await expect(page.getByText('Đang đọc Group C…',{exact:true})).toBeVisible();
+  await expect(page.getByText('Đang đọc Nhóm C…',{exact:true})).toBeVisible();
   await expect(row(page,'ALL-0')).toHaveCount(0);
   mock.release();
   await expect(page.getByText('Không có cặp khớp bộ lọc.',{exact:true})).toBeVisible();
   expect(mock.writes).toEqual([]);expect(mock.errors).toEqual([]);
 });
 
-test('Deny refresh keeps cached rows visible, fences writes, and then displays the server decision',async({page})=>{
+test('Không gộp refresh keeps cached rows visible, fences writes, and then displays the hệ thống decision',async({page})=>{
   const mock=await fixture(page);
   await page.goto('/app/sessions/r/decisions/pairs');await expect(row(page,'ALL-0')).toBeVisible();
   await group(page,'A');await expect(row(page,'A-0')).toBeVisible();
   mock.hold();
-  await page.getByRole('button',{name:'Deny cặp A-0',exact:true}).click();
+  await page.getByRole('button',{name:'Không gộp cặp A-0',exact:true}).click();
   await expect.poll(()=>mock.reads.filter(read=>read.group==='A'&&read.offset===0&&read.revision===2).length).toBeGreaterThan(0);
   await expect(row(page,'A-0')).toBeAttached();
-  await expect(page.getByRole('button',{name:'Accept cặp A-0',exact:true})).toBeDisabled();
+  await expect(page.getByRole('button',{name:'Đồng ý gộp cặp A-0',exact:true})).toBeDisabled();
   await expect(page.getByText('Đang cập nhật dữ liệu…',{exact:true})).toBeAttached();
   mock.release();
-  await expect(row(page,'A-0').locator('xpath=ancestor::tr')).toContainText('Deny');
-  await expect(page.getByRole('button',{name:'Deny cặp A-0',exact:true})).toBeDisabled();
-  await expect(page.getByRole('group',{name:'Group',exact:true}).getByRole('button',{name:/^Group A /}).locator('strong')).toHaveText('33');
+  await expect(row(page,'A-0').locator('xpath=ancestor::tr')).toContainText('Không gộp');
+  await expect(page.getByRole('button',{name:'Không gộp cặp A-0',exact:true})).toBeDisabled();
+  await expect(page.getByRole('group',{name:'Nhóm',exact:true}).getByRole('button',{name:/^Nhóm A /}).locator('strong')).toHaveText('33');
   expect(mock.writes).toHaveLength(1);expect(mock.errors).toEqual([]);
 });

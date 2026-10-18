@@ -6,6 +6,13 @@ const state:WorkflowRead={run_id:'r',workflow_version:2,workflow_state:'DECIDE_R
 function setup(){const services={workflow:vi.fn().mockResolvedValue(state),pair:vi.fn().mockResolvedValue({pair_id:'a',revision:1}),bulk:vi.fn(),operation:vi.fn(),onPair:vi.fn(),refresh:vi.fn().mockResolvedValue(undefined),alive:vi.fn().mockReturnValue(true),onError:vi.fn(),delay:vi.fn().mockResolvedValue(undefined)};return{q:new PairReviewQueue(services),services};}
 const intent={key:'pair:a',label:'Accept a',assessmentId:'v1',decision:'merge' as const,pair:{id:'a',revision:0}};
 const settle=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
+it('waits for a background cluster refresh before submitting the next review',async()=>{
+  const {q,services}=setup();
+  services.workflow.mockResolvedValueOnce({...state,workflow_state:'CLUSTER_RUNNING',allowed_actions:['queue-decisions'],active_operation:{operation_id:'clusters',operation_type:'CLUSTER',status:'RUNNING'} as OperationRead}).mockResolvedValue(state);
+  q.add(intent);await settle();
+  expect(services.delay).toHaveBeenCalled();expect(services.pair).toHaveBeenCalledTimes(1);
+  expect(q.snapshot()[0].status).toBe('DONE');expect(services.onError).not.toHaveBeenCalled();
+});
 it('retains reviewed group identifiers and evidence token in queued bulk writes',async()=>{
  const {q,services}=setup();services.bulk.mockResolvedValue({operation_id:'job',status:'COMPLETED'});
  q.add({key:'group-review',label:'Reviewed group',assessmentId:'v1',decision:'merge',scope:{pair_ids:['a']},

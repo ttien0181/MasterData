@@ -1,2 +1,6 @@
-import DataOverview from '@/components/DataOverview';
-export default function Page() { return <DataOverview mode="records" />; }
+import { redirect } from 'next/navigation';
+
+export default async function Page({ params }: { params: Promise<{ runId: string }> }) {
+  const { runId } = await params;
+  redirect(`/app/sessions/${encodeURIComponent(runId)}/data`);
+}

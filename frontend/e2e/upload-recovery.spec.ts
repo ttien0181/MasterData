@@ -44,7 +44,7 @@ test("closing panels keeps uploads alive; reload recovers a commit whose respons
   await page.goto("/app/legacy");
   await page.locator(".upload-orbit").click();
   const panel = page.getByRole("dialog", { name: "Nạp dữ liệu" });
-  await panel.getByLabel("Chọn các file CSV").setInputFiles({ name: "resume.csv", mimeType: "text/csv", buffer: Buffer.from("record_id,source,name\n1,CRM,Ada\n") });
+  await panel.getByLabel("Chọn các tệp CSV").setInputFiles({ name: "resume.csv", mimeType: "text/csv", buffer: Buffer.from("record_id,source,name\n1,CRM,Ada\n") });
   await expect.poll(() => partRequested).toBe(true);
   await panel.getByRole("button", { name: "Đóng bảng bên" }).click();
   await expect(panel).toBeHidden();

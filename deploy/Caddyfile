@@ -1,0 +1,15 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$APP_DOMAIN} {
+	@api path /api/* /health /ready
+	handle @api {
+		reverse_proxy backend:8001 {
+			flush_interval -1
+		}
+	}
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

@@ -1,23 +1,10 @@
-export const sessionTabs = [{ id: 'data', label: 'Tổng quan dữ liệu' }, { id: 'decisions', label: 'Phân loại các cặp bản ghi' }, { id: 'clusters', label: 'Các nhóm bản ghi' }, { id: 'golden', label: 'Golden record' }] as const;
+export const sessionTabs = [{ id: 'data', label: 'Hồ sơ khách hàng' }, { id: 'decisions', label: 'Các cặp hồ sơ khách hàng' }, { id: 'clusters', label: 'Các nhóm hồ sơ khách hàng' }, { id: 'golden', label: 'Hồ sơ đại diện' }] as const;
 export type SessionTab = typeof sessionTabs[number]['id'];
 export const sessionSections: Record<SessionTab, { id: string; label: string; path?: string }[]> = {
-  data: [
-    { id: 'data-overview', label: 'Phân tích dữ liệu', path: '' },
-    { id: 'data-records', label: 'Dữ liệu tải lên', path: '/records' },
-  ],
-  decisions: [
-    { id: 'decisions-summary', label: 'Tổng quan phân loại', path: '' },
-    { id: 'decisions-pairs', label: 'Duyệt các cặp bản ghi', path: '/pairs' },
-  ],
-  clusters: [
-    { id: 'clusters-overview', label: 'Tổng quan nhóm', path: '' },
-    { id: 'clusters-list', label: 'Danh sách nhóm', path: '/records' },
-  ],
-  golden: [
-    { id: 'golden-overview', label: 'Tổng quan & tiến độ', path: '' },
-    { id: 'golden-records', label: 'Duyệt Golden', path: '/records' },
-    { id: 'golden-export', label: 'Chốt & xuất dữ liệu', path: '/export' },
-  ],
+  data: [],
+  decisions: [],
+  clusters: [],
+  golden: [],
 };
 export const sessionPath = (run: string, tab: SessionTab = 'data') => `/app/sessions/${encodeURIComponent(run)}/${tab}`;
 export function tabReadiness(state: string, tab: SessionTab, clusterRevision = 0) {

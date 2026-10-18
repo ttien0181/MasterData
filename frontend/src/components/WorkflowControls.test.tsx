@@ -9,50 +9,57 @@ import {WorkflowContext} from './SessionWorkspace';
 import {SessionCacheProvider} from './SessionCache';
 import * as api from '@/lib/workflowApi';
 import type {ClusterGeneration,PairRead,WorkflowRead} from '@/lib/workflowContracts';
-vi.mock('@/lib/workflowApi',async original=>({...await original<typeof api>(),amendPair:vi.fn(),getConflicts:vi.fn(),getUnresolvedRecords:vi.fn()}));
+vi.mock('@/lib/workflowApi',async original=>({...await original<typeof api>(),amendPair:vi.fn(),getConflicts:vi.fn(),getUnresolvedRecords:vi.fn(),finalizeDecisions:vi.fn(),previewClusters:vi.fn(),getClusters:vi.fn()}));
 afterEach(()=>{cleanup();vi.clearAllMocks();});
 const w:WorkflowRead={run_id:'r',workflow_version:2,workflow_state:'DECIDE_REVIEW',workflow_revision:4,decision_revision:1,cluster_revision:0,golden_revision:0,counts:{},allowed_actions:['finalize-partial','amend-pair'],blockers:[{code:'PENDING_DECISIONS',count:3,unit:'pairs'}],active_operation:null,retryable_operation:null};
 const pair:PairRead={pair_id:'p',revision:1,decision:'DENIED',score_unit:'rule',baseline:{id:'p',left_id:'a',right_id:'b',decision:'REVIEW',score:3,field_evidence:[]},eligibility:{manual_allowed:true,auto_allowed:false,blocked_reasons:[]}};
 const host=(children:React.ReactNode)=><SessionCacheProvider userId="u"><WorkflowContext.Provider value={{workflow:w,refresh:vi.fn().mockResolvedValue(undefined)}}>{children}</WorkflowContext.Provider></SessionCacheProvider>;
-it('lists blockers and queue attention while blocking both generation actions',()=>{
+it('reports saving requests and review attention while preserving step 3 navigation',()=>{
  render(<PairCompletion workflow={w} pending={2} attention={1} busy={false} required={vi.fn()} conflicts={vi.fn()} finalize={vi.fn()}/>);
- expect(screen.getByText(/2 yêu cầu đang chờ/)).toBeInTheDocument();expect(screen.getByText(/1 yêu cầu cần đối chiếu/)).toBeInTheDocument();
- expect(screen.getByRole('button',{name:'Tạo các nhóm đủ điều kiện'})).toBeDisabled();expect(screen.getByRole('button',{name:'Hoàn tất phân loại và tạo nhóm'})).toBeDisabled();
+ expect(screen.getByRole('status')).toHaveTextContent('2 yêu cầu đang lưu');expect(screen.getByRole('alert')).toHaveTextContent('1 yêu cầu cần kiểm tra');
+ expect(screen.getByRole('link',{name:'Sang Bước 3'})).toHaveAttribute('href','/app/sessions/r/clusters');
+ expect(screen.queryByRole('button')).not.toBeInTheDocument();
 });
-it('allows a read-only preview while queued decisions still block creation',()=>{
- const preview=vi.fn();render(<PairCompletion workflow={{...w,allowed_actions:['preview-clusters','finalize-partial']}} pending={2} attention={1} busy={false} required={vi.fn()} conflicts={vi.fn()} finalize={vi.fn()} preview={preview}/>);
- fireEvent.click(screen.getByRole('button',{name:'Xem trước nhóm dự kiến'}));expect(preview).toHaveBeenCalledTimes(1);expect(screen.getByRole('button',{name:'Tạo các nhóm đủ điều kiện'})).toBeDisabled();
+it('does not expose legacy preview or generation writes while local requests are queued',()=>{
+ const preview=vi.fn(),finalize=vi.fn();render(<PairCompletion workflow={{...w,allowed_actions:['preview-clusters','finalize-partial']}} pending={2} attention={1} busy required={vi.fn()} conflicts={vi.fn()} finalize={finalize} preview={preview}/>);
+ expect(screen.getByRole('link',{name:'Sang Bước 3'})).toHaveAttribute('href','/app/sessions/r/clusters');
+ expect(screen.queryByRole('button')).not.toBeInTheDocument();expect(preview).not.toHaveBeenCalled();expect(finalize).not.toHaveBeenCalled();
 });
 it('shows first generation queue progress before any cluster result is ready',()=>{
  const queued={...w,workflow_state:'CLUSTER_QUEUED' as const,latest_cluster_operation:{operation_id:'job',run_id:'r',operation_type:'FINALIZE_DECISIONS',status:'QUEUED',stage:'queued',progress:{},error_code:null,result:{}}};
  render(<SessionCacheProvider userId="first-generation"><WorkflowContext.Provider value={{workflow:queued,refresh:vi.fn()}}><ClusterWorkspace/></WorkflowContext.Provider></SessionCacheProvider>);
- expect(screen.getByText(/Chờ tạo nhóm/)).toBeInTheDocument();expect(screen.queryByText(/Hoàn tất phân loại để tạo nhóm/)).not.toBeInTheDocument();
+ expect(screen.getByText('Chờ cập nhật nhóm hồ sơ…')).toBeInTheDocument();expect(screen.queryByRole('table')).not.toBeInTheDocument();expect(api.getClusters).not.toHaveBeenCalled();
 });
-it('offers explicitly partial generation when unresolved decisions remain',()=>{
+it('lets unresolved decisions continue to step 3 without invoking partial generation',()=>{
  const finalize=vi.fn();render(<PairCompletion workflow={w} pending={0} attention={0} busy={false} required={vi.fn()} conflicts={vi.fn()} finalize={finalize}/>);
- fireEvent.click(screen.getByRole('button',{name:'Tạo các nhóm đủ điều kiện'}));expect(finalize).toHaveBeenCalledWith(true);
+ expect(screen.getByRole('link',{name:'Sang Bước 3'})).toHaveAttribute('href','/app/sessions/r/clusters');
+ expect(screen.queryByRole('button')).not.toBeInTheDocument();expect(finalize).not.toHaveBeenCalled();
 });
-it('shows a positive readiness explanation when full completion is allowed',()=>{
+it('explains the automatic next step when full completion is allowed',()=>{
  render(<PairCompletion workflow={{...w,allowed_actions:['finalize-decisions'],blockers:[]}} pending={0} attention={0} busy={false} required={vi.fn()} conflicts={vi.fn()} finalize={vi.fn()}/>);
- expect(screen.getByText('Sẵn sàng tạo nhóm')).toBeInTheDocument();
+ expect(screen.getByRole('heading',{name:'Đồng ý gộp → Chờ tạo nhóm'})).toBeInTheDocument();
+ expect(screen.queryByRole('status')).not.toBeInTheDocument();expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+ expect(api.finalizeDecisions).not.toHaveBeenCalled();expect(api.previewClusters).not.toHaveBeenCalled();
 });
 it('displays partial coverage, unresolved counts, and stale readonly publication',()=>{
  render(<GenerationStatus generation={{revision:2,source_decision_revision:1,stale:true,read_only:true,publication_status:'PARTIAL',clusters:2,multi_record_groups:1,singletons:1,covered_records:3,unresolved_records:2,total_records:5}}/>);
- expect(screen.getByText(/3 \/ 5 bản ghi/)).toBeInTheDocument();expect(screen.getByText(/2 bản ghi chưa giải quyết/)).toBeInTheDocument();expect(screen.getByRole('status')).toHaveTextContent('chỉ đọc');
+ expect(screen.getByText(/3 \/ 5 hồ sơ/)).toBeInTheDocument();expect(screen.getByText(/2 hồ sơ chưa giải quyết/)).toBeInTheDocument();expect(screen.getByRole('status')).toHaveTextContent('chỉ đọc');
 });
 it('loads unresolved records only after opening and pages through bounded results',async()=>{
  const generation:ClusterGeneration={revision:2,source_decision_revision:1,stale:true,read_only:true,publication_status:'PARTIAL',clusters:2,multi_record_groups:1,singletons:1,covered_records:3,unresolved_records:50,total_records:53,unresolved_record_ids:['legacy-hidden-id']};
  vi.mocked(api.getUnresolvedRecords).mockImplementation(async(_run,query)=>({items:[{record_id:query?.get('cursor')?'b':'a',source_system:query?.get('cursor')?'BILL':'CRM',raw_fields:{name:query?.get('cursor')?'Second person':'First person'},normalized_fields:{},extra_fields:{}}],total:50,next_cursor:query?.get('cursor')?null:'25',generation}));
  render(host(<><GenerationStatus runId="r" generation={generation}/><PairCompletion workflow={w} pending={0} attention={1} busy={false} required={vi.fn()} conflicts={vi.fn()} finalize={vi.fn()}/></>));
  expect(api.getUnresolvedRecords).not.toHaveBeenCalled();expect(screen.queryByText('legacy-hidden-id')).not.toBeInTheDocument();
- fireEvent.click(screen.getByText('Bản ghi chưa giải quyết'));await screen.findByText('First person');
+ fireEvent.click(screen.getByText('Hồ sơ chưa giải quyết'));await screen.findByText('First person');
  expect(api.getUnresolvedRecords).toHaveBeenCalledWith('r',expect.any(URLSearchParams),expect.any(AbortSignal));expect(vi.mocked(api.getUnresolvedRecords).mock.calls[0][1]?.get('limit')).toBe('25');
  fireEvent.click(screen.getByRole('button',{name:'Trang tiếp'}));await screen.findByText('Second person');expect(vi.mocked(api.getUnresolvedRecords).mock.calls[1][1]?.get('cursor')).toBe('25');
- expect(screen.getByRole('button',{name:'Tạo các nhóm đủ điều kiện'})).toBeDisabled();expect(screen.getByRole('button',{name:'Hoàn tất phân loại và tạo nhóm'})).toBeDisabled();
+ expect(screen.getByRole('link',{name:'Sang Bước 3'})).toHaveAttribute('href','/app/sessions/r/clusters');
+ expect(api.finalizeDecisions).not.toHaveBeenCalled();expect(api.previewClusters).not.toHaveBeenCalled();
 });
-it('explains the approval permission blocker in Vietnamese',()=>{
+it('keeps read-only navigation available without approval permission or mutation controls',()=>{
  render(<PairCompletion workflow={{...w,allowed_actions:[],blockers:[{code:'APPROVE_PERMISSION_REQUIRED'}]}} pending={0} attention={0} busy={false} required={vi.fn()} conflicts={vi.fn()} finalize={vi.fn()}/>);
- expect(screen.getByText(/Tài khoản cần quyền phê duyệt/)).toBeInTheDocument();
+ expect(screen.getByRole('link',{name:'Sang Bước 3'})).toHaveAttribute('href','/app/sessions/r/clusters');
+ expect(screen.queryByRole('button')).not.toBeInTheDocument();expect(api.finalizeDecisions).not.toHaveBeenCalled();expect(api.previewClusters).not.toHaveBeenCalled();
 });
 it('requires amendment reason and preserves provenance failures without retry',async()=>{
  vi.mocked(api.amendPair).mockRejectedValue(new Error('DENY_SOURCE_UNKNOWN'));

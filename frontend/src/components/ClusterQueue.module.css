@@ -1,0 +1,13 @@
+.queue { margin: 0; padding: 20px; }
+.toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.toolbar h3 { display: flex; align-items: center; gap: 12px; margin: 0; font-size: 15px; font-weight: 500; }
+.toolbar strong { padding: 5px 10px; border-radius: 7px; background: var(--bg-subtle, #eff6ff); color: var(--primary, #2563eb); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.actions .primary { background: var(--color-mo-dark, #0e7490); border-color: var(--color-mo-dark, #0e7490); color: #fff; }
+.actions .primary:hover:not(:disabled) { filter: brightness(.94); }
+.queue > p { margin: 14px 0 0; }
+@media (max-width: 540px) {
+  .queue { padding: 16px; }
+  .actions { width: 100%; }
+  .actions button { flex: 1; }
+}

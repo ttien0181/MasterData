@@ -142,7 +142,7 @@ describe("Resolution item flow", () => {
     const dialog = within(dialogNode);
     expect(dialog.getByText(/Tên và thông tin liên hệ giống nhau, nhưng chưa đủ điều kiện gộp tự động/)).toBeInTheDocument();
     expect(within(dialogNode.querySelector(".review-comparison-panel") as HTMLElement).getByText("Điện thoại")).toBeInTheDocument();
-    expect(dialog.queryByText("Bằng chứng theo cặp")).not.toBeInTheDocument();
+    expect(dialog.queryByText("Thông tin đối chiếu theo cặp")).not.toBeInTheDocument();
   });
 
   it("lets a conflicting item enter Merge staging and exposes the split action", async () => {
@@ -178,7 +178,7 @@ describe("Resolution item flow", () => {
     const dialog = await screen.findByRole("dialog", { name: "An Bình" });
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(dialog).toHaveAttribute("aria-modal", "true");
-    expect(screen.getByRole("complementary", { name: "Quyết định review" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Quyết định kiểm tra" })).toBeInTheDocument();
     const close = within(dialog).getAllByRole("button", { name: "Đóng" })[0];
     await waitFor(() => expect(close).toHaveFocus());
     fireEvent.click(close);
@@ -197,11 +197,11 @@ describe("Resolution item flow", () => {
     expect(screen.getByRole("status", { name: "Đang tải danh sách" })).toBeInTheDocument();
     expect(screen.queryByText("An Bình")).not.toBeInTheDocument();
 
-    vi.mocked(getResolutionItems).mockResolvedValueOnce({ total: 1, items: [{ ...reviewItem, id: "new-item", label: "Bản ghi mới" }] });
+    vi.mocked(getResolutionItems).mockResolvedValueOnce({ total: 1, items: [{ ...reviewItem, id: "new-item", label: "Hồ sơ mới" }] });
     rerender(<ResolutionFlow {...props} stage="review" />);
-    expect(await screen.findByText("Bản ghi mới")).toBeInTheDocument();
+    expect(await screen.findByText("Hồ sơ mới")).toBeInTheDocument();
     await act(async () => { resolveOld({ total: 1, items: [{ ...reviewItem, label: "Kết quả cũ" }] }); });
-    expect(screen.getByText("Bản ghi mới")).toBeInTheDocument();
+    expect(screen.getByText("Hồ sơ mới")).toBeInTheDocument();
     expect(screen.queryByText("Kết quả cũ")).not.toBeInTheDocument();
   });
 

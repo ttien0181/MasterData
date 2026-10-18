@@ -50,8 +50,8 @@ def eligibility(pair):
 
 
 def pair_read(pair):
-    from masterone.mdm.review_taxonomy import taxonomy
-    return {**taxonomy(effective_result(pair)), 'pair_id': pair.id, 'baseline': effective_result(pair), 'decision': pair.decision,
+    from masterone.mdm.review_taxonomy import taxonomy, mvp_taxonomy
+    return {**taxonomy(effective_result(pair)), **mvp_taxonomy(effective_result(pair)), 'pair_id': pair.id, 'baseline': effective_result(pair), 'decision': pair.decision,
             'review_reason': pair.review_reason, 'automation': pair.automation,
             'original_baseline': pair.baseline, 'assessment_id': pair.assessment_id,
             'advice': pair.advice, 'revision': pair.revision, 'eligibility': eligibility(pair), 'score_unit': 'p119_rule_v1'}
@@ -61,7 +61,7 @@ def scoped_pairs(db, run_id, filters=None):
     query = db.query(WorkflowPair).filter_by(run_id=run_id)
     filters = filters or {}
     projected = None
-    if filters.get('visibility') == 'review' or filters.get('taxonomy') == 'actions_v1':
+    if filters.get('visibility') == 'review' or filters.get('taxonomy') in ('actions_v1', 'mvp_v1'):
         from sqlalchemy import String, Boolean, column, func, true
         effective = effective_column()
         if db.bind.dialect.name == 'postgresql':
@@ -77,7 +77,7 @@ def scoped_pairs(db, run_id, filters=None):
             query = query.filter(func.coalesce(group, '') != 'BLOCKED',
                                  func.coalesce(decision, '').notin_(('BLOCKED', 'NOT_MERGEABLE', 'NON_MATCH')))
     review_group,review_subgroup=None,None
-    if filters.get('taxonomy') == 'actions_v1':
+    if filters.get('taxonomy') in ('actions_v1', 'mvp_v1'):
         from masterone.mdm.review_taxonomy import taxonomy_columns
         evaluation=effective_column()
         def field(key):
@@ -85,6 +85,10 @@ def scoped_pairs(db, run_id, filters=None):
         disagreement=projected.c.agent_disagreement if projected is not None else evaluation['agent_disagreement'].as_boolean()
         review_group,review_subgroup=taxonomy_columns(field('primary_group'),field('subgroup'),field('decision'),
             field('triage_status'),func.coalesce(field('triage_reason'),field('reason')),disagreement)
+    if filters.get('taxonomy') == 'mvp_v1':
+        from masterone.mdm.review_taxonomy import mvp_columns
+        review_group, review_subgroup = mvp_columns(review_group, review_subgroup)
+        query = query.filter(review_group.notin_(('C', 'BLOCKED')))
     if filters.get('group'):
         group = projected.c.primary_group if projected is not None else effective_column()['primary_group'].as_string()
         if review_group is not None:group=review_group
@@ -172,5 +176,9 @@ def decide_pair(db, run_id, pair_id, request, actor):
     persist_feedback(db, run, pair, op, actor, snapshot, 'HUMAN_DIRECT')
     op.status, op.stage = 'COMPLETED', 'completed'
     op.result = {**pair_read(pair), 'workflow_revision': run.workflow_revision, 'decision_revision': run.decision_revision}
+    if request.decision == 'merge':
+        from masterone.mdm.workflow_cluster_queue import schedule_cluster_refresh
+        schedule_cluster_refresh(db, run, op)
+        op.result = {**op.result, 'workflow_revision': run.workflow_revision}
     db.commit()
     return op.result

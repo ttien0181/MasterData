@@ -9,7 +9,7 @@ it('replaces the candidate counter with measured classification and reserves com
   expect(screen.getByRole('status')).toHaveTextContent('14 cặp');
   expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   view.rerender(<DecisionProgress workflow={{ ...workflow, active_operation: { ...workflow.active_operation!, progress: { candidate_count: 20, classified_count: 10, classification_started: true } } }} />);
-  expect(screen.queryByText('Đang tạo các cặp bản ghi')).not.toBeInTheDocument();
+  expect(screen.queryByText('Đang tạo các cặp hồ sơ')).not.toBeInTheDocument();
   expect(screen.getByRole('progressbar')).toHaveAttribute('value', '50');
   expect(screen.getByRole('status')).toHaveTextContent('10 / 20');
   view.rerender(<DecisionProgress workflow={{...workflow,active_operation:{...workflow.active_operation!,stage:'publish-decisions',progress:{candidate_count:20,classified_count:20,classification_started:true}}}}/>);

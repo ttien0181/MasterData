@@ -28,7 +28,7 @@ export default function ClusterDetailDialog({title,close,busy,dirty,children}:{t
   }else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
  }
  return <dialog ref={dialog} id="cluster-detail" aria-labelledby="cluster-detail-title" className={styles.detailDialog} onKeyDown={trapFocus} onCancel={event=>{event.preventDefault();if(!busy)close();}}>
-  <header className={styles.dialogHeader}><div><h3 id="cluster-detail-title" ref={heading} tabIndex={-1}>{title}</h3><p>{dirty?'Có thay đổi Golden chưa lưu. Bản nháp được giữ khi đóng.':'Đối chiếu thành viên, kiểm tra khác biệt và lựa chọn Golden.'}</p></div><button type="button" aria-label="Đóng chi tiết nhóm" disabled={busy} onClick={close}>Đóng <span aria-hidden="true">×</span></button></header>
+  <header className={styles.dialogHeader}><div><h3 id="cluster-detail-title" ref={heading} tabIndex={-1}>{title}</h3>{dirty&&<p>Có thay đổi thông tin đại diện chưa lưu. Bản nháp được giữ khi đóng.</p>}</div><button type="button" aria-label="Đóng chi tiết nhóm" disabled={busy} onClick={close}>Đóng <span aria-hidden="true">×</span></button></header>
   <div className={styles.dialogBody}>{children}</div>
  </dialog>;
 }

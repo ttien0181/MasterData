@@ -36,11 +36,11 @@ it('preserves typed stale details without replaying a mutation', async () => {
   await expect(decidePair('r', 'p', { request_id: 'one', expected_workflow_revision: 4, expected_pair_revision: 2, decision: 'merge' })).rejects.toMatchObject({ status: 409, detail: { code: 'STALE_REVISION', current: 8 } });
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
-it('has four URL tabs and no provisional cluster gate before publication', () => {
+it('has four URL tabs and allows incremental grouping before golden publication', () => {
   expect(sessionTabs.map(t => t.id)).toEqual(['data', 'decisions', 'clusters', 'golden']);
   expect(sessionPath('r', 'golden')).toBe('/app/sessions/r/golden');
   for (const state of ['DATA_PREPARING', 'DATA_READY', 'DECIDE_RUNNING', 'DECIDE_REVIEW', 'CLUSTER_QUEUED', 'CLUSTER_RUNNING']) {
-    expect(tabReadiness(state, 'clusters').ready).toBe(false);
+    expect(tabReadiness(state, 'clusters').ready).toBe(['DECIDE_REVIEW','CLUSTER_QUEUED','CLUSTER_RUNNING'].includes(state));
     expect(tabReadiness(state, 'golden').ready).toBe(false);
   }
   expect(tabReadiness('GOLDEN_REVIEW', 'clusters').ready).toBe(true);

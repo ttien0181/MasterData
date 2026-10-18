@@ -42,41 +42,41 @@ async function fixture(page:Page,finalized=false,allConfirmed=false){
 }
 const nav=(page:Page)=>page.getByRole('navigation',{name:'Các bước trong phiên'});
 
-test('three Golden pages stay separate and review retains filters, pagination and saved choices',async({page})=>{
+test('three hồ sơ đại diện pages stay separate and review retains filters, pagination and saved choices',async({page})=>{
  const mock=await fixture(page);
  await page.setViewportSize({width:1440,height:1000});
  await page.goto('/app/sessions/r/golden');
  await expect(page.getByRole('heading',{name:'Tổng quan & tiến độ',exact:true})).toBeVisible();
- await expect(page.getByRole('progressbar',{name:'Golden đã xác nhận'})).toHaveAttribute('value','4');
+ await expect(page.getByRole('progressbar',{name:'hồ sơ đại diện đã xác nhận'})).toHaveAttribute('value','4');
  await expect(page.getByRole('table')).toHaveCount(0);
  await page.screenshot({path:path.resolve('../artifacts/golden-pages-20261017/overview.png'),fullPage:true});
  await page.getByRole('link',{name:'Tiếp tục duyệt →'}).click();
  await expect(page).toHaveURL(/\/golden\/records\?status=review$/);
- await expect(page.getByRole('table',{name:'Danh sách Golden'})).toBeVisible();
+ await expect(page.getByRole('table',{name:'Danh sách hồ sơ đại diện'})).toBeVisible();
  await expect(page.getByRole('button',{name:'Cần kiểm tra (28)'})).toHaveAttribute('aria-pressed','true');
- const pager=page.getByRole('navigation',{name:'Phân trang Golden'});
+ const pager=page.getByRole('navigation',{name:'Phân trang hồ sơ đại diện'});
  await pager.getByRole('button',{name:'Trang tiếp'}).click();
  await expect(page.getByRole('button',{name:'Xem và duyệt Nguyễn An 30'})).toBeVisible();
  await nav(page).getByRole('link',{name:'Tổng quan & tiến độ',exact:true}).click();
- await nav(page).getByRole('link',{name:'Duyệt Golden',exact:true}).click();
+ await nav(page).getByRole('link',{name:'Duyệt hồ sơ đại diện',exact:true}).click();
  await expect(page.getByText('Trang 2',{exact:true})).toBeVisible();
  await pager.getByRole('button',{name:'Trang trước'}).click();
  await page.getByRole('button',{name:'Xem và duyệt Nguyễn An 5',exact:true}).click();
  const popup=page.getByRole('dialog');
  await expect(popup.getByRole('table',{name:'Đối chiếu thành viên nhóm'})).toBeVisible();
  await popup.locator('summary').filter({hasText:'Họ tên'}).click();
- await popup.getByRole('textbox',{name:'Chỉnh tay name'}).fill('Tên đã chọn');
- await popup.getByRole('button',{name:'Lưu lựa chọn Golden'}).click();
- await expect(popup.getByRole('button',{name:'Xác nhận Golden',exact:true})).toBeEnabled();
- await popup.getByRole('button',{name:'Xác nhận Golden',exact:true}).click();
- await expect(popup.getByText('Golden đã xác nhận',{exact:true})).toBeVisible();
+ await popup.getByRole('textbox',{name:'Nhập trực tiếp name'}).fill('Tên đã chọn');
+ await popup.getByRole('button',{name:'Lưu lựa chọn hồ sơ đại diện'}).click();
+ await expect(popup.getByRole('button',{name:'Xác nhận hồ sơ đại diện',exact:true})).toBeEnabled();
+ await popup.getByRole('button',{name:'Xác nhận hồ sơ đại diện',exact:true}).click();
+ await expect(popup.getByText('hồ sơ đại diện đã xác nhận',{exact:true})).toBeVisible();
  await page.screenshot({path:path.resolve('../artifacts/golden-pages-20261017/review-popup.png')});
  await popup.getByRole('button',{name:'Nhóm tiếp theo →'}).click();
- await expect(page.getByRole('dialog',{name:'Duyệt Golden · Nguyễn An 6'})).toBeVisible();
+ await expect(page.getByRole('dialog',{name:'Duyệt hồ sơ đại diện · Nguyễn An 6'})).toBeVisible();
  await page.getByRole('button',{name:'Đóng chi tiết nhóm'}).click();
- await page.getByRole('searchbox',{name:'Tìm Golden'}).fill('c30');
+ await page.getByRole('searchbox',{name:'Tìm hồ sơ đại diện'}).fill('c30');
  await page.getByRole('button',{name:'Tìm',exact:true}).click();
- await expect(page.getByRole('table',{name:'Danh sách Golden'}).getByRole('row')).toHaveCount(2);
+ await expect(page.getByRole('table',{name:'Danh sách hồ sơ đại diện'}).getByRole('row')).toHaveCount(2);
  await page.screenshot({path:path.resolve('../artifacts/golden-pages-20261017/review.png'),fullPage:true});
  expect(mock.writes.filter(w=>w.path.endsWith('/golden'))).toHaveLength(1);
  expect(mock.writes.filter(w=>w.path.endsWith('/confirm'))).toHaveLength(1);
@@ -88,7 +88,7 @@ test('finalized is distinct from export success, retry is idempotent and only co
  await page.setViewportSize({width:1440,height:1000});
  await page.goto('/app/sessions/r/golden/export');
  await expect(page.locator('#golden-export').getByText('Phiên đã chốt',{exact:true})).toBeVisible();
- await expect(page.getByText('Chưa có file CSV được lưu thành công.')).toBeVisible();
+ await expect(page.getByText('Chưa có tệp CSV được lưu thành công.')).toBeVisible();
  await expect(page.getByRole('button',{name:'Tải CSV',exact:true})).toHaveCount(0);
  await page.getByRole('button',{name:'Xem trước CSV'}).click();
  await page.getByRole('button',{name:'Xuất CSV',exact:true}).click();
@@ -107,13 +107,13 @@ test('finalized is distinct from export success, retry is idempotent and only co
  expect(mock.errors).toEqual([]);
 });
 
-test('read-only Golden popup contains keyboard focus on compact fields and fits a phone screen',async({page})=>{
+test('read-only hồ sơ đại diện popup contains keyboard focus on compact fields and fits a phone screen',async({page})=>{
  const mock=await fixture(page,true);
  await page.setViewportSize({width:390,height:844});
  await page.goto('/app/sessions/r/golden/records?status=all&cluster=c32');
  const popup=page.getByRole('dialog');
  await expect(popup).toBeVisible();
- await expect(popup.getByRole('button',{name:'Xác nhận Golden',exact:true})).toBeDisabled();
+ await expect(popup.getByRole('button',{name:'Xác nhận hồ sơ đại diện',exact:true})).toBeDisabled();
  for(let i=0;i<20;i++){
   await page.keyboard.press('Tab');
   expect(await popup.evaluate(dialog=>dialog.contains(document.activeElement))).toBe(true);
@@ -137,28 +137,28 @@ test('ready data can be finalized explicitly before CSV export is enabled',async
  expect(mock.errors).toEqual([]);
 });
 
-test('cache audit: three Golden pages and popup reuse reads after three minutes while export history refreshes',async({page})=>{
+test('cache audit: three hồ sơ đại diện pages and popup reuse reads after three minutes while export history refreshes',async({page})=>{
  await page.clock.install();
  const mock=await fixture(page);
  const reads:string[]=[];
  page.on('request',request=>{if(request.method()==='GET'&&/\/workflow\/golden\/index|\/exports$|\/clusters\//.test(request.url()))reads.push(request.url());});
  await page.goto('/app/sessions/r/golden');
  await page.evaluate(()=>{(window as unknown as Record<string,string>).__cacheAuditDocument='same-document';});
- await expect(page.getByRole('progressbar',{name:'Golden đã xác nhận'})).toBeVisible();
- await nav(page).getByRole('link',{name:'Duyệt Golden',exact:true}).click();
- await page.getByRole('searchbox',{name:'Tìm Golden'}).fill('c30');
+ await expect(page.getByRole('progressbar',{name:'hồ sơ đại diện đã xác nhận'})).toBeVisible();
+ await nav(page).getByRole('link',{name:'Duyệt hồ sơ đại diện',exact:true}).click();
+ await page.getByRole('searchbox',{name:'Tìm hồ sơ đại diện'}).fill('c30');
  await page.getByRole('button',{name:'Tìm',exact:true}).click();
  await page.getByRole('button',{name:'Xem và duyệt Nguyễn An 30',exact:true}).click();
  await expect(page.getByRole('dialog').getByRole('table',{name:'Đối chiếu thành viên nhóm'})).toBeVisible();
  await page.getByRole('dialog').getByRole('checkbox',{name:'Chỉ hiện trường khác nhau'}).check();
  await page.getByRole('button',{name:'Đóng chi tiết nhóm'}).click();
  await nav(page).getByRole('link',{name:'Chốt & xuất dữ liệu',exact:true}).click();
- await expect(page.getByText('Chưa có file CSV được lưu thành công.')).toBeVisible();
+ await expect(page.getByText('Chưa có tệp CSV được lưu thành công.')).toBeVisible();
  await nav(page).getByRole('link',{name:'Tổng quan & tiến độ',exact:true}).click();
  const before=[...reads];
  await page.clock.fastForward(180000);
- await nav(page).getByRole('link',{name:'Duyệt Golden',exact:true}).click();
- await expect(page.getByRole('searchbox',{name:'Tìm Golden'})).toHaveValue('c30');
+ await nav(page).getByRole('link',{name:'Duyệt hồ sơ đại diện',exact:true}).click();
+ await expect(page.getByRole('searchbox',{name:'Tìm hồ sơ đại diện'})).toHaveValue('c30');
  await page.getByRole('button',{name:'Xem và duyệt Nguyễn An 30',exact:true}).click();
  await expect(page.getByRole('dialog').getByRole('table',{name:'Đối chiếu thành viên nhóm'})).toBeVisible();
  const popupDiffFilterPreserved=await page.getByRole('dialog').getByRole('checkbox',{name:'Chỉ hiện trường khác nhau'}).isChecked();

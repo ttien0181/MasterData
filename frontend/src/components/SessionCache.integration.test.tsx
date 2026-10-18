@@ -18,7 +18,7 @@ vi.mock('next/navigation', () => {
 vi.mock('@/lib/api', async orig => ({ ...await orig<typeof import('@/lib/api')>(),
   getMe: vi.fn().mockResolvedValue({ id: 'owner', email: 'owner@example.test', csrf_token: 'test', role: 'STEWARD', capabilities: ['read'] }), logout: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('@/lib/workflowApi', async orig => ({ ...await orig<typeof api>(), getWorkflow: vi.fn(), getData: vi.fn(), getPairSummary: vi.fn().mockResolvedValue({total:2,needs_review:2,accepted:0,denied:0,kept_separate:0,deferred:0,blocked:0,manual_available:2,auto_available:0,groups:[]}), getPairs: vi.fn(), getClusters: vi.fn(), getCluster: vi.fn(), getClusterGolden: vi.fn(), getGoldenRecords: vi.fn(), getGoldenResolution: vi.fn(), saveGolden: vi.fn() }));
+vi.mock('@/lib/workflowApi', async orig => ({ ...await orig<typeof api>(), getWorkflow: vi.fn(), getData: vi.fn(), getPairSummary: vi.fn().mockResolvedValue({total:2,needs_review:2,accepted:0,denied:0,kept_separate:0,deferred:0,blocked:0,manual_available:2,auto_available:0,groups:[{key:'B_CONFLICT',total:2,subgroups:[]}]}), getPairs: vi.fn(), getClusters: vi.fn(), getCluster: vi.fn(), getClusterGolden: vi.fn(), getGoldenRecords: vi.fn(), getGoldenResolution: vi.fn(), saveGolden: vi.fn() }));
 let workflow: WorkflowRead;
 let golden: GoldenRead;
 const data = (offset: number): DataRead => ({ files: [], schema: ['name'], profile: { record_count: 12, unit: 'records', source_counts: { CRM: 12 }, quality_flags: {}, field_quality: {} }, samples: { total: 12, offset, next_cursor: offset ? null : 'next', items: Array.from({ length: offset ? 2 : 10 }, (_, index) => ({ record_id: `r${index+offset}`, external_id: `${index+offset}`, source_system: 'CRM', raw_fields: { name: `Raw ${index+offset}` }, normalized_fields: { name: `Normalized ${index+offset}` }, quality_flags: [], extra_fields: {} })) } });
@@ -43,63 +43,60 @@ function Tabs() {
   return <><Refresh /><div>{['data', 'decisions', 'clusters', 'golden'].map(name => <button key={name} onClick={() => setTab(name)}>Tab {name}</button>)}</div>{tab === 'data' ? <DataOverview /> : tab === 'decisions' ? <DecisionWorkspace /> : tab === 'clusters' ? <ClusterWorkspace initialClusterId="c" /> : <GoldenRecords />}</>;
 }
 function show() { return render(<AppSession><SessionWorkspace runId="r"><Tabs /></SessionWorkspace></AppSession>); }
-it('returns to the loaded data page and normalized view without fetching that page again', async () => {
+it('returns to the loaded customer page without fetching that page again', async () => {
   show(); await screen.findByText('Raw 0', { selector: 'td' });
   fireEvent.click(screen.getByRole('button', { name: 'Trang sau' }));
   await screen.findByText('Raw 10', { selector: 'td' });
-  fireEvent.click(screen.getByRole('button', { name: 'Chuẩn hóa' }));
-  const detail = screen.getAllByText('Chi tiết', { selector: 'summary' })[0].parentElement as HTMLDetailsElement;
-  detail.open = true;
-  fireEvent(detail, new Event('toggle'));
   fireEvent.click(screen.getByRole('button', { name: 'Tab decisions' }));
   await screen.findByRole('checkbox', { name: 'Chọn cặp p1' });
   fireEvent.click(screen.getByRole('button', { name: 'Tab data' }));
-  expect(screen.getByText('Normalized 10', { selector: 'td' })).toBeInTheDocument();
+  expect(screen.getByText('Raw 10', { selector: 'td' })).toBeInTheDocument();
   expect(screen.getByText('Trang 2 / 2')).toBeInTheDocument();
-  expect(api.getData).toHaveBeenCalledTimes(2);
-  await waitFor(() => expect((screen.getAllByText('Chi tiết', { selector: 'summary' })[0].parentElement as HTMLDetailsElement).open).toBe(true));
+  expect(api.getData).toHaveBeenCalledTimes(3);
 });
 it('restores pair filters, pagination and page selection when returning from another tab', async () => {
   show(); await screen.findByText('Raw 0', { selector: 'td' });
   fireEvent.click(screen.getByRole('button', { name: 'Tab decisions' }));
   await screen.findByRole('checkbox', { name: 'Chọn cặp p1' });
-  fireEvent.change(screen.getByRole('combobox', { name: 'Group' }), { target: { value: 'D' } });
+  fireEvent.click(screen.getByRole('button',{name:/Có thông tin mâu thuẫn/}));
+  await waitFor(()=>expect(api.getPairs).toHaveBeenCalledWith('r',expect.any(URLSearchParams),expect.any(AbortSignal)));
   fireEvent.click(await screen.findByRole('button', { name: 'Trang tiếp' }));
   const pair = await screen.findByRole('checkbox', { name: 'Chọn cặp p2' });
   fireEvent.click(pair);
   fireEvent.click(screen.getByRole('button', { name: 'Tab data' }));
   fireEvent.click(screen.getByRole('button', { name: 'Tab decisions' }));
-  expect(screen.getByRole('combobox', { name: 'Group' })).toHaveValue('D');
+  expect(screen.getByRole('button',{name:/Có thông tin mâu thuẫn/})).toHaveAttribute('aria-pressed','true');
   expect(screen.getByRole('checkbox', { name: 'Chọn cặp p2' })).toBeChecked();
   expect(api.getPairs).toHaveBeenCalledTimes(3);
 });
-it('retains Golden draft and original revision across tabs and rejects saving after server revision changes', async () => {
+it('retains hồ sơ đại diện draft and original revision across tabs and rejects saving after hệ thống revision changes', async () => {
   show(); await screen.findByText('Raw 0', { selector: 'td' });
   fireEvent.click(screen.getByRole('button', { name: 'Tab clusters' }));
-  const name = await screen.findByRole('textbox', { name: 'Chỉnh tay name' });
+  fireEvent.click(await screen.findByLabelText('Nhập giá trị khác Họ tên'));
+  const name = await screen.findByRole('textbox', { name: 'Nhập trực tiếp name' });
   fireEvent.change(name, { target: { value: 'My unsaved choice' } });
   fireEvent.click(screen.getByRole('button', { name: 'Tab golden' }));
   await screen.findByText('Original', { selector: 'strong' });
   fireEvent.click(screen.getByRole('button', { name: 'Tab clusters' }));
-  expect(screen.getByRole('textbox', { name: 'Chỉnh tay name' })).toHaveValue('My unsaved choice');
+  expect(screen.getByRole('textbox', { name: 'Nhập trực tiếp name' })).toHaveValue('My unsaved choice');
   expect(api.getClusterGolden).toHaveBeenCalledTimes(1);
   workflow = { ...workflow, workflow_revision: 4, golden_revision: 2 };
   golden = { ...golden, golden_revision: 2, revision: 2 };
-  fireEvent.click(screen.getByRole('button', { name: 'Đọc lại từ server' }));
-  await screen.findByText(/Server đã có revision mới/);
-  expect(screen.getByRole('textbox', { name: 'Chỉnh tay name' })).toHaveValue('My unsaved choice');
-  expect(screen.getByRole('button', { name: 'Lưu lựa chọn Golden' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Tải lại dữ liệu' }));
+  await screen.findByText(/Dữ liệu đã thay đổi/);
+  expect(screen.getByRole('textbox', { name: 'Nhập trực tiếp name' })).toHaveValue('My unsaved choice');
+  expect(screen.getByRole('button', { name: 'Lưu thông tin đại diện' })).toBeDisabled();
 });
-it('retains the Golden records page without another read on returning to that tab', async () => {
-  vi.mocked(api.getGoldenRecords).mockImplementation(async (_run, params) => ({ items: [{ ...golden, cluster_id: params?.get('cursor') ? 'c2' : 'c', fields: { name: { value: params?.get('cursor') ? 'Second Golden' : 'First Golden' } } }], total: 2, next_cursor: params?.get('cursor') ? null : 'next' }));
+it('retains the Hồ sơ đại diệns page without another read on returning to that tab', async () => {
+  vi.mocked(api.getGoldenRecords).mockImplementation(async (_run, params) => ({ items: [{ ...golden, cluster_id: params?.get('cursor') ? 'c2' : 'c', fields: { name: { value: params?.get('cursor') ? 'Second hồ sơ đại diện' : 'First hồ sơ đại diện' } } }], total: 2, next_cursor: params?.get('cursor') ? null : 'next' }));
   show(); await screen.findByText('Raw 0', { selector: 'td' });
   fireEvent.click(screen.getByRole('button', { name: 'Tab golden' }));
-  await screen.findByText('First Golden', { selector: 'strong' });
+  await screen.findByText('First hồ sơ đại diện', { selector: 'strong' });
   fireEvent.click(screen.getByRole('button', { name: 'Trang tiếp' }));
-  await screen.findByText('Second Golden', { selector: 'strong' });
+  await screen.findByText('Second hồ sơ đại diện', { selector: 'strong' });
   fireEvent.click(screen.getByRole('button', { name: 'Tab data' }));
   fireEvent.click(screen.getByRole('button', { name: 'Tab golden' }));
-  expect(screen.getByText('Second Golden', { selector: 'strong' })).toBeInTheDocument();
+  expect(screen.getByText('Second hồ sơ đại diện', { selector: 'strong' })).toBeInTheDocument();
   expect(api.getGoldenRecords).toHaveBeenCalledTimes(2);
 });
 it('does not share raw records or UI state across runs or authenticated users', async () => {
@@ -111,17 +108,16 @@ it('does not share raw records or UI state across runs or authenticated users', 
   const host = (user: string, run: string) => <SessionCacheProvider userId={user}><SessionWorkspace key={run} runId={run}><DataOverview /></SessionWorkspace></SessionCacheProvider>;
   const view = render(host('u1', 'a'));
   await screen.findAllByText('Raw a', { selector: 'td' });
-  fireEvent.click(screen.getByRole('button', { name: 'Chuẩn hóa' }));
   view.rerender(host('u1', 'b'));
   await screen.findAllByText('Raw b', { selector: 'td' });
-  expect(screen.queryByText('Normalized a', { selector: 'td' })).toBeNull();
+  expect(screen.queryByText('Raw a', { selector: 'td' })).toBeNull();
   view.rerender(host('u1', 'a'));
-  expect(screen.getAllByText('Normalized a', { selector: 'td' })).toHaveLength(10);
-  expect(api.getData).toHaveBeenCalledTimes(2);
+  expect(screen.getAllByText('Raw a', { selector: 'td' })).toHaveLength(10);
+  expect(api.getData).toHaveBeenCalledTimes(4);
   view.rerender(host('u2', 'a'));
-  expect(screen.queryByText('Normalized a', { selector: 'td' })).toBeNull();
+  expect(screen.queryByText('Raw a', { selector: 'td' })).toBeNull();
   await screen.findAllByText('Raw a', { selector: 'td' });
-  expect(api.getData).toHaveBeenCalledTimes(3);
+  expect(api.getData).toHaveBeenCalledTimes(6);
 });
 it('uses the new decision revision without evicting prepared input data', async () => {
   show(); await screen.findByText('Raw 0', { selector: 'td' });
@@ -134,7 +130,7 @@ it('uses the new decision revision without evicting prepared input data', async 
   await screen.findByText('Giữ riêng liên kết');
   fireEvent.click(screen.getByRole('button', { name: 'Tab data' }));
   expect(screen.getByText('Raw 0', { selector: 'td' })).toBeInTheDocument();
-  expect(api.getData).toHaveBeenCalledTimes(1);
+  expect(api.getData).toHaveBeenCalledTimes(2);
 });
 it('hides and evicts cached records on loss of read access and fetches again after access is restored', async () => {
   show(); await screen.findByText('Raw 0', { selector: 'td' });
@@ -144,7 +140,7 @@ it('hides and evicts cached records on loss of read access and fetches again aft
   expect(screen.queryByText('Raw 0', { selector: 'td' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Thử lại' }));
   await screen.findByText('Raw 0', { selector: 'td' });
-  expect(api.getData).toHaveBeenCalledTimes(2);
+  expect(api.getData).toHaveBeenCalledTimes(4);
 });
 it('shows a failed pair page read while retaining the last loaded rows and offers retry', async () => {
   show(); await screen.findByText('Raw 0', { selector: 'td' });
@@ -154,31 +150,35 @@ it('shows a failed pair page read while retaining the last loaded rows and offer
   fireEvent.click(screen.getByRole('button', { name: 'Trang tiếp' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Page unavailable');
   expect(screen.getByRole('checkbox', { name: 'Chọn cặp p1' })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Thử đọc lại' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Tải lại' }));
   await screen.findByRole('checkbox', { name: 'Chọn cặp p2' });
 });
 it('clears visible cached data and unsaved drafts when a mutation reports an expired login', async () => {
   show(); await screen.findByText('Raw 0', { selector: 'td' });
   fireEvent.click(screen.getByRole('button', { name: 'Tab clusters' }));
-  const name = await screen.findByRole('textbox', { name: 'Chỉnh tay name' });
+  fireEvent.click(await screen.findByLabelText('Nhập giá trị khác Họ tên'));
+  const name = await screen.findByRole('textbox', { name: 'Nhập trực tiếp name' });
   fireEvent.change(name, { target: { value: 'Private draft' } });
   vi.mocked(api.saveGolden).mockRejectedValue(new ApiError('Expired', 401));
-  fireEvent.click(screen.getByRole('button', { name: 'Lưu lựa chọn Golden' }));
-  await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Chỉnh tay name' })).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'Lưu thông tin đại diện' }));
+  await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Nhập trực tiếp name' })).toBeNull());
   expect(screen.queryByText('Original', { selector: 'strong' })).toBeNull();
 });
-it('captures detail state when a pending cluster tab becomes ready without being remounted', async () => {
+it('captures detail state after opening the newly published generation without remounting the tab', async () => {
   workflow = { ...workflow, workflow_state: 'DECIDE_REVIEW', cluster_revision: 0, golden_revision: 0 };
   show(); await screen.findByText('Raw 0', { selector: 'td' });
   fireEvent.click(screen.getByRole('button', { name: 'Tab clusters' }));
-  await screen.findByText(/Chưa có nhóm chính thức/);
+  await screen.findByText(/Chưa có nhóm hồ sơ/);
   workflow = { ...workflow, workflow_state: 'GOLDEN_REVIEW', workflow_revision: 4, cluster_revision: 1, golden_revision: 1 };
   fireEvent.click(screen.getByRole('button', { name: 'Refresh workflow' }));
-  const context = (await screen.findByText('Ngữ cảnh / semantic annotations', { selector: 'summary' })).parentElement as HTMLDetailsElement;
+  const open=await screen.findByRole('button',{name:'Đối chiếu nhóm c'});
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(open);
+  const context = (await screen.findByText('Thông tin đối chiếu bổ sung', { selector: 'summary' })).parentElement as HTMLDetailsElement;
   context.open = true;
   fireEvent(context, new Event('toggle'));
   fireEvent.click(screen.getByRole('button', { name: 'Tab golden' }));
   await screen.findByText('Original', { selector: 'strong' });
   fireEvent.click(screen.getByRole('button', { name: 'Tab clusters' }));
-  expect((screen.getByText('Ngữ cảnh / semantic annotations', { selector: 'summary' }).parentElement as HTMLDetailsElement).open).toBe(true);
+  expect((screen.getByText('Thông tin đối chiếu bổ sung', { selector: 'summary' }).parentElement as HTMLDetailsElement).open).toBe(true);
 });

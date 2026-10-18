@@ -1305,3 +1305,5 @@ td.record-card .data-row em {
 .auth-error { margin: 6px 0 0; color: var(--red); font-size: 12px; }
 .auth-switch { margin: 24px 0 0; text-align: center; font-size: 12px; color: var(--ink-3); }
 .auth-switch a { color: var(--primary); font-weight: 700; }
+
+.auth-demo-button{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:14px 18px;border:1px solid #08a0ba;border-radius:10px;color:#fff;background:linear-gradient(115deg,#087d9b,#0aa6ba);font-size:15px;font-weight:750;box-shadow:0 5px 16px #0891b226;cursor:pointer}.auth-demo-button:disabled{opacity:.55;cursor:wait}.auth-demo-note{font-size:12px;line-height:1.6;color:var(--ink-3,#64748b);margin:9px 0 18px;text-align:center}

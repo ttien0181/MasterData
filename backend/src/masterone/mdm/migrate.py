@@ -8,7 +8,7 @@ from alembic.config import Config
 
 from masterone.config import get_settings
 
-HEAD = "0034_pair_endpoint_index"
+HEAD = "0039_optional_embedding"
 
 
 def alembic_config(url: str, config_path: str | Path | None = None) -> Config:

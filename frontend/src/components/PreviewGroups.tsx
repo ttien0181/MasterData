@@ -5,7 +5,7 @@ import {getPreviewGroups,getReviewGroupMembers} from '@/lib/workflowApi';
 import GroupMembersTable from './GroupMembersTable';
 import styles from './DecisionWorkspace.module.css';
 
-const statuses:Record<string,string>={AUTO_READY:'Đủ điều kiện',REVIEW_APPROVED:'Đã duyệt',SINGLETON:'Bản ghi riêng',DRAFT:'Dự kiến'};
+const statuses:Record<string,string>={AUTO_READY:'Đủ điều kiện',REVIEW_APPROVED:'Đã duyệt',SINGLETON:'Hồ sơ riêng',DRAFT:'Dự kiến'};
 export default function PreviewGroups({runId,operationId,result,stale}:{runId:string;operationId:string;result:ClusterPreview;stale:boolean}) {
  const [groups,setGroups]=useState(result.groups),[next,setNext]=useState(result.groups_next_cursor??null);
  const [history,setHistory]=useState<string[]>([]),[cursor,setCursor]=useState('0'),[busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -20,7 +20,7 @@ export default function PreviewGroups({runId,operationId,result,stale}:{runId:st
  }
  return <>
   <p>Hiển thị {groups.length} / {result.publication.clusters} nhóm dự kiến.{cursor!=='0'&&` Từ nhóm thứ ${Number(cursor)+1}.`}</p>
-  <div className={styles.tableScroll}><table aria-label="Nhóm dự kiến"><thead><tr><th>Nhóm / thành viên</th><th>Loại nhóm</th><th>Trạng thái</th><th>Đối chiếu</th></tr></thead><tbody>{groups.map((group,index)=><tr key={group.id??index}><td>{group.display_name||group.member_record_ids.join(' / ')}{group.preview_members&&<small>{group.preview_members.map(m=>`${m.source_system} · ${m.external_id||m.record_id}`).join(' / ')}</small>}</td><td>{group.singleton?'Singleton':'Nhiều bản ghi'} · {group.member_count??group.member_record_ids.length} bản ghi</td><td>{statuses[group.status]||group.status}</td><td>{group.preview_members&&<button aria-label={`Đối chiếu nhóm ${group.display_name}`} onClick={()=>setSelected(group)}>Xem thành viên &amp; Golden</button>}</td></tr>)}</tbody></table></div>
+  <div className={styles.tableScroll}><table aria-label="Nhóm dự kiến"><thead><tr><th>Nhóm / thành viên</th><th>Loại nhóm</th><th>Trạng thái</th><th>Đối chiếu</th></tr></thead><tbody>{groups.map((group,index)=><tr key={group.id??index}><td>{group.display_name||group.member_record_ids.join(' / ')}{group.preview_members&&<small>{group.preview_members.map(m=>`${m.source_system} · ${m.external_id||m.record_id}`).join(' / ')}</small>}</td><td>{group.singleton?'Singleton':'Nhiều hồ sơ'} · {group.member_count??group.member_record_ids.length} hồ sơ</td><td>{statuses[group.status]||group.status}</td><td>{group.preview_members&&<button aria-label={`Đối chiếu nhóm ${group.display_name}`} onClick={()=>setSelected(group)}>Xem thành viên &amp; hồ sơ đại diện</button>}</td></tr>)}</tbody></table></div>
   {!groups.length&&<p>{result.publication.clusters?'Không có nhóm trong trang này.':'Chưa có nhóm đủ điều kiện.'}</p>}
   {(next||history.length>0)&&<nav aria-label="Trang nhóm dự kiến"><button disabled={busy||!history.length} onClick={()=>void page(history[history.length-1],true)}>Trang nhóm trước</button><button disabled={busy||!next} onClick={()=>{if(next)void page(next);}}>Trang nhóm tiếp</button></nav>}
   {busy&&<p role="status">Đang đọc trang nhóm…</p>}{error&&<p role="alert">{error}</p>}

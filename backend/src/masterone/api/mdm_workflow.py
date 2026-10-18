@@ -173,7 +173,7 @@ def read_pairs(run_id: str, limit: int = Query(10, ge=1, le=100), cursor: str | 
                offset: int | None = Query(None, ge=0),
                group: str | None = None, subgroup: str | None = None, resolution: str | None = None,
                visibility: Literal['review'] | None = None,
-               taxonomy: Literal['actions_v1'] | None = None,
+               taxonomy: Literal['actions_v1', 'mvp_v1'] | None = None,
                db: Session = Depends(get_session), auth: CurrentSession = Depends(require_capability('read'))):
     run = owned_run(db, run_id, auth.user.id)
     from masterone.mdm.pair_read_cache import cached_read
@@ -184,7 +184,7 @@ def read_pairs(run_id: str, limit: int = Query(10, ge=1, le=100), cursor: str | 
 
 
 @router.get('/pairs/summary')
-def read_pair_summary(run_id: str, visibility: Literal['review'] | None = None, taxonomy: Literal['actions_v1'] | None = None, db: Session = Depends(get_session),
+def read_pair_summary(run_id: str, visibility: Literal['review'] | None = None, taxonomy: Literal['actions_v1', 'mvp_v1'] | None = None, db: Session = Depends(get_session),
                       auth: CurrentSession = Depends(require_capability('read'))):
     run = owned_run(db, run_id, auth.user.id)
     from masterone.mdm.pair_read_cache import cached_read
@@ -429,6 +429,16 @@ def explain(run_id: str, pair_id: str, body: Mutation, db: Session = Depends(get
     return explain_pair(db, run_id, pair_id, body, auth.user.id)
 
 
+@router.post('/pairs/{pair_id}/explanation/stream')
+def explain_stream(run_id: str, pair_id: str, body: Mutation, db: Session = Depends(get_session),
+                   auth: CurrentSession = Depends(require_mutation_capability('explain'))):
+    from fastapi.responses import StreamingResponse
+    from masterone.mdm.workflow_explanation_stream import prepare_stream
+    events = prepare_stream(db, run_id, pair_id, body, auth.user.id)
+    return StreamingResponse(events, media_type='text/event-stream',
+                             headers={'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no'})
+
+
 @router.post('/golden/resolve', response_model=OperationRead, status_code=202)
 def resolve(run_id: str, body: ResolveRequest, db: Session = Depends(get_session),
             auth: CurrentSession = Depends(require_mutation_capability('edit_golden'))):
@@ -498,3 +508,22 @@ def reopen_decisions(run_id: str, body: ReopenRequest, db: Session = Depends(get
                      auth: CurrentSession = Depends(require_mutation_capability('approve_pair'))):
     from masterone.mdm.golden_service import reopen_decisions as reopen
     return reopen(db, run_id, body, auth.user.id)
+
+
+@router.post('/golden/export')
+def export_golden_selection(run_id: str, body: ClusterScopeRequest, db: Session = Depends(get_session),
+                            auth: CurrentSession = Depends(require_mutation_capability('export_data'))):
+    from fastapi.responses import StreamingResponse
+    from masterone.mdm.workflow_golden_export import prepare_golden_csv
+    snapshot, count = prepare_golden_csv(db, run_id, auth.user.id, body)
+
+    def chunks():
+        try:
+            while data := snapshot.read(64 * 1024):
+                yield data
+        finally:
+            snapshot.close()
+
+    return StreamingResponse(chunks(), media_type='text/csv; charset=utf-8', headers={
+        'Content-Disposition': 'attachment; filename="golden-records.csv"',
+        'Cache-Control': 'no-store', 'X-Row-Count': str(count)})

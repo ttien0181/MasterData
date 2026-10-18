@@ -58,7 +58,7 @@ def review_blocking_operation(db, run_id):
 
 def retryable_operation(db, run, latest=_UNSET):
     if latest is _UNSET:
-        latest = db.query(WorkflowOperation).filter(WorkflowOperation.run_id == run.id,
+        latest = db.query(WorkflowOperation).filter(WorkflowOperation.run_id == run.id, WorkflowOperation.status != 'WAITING',
         WorkflowOperation.operation_type.in_(('PREPARE', 'DECIDE', 'BULK_DECISIONS', 'CLUSTER', 'CLUSTER_PREVIEW', 'GOLDEN_RESOLVE', 'ASSESS_PAIRS', 'REBUILD_CANDIDATES', 'PAIR_ADVICE', 'GROUP_ANNOTATIONS', 'AUTOMATION_SHADOW', 'AUTOMATION_APPLY', 'FINALIZE_GOLDEN'))
         ).order_by(WorkflowOperation.created_at.desc(), WorkflowOperation.id.desc()).first()
     states = {'PREPARE': ('DATA_PREPARING',), 'DECIDE': ('DECIDE_RUNNING',),
@@ -114,6 +114,13 @@ def audit(db, run, actor, action, details):
 def new_operation(db, run, kind, request_id, payload, actor):
     from masterone.mdm.matching_foundation_service import pin_operation_binding
     pinned_payload = pin_operation_binding(db, run, payload)
+    if kind == 'ASSESS_PAIRS':
+        from masterone.mdm.workflow_assessment_reads import active_assessment
+        assessment = active_assessment(db, run.id)
+        if assessment and assessment.configuration.get('mvp_step2'):
+            pinned_payload = {**pinned_payload, 'mvp_step2': True,
+                'mvp_contract_version': assessment.configuration['mvp_contract_version'],
+                'mvp_coordinator': assessment.configuration['coordinator']}
     op = WorkflowOperation(id=str(uuid4()), run_id=run.id, request_id=request_id,
         operation_type=kind, payload_hash=digest(payload), payload=pinned_payload, actor_user_id=actor)
     db.add(op)
@@ -218,7 +225,7 @@ def get_workflow(db, run_id, actor, *, cache_reads=False):
             func.count(WorkflowPair.id).filter(baseline == 'INSUFFICIENT_EVIDENCE')).one())
     conflicts = db.query(func.count(WorkflowConflict.id)).filter_by(run_id=run_id, resolved=False).scalar()
     latest_row = aliased(WorkflowOperation)
-    latest_id = select(latest_row.id).where(latest_row.run_id == run_id,
+    latest_id = select(latest_row.id).where(latest_row.run_id == run_id, latest_row.status != 'WAITING',
         latest_row.operation_type.in_(('PREPARE', 'DECIDE', 'BULK_DECISIONS', 'CLUSTER', 'CLUSTER_PREVIEW', 'GOLDEN_RESOLVE', 'ASSESS_PAIRS', 'REBUILD_CANDIDATES', 'PAIR_ADVICE', 'GROUP_ANNOTATIONS', 'AUTOMATION_SHADOW', 'AUTOMATION_APPLY', 'FINALIZE_GOLDEN'))
         ).order_by(latest_row.created_at.desc(), latest_row.id.desc()).limit(1).scalar_subquery()
     cluster_id = select(latest_row.id).where(latest_row.run_id == run_id, latest_row.operation_type == 'CLUSTER'
@@ -248,7 +255,7 @@ def get_workflow(db, run_id, actor, *, cache_reads=False):
                                                       operation_active=op is not None)
     else:
         pair_count, pending, insufficient = read_counts()
-    latest = next((o for o in operations if o is not op), None)
+    latest = next((o for o in operations if o is not op and o.status != 'WAITING'), None)
     retryable = retryable_operation(db, run, latest) if not op else None
     blockers = []
     if run.workflow_version == 2:
@@ -280,7 +287,7 @@ def get_workflow(db, run_id, actor, *, cache_reads=False):
             if cluster_result and not cluster_result['read_only']:
                 actions += ['save-golden', 'auto-select', 'confirm-golden', 'resolve-golden']
         elif run.workflow_state == 'GOLDEN_REVIEW':
-            actions = ['reopen-decisions','decide-pair','bulk-decisions','amend-pair']
+            actions = ['reopen-decisions','decide-pair','bulk-decisions','amend-pair','approve-group']
             if cluster_result and not cluster_result['stale']:
                 actions += ['save-golden', 'auto-select', 'confirm-golden', 'resolve-golden'] + ([] if blockers else ['finalize-golden'])
         elif run.workflow_state == 'FINALIZED':
@@ -294,7 +301,8 @@ def get_workflow(db, run_id, actor, *, cache_reads=False):
             get_settings().llm_enabled and get_settings().semantic_address_enabled):
         actions.append('annotate-groups')
     if (run.workflow_version == 2 and get_settings().session_workflow_enabled and not run.archived_at
-            and run.workflow_state == 'DECIDE_REVIEW' and op and op.operation_type == 'BULK_DECISIONS'):
+            and op and (run.workflow_state == 'DECIDE_REVIEW' and op.operation_type == 'BULK_DECISIONS'
+                or op.operation_type == 'CLUSTER' and op.payload.get('automatic_cluster_refresh'))):
         # Permission to collect UI intentions, not permission for concurrent database writes.
         actions = ['queue-decisions']
     if (run.workflow_version == 2 and get_settings().session_workflow_enabled and not run.archived_at

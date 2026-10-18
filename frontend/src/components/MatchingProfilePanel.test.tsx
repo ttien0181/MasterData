@@ -14,7 +14,9 @@ vi.mock('@/lib/api', () => ({ request: vi.fn(async (path: string) => {
 test('shows bound profile and uncalibrated rule units without invented metrics', async () => {
   render(<MatchingProfilePanel runId="run1" />);
   expect(await screen.findByText(/p119_rule_v1/)).toBeInTheDocument();
-  expect(screen.getByText(/EXISTING_RULE_POLICY/)).toBeInTheDocument();
-  expect(screen.getByText(/Chưa có report đánh giá/)).toBeInTheDocument();
+  expect(screen.getByText('Bộ quy tắc phiên bản 1 · Đang áp dụng')).toBeInTheDocument();
+  expect(screen.getByText(/digest-p1/)).toBeInTheDocument();
+  expect(screen.getByText(/Chưa có báo cáo đánh giá/)).toBeInTheDocument();
+  expect(screen.getByText(/Điểm đối chiếu chưa cho biết kết quả gộp chính xác đến mức nào/)).toBeInTheDocument();
   expect(screen.queryByText(/100%/)).not.toBeInTheDocument();
 });

@@ -236,16 +236,22 @@ def commit_draft(
     request: Request,
     response: Response,
     workflow_version: int = Query(1, ge=1, le=2),
+    use_embedding: bool = Query(True),
     db: Session = Depends(get_session),
     auth: CurrentSession = Depends(require_mutation_capability("create_run")),
 ):
     session = owned_upload_session(db, session_id, auth.user.id)
     from masterone.mdm.workflow_service import validate_version
+    from masterone.mdm.upload_sessions import lock_upload_session
+    session = lock_upload_session(db, session_id)
     validate_version(workflow_version)
     if session.status not in ('COMMITTING', 'COMMITTED'):
         session.workflow_version = workflow_version
+        session.use_embedding = use_embedding
     elif session.workflow_version != workflow_version:
         raise HTTPException(409, 'WORKFLOW_VERSION_MISMATCH')
+    elif session.use_embedding != use_embedding:
+        raise HTTPException(409, 'Chế độ đối chiếu đã được cố định khi tạo phiên. Hãy tiếp tục phiên hiện tại.')
     already_created = db.query(ResolutionRun.id).filter_by(upload_session_id=session.id).first() is not None
     if import_jobs.inline() or already_created:
         run, profile = commit_upload_session(db, session, auth.user.id)

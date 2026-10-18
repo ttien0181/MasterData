@@ -13,15 +13,13 @@ from masterone.mdm.workflow_assessment_reads import effective_result
 from masterone.mdm.workflow_service import check_revision, enabled_run
 
 
-def explain_pair(db, run_id, pair_id, request, actor):
+def prepare_pair(db, run_id, pair_id, request, actor):
     run = enabled_run(db, run_id, actor)
     check_revision(run, request.model_dump())
     pair = db.query(WorkflowPair).filter_by(run_id=run_id, id=pair_id).one_or_none()
     if pair is None:
         raise HTTPException(404, 'Pair not found')
     settings = get_settings()
-    if not settings.llm_enabled or not settings.llm_explanation_enabled:
-        return template_explanation('LLM_DISABLED')
     fields = {}
     result = effective_result(pair)
     for item in result.get('field_evidence', []):
@@ -38,10 +36,23 @@ def explain_pair(db, run_id, pair_id, request, actor):
     expected = (run.workflow_revision, pair.revision)
     factory = sessionmaker(db.get_bind(), expire_on_commit=False)
     db.rollback()  # Never retain the run lock during a remote request.
-    result = explain_cohort(payload, settings, context=context, factory=factory)
+    return payload, settings, context, expected, factory
+
+
+def pair_current(db, run_id, pair_id, expected):
+    db.rollback()
     db.expire_all()
     run = db.get(ResolutionRun, run_id)
     pair = db.get(WorkflowPair, pair_id)
-    if (run.workflow_revision, pair.revision) != expected:
+    return (run is not None and pair is not None and pair.run_id == run_id
+            and run.archived_at is None and (run.workflow_revision, pair.revision) == expected)
+
+
+def explain_pair(db, run_id, pair_id, request, actor):
+    payload, settings, context, expected, factory = prepare_pair(db, run_id, pair_id, request, actor)
+    if not settings.llm_enabled or not settings.llm_explanation_enabled:
+        return template_explanation('LLM_DISABLED')
+    result = explain_cohort(payload, settings, context=context, factory=factory)
+    if not pair_current(db, run_id, pair_id, expected):
         return {'status': 'STALE', 'explanation': None, 'error_code': 'STALE'}
     return result

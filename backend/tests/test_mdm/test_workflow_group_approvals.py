@@ -221,13 +221,13 @@ def test_group_approval_api_accepts_internal_pending_pairs_with_audit(client, wo
     with client.session_factory.begin() as db:
         # The unrelated conflict is outside this test's publication fixture.
         db.get(WorkflowConflict, foreign_conflict_id).resolved = True
+    run_one(client)  # Group approval now schedules its own durable refresh.
     state = read(client, workflow_run)
     assert state['decision_revision'] == body['expected_decision_revision'] + 1
-    assert not state['blockers']
-    created = client.post(url + '/finalize-decisions', json=request(state['workflow_revision'],
-                           expected_decision_revision=state['decision_revision']))
-    assert created.status_code == 202
-    run_one(client)
+    assert state['active_operation'] is None
+    assert state['cluster_revision'] == 1
+    assert not any(item['code'] in ('DECIDE_NOT_READY', 'ACTIVE_OPERATION', 'PENDING_DECISIONS')
+                   for item in state['blockers'])
     clusters = client.get(url + '/clusters').json()['items']
     assert any(c['member_record_ids'] == ids for c in clusters)
 

@@ -19,7 +19,9 @@ from masterone.mdm.pipeline.person_blocking import (
     PERSON_RECOVERY_SOURCES,
     person_recovery_keys,
 )
-from masterone.mdm.pipeline.tfidf_blocking import GlobalTfidfIndex, SparseTfidfConfig, fold_text, tfidf_candidates
+from masterone.mdm.pipeline.tfidf_blocking import (
+    GlobalTfidfIndex, SparseTfidfConfig, _top_k_pairs, fold_text, tfidf_candidates,
+)
 
 
 def canonical_pair(left: str, right: str) -> tuple[str, str] | None:
@@ -85,6 +87,119 @@ DEFAULT_COMPOSITES = (
                                           CompositeKey("address", "street", require_valid=True)), 20),
 )
 
+_MVP_WEAK_SOURCES = frozenset({"exact_name", "name_gram", "address_gram", "name_prefix_year",
+                               "surname_year", "name_province", "phone_suffix_year"})
+
+
+def _conditional_source(source):
+    return source in _MVP_WEAK_SOURCES or source.startswith("tfidf_")
+
+
+def _corroboration_keys(fields, contact_frequencies):
+    """Cheap secondary partitions, used only for candidate review, never merge permission.
+
+    Full DOB, month/day plus two tokens, or numbered street plus a token retain
+    plausible review routes. Shared/historical contacts cannot corroborate weak
+    name/address text. Tokens are capped to bound pathological input fanout.
+    """
+    from masterone.mdm.pipeline.matching import SHARED_CONTACT_MIN_FREQ
+    from masterone.mdm.pipeline.review_recovery import address_key
+    from masterone.mdm.pipeline.standardization import parse_dob
+
+    keys = set()
+    quality = fields.get("_field_quality", {})
+    for field_name, collection in (("phone", "phones"), ("email", "emails")):
+        risks = (f"_{field_name}_shared", f"_{field_name}_shared_risk",
+                 f"{field_name}_shared", f"{field_name}_shared_risk")
+        if any(str(fields.get(key, '')).lower() in {'true', '1'} for key in risks):
+            continue
+        items = fields.get(collection, [])
+        if len(items) > 32:
+            continue
+        for item in items:
+            value = item.get("value")
+            if (value and item.get("quality") == "VALID"
+                    and not any(item.get(key) for key in ('shared', 'shared_risk', 'historical', 'valid_to', 'origin_id'))
+                    and contact_frequencies.get((field_name, value), 0) <= SHARED_CONTACT_MIN_FREQ):
+                keys.add((field_name, value))
+    gov_id = fields.get("government_id")
+    if gov_id and quality.get("government_id") == "VALID":
+        keys.add(('government_id', fields.get('government_id_namespace', ''),
+                  fields.get('government_id_type', ''), gov_id))
+    tokens = sorted({token for token in fold_text(fields.get('name')).split()
+                     if len(token) >= 2 and token.isalpha()})
+    if len(tokens) > 12:
+        tokens = []
+    if quality.get('dob') == 'VALID':
+        dob = parse_dob(fields.get('dob') or '')
+        if dob['quality'] == 'VALID' and dob['month'] and dob['day']:
+            keys.add(('full_dob', dob['canonical']))
+            for a, b in combinations(tokens, 2):
+                keys.add(('month_day_tokens', dob['month'], dob['day'], a, b))
+    street = address_key(fields.get('address'))
+    if street and quality.get('address') not in {'INVALID', 'PLACEHOLDER', 'MISSING'}:
+        keys.update(('street_token', street, token) for token in tokens)
+    return keys
+
+
+def _mvp_tfidf_vectors(snapshot, text_field, pools, config, policy):
+    """Compressed global IDF with workload estimates for actual supported searches.
+
+    GlobalTfidfIndex plans a global search at construction, so using that class
+    here would incorrectly reject a large corpus with tiny supported pools.
+    """
+    import numpy as np
+    from sklearn.feature_extraction.text import CountVectorizer
+    from sklearn.preprocessing import normalize
+
+    postings = defaultdict(list)
+    for record in snapshot:
+        text = fold_text(record['normalized_fields'].get(text_field))
+        if text:
+            postings[text].append(record['id'])
+    documents = sorted(postings)
+    document_rows = {text: row for row, text in enumerate(documents)}
+    record_rows = {rid: document_rows[text] for text, ids in postings.items() for rid in ids}
+    query_rows = [[record_rows[rid] for rid in ids if rid in record_rows] for ids in pools]
+    query_rows = [rows for rows in query_rows if len(rows) >= 2]
+    gram_bound = sum(len(text) for text in documents) * (config.ngram_range[1] - config.ngram_range[0] + 1)
+    largest_pool = max(map(len, query_rows), default=0)
+    details = {
+        'source': f'tfidf_{text_field}', 'record_count': len(snapshot), 'unique_vectors': len(documents),
+        'estimated_similarity_cells': sum(len(rows) ** 2 for rows in query_rows),
+        'estimated_pairs': sum(len(rows) * min(config.top_k, len(rows) - 1) for rows in query_rows),
+        'estimated_memory_bytes': gram_bound * 512 + len(snapshot) * 256 + largest_pool ** 2 * 24,
+    }
+    digest = sha256(json.dumps([(r['id'], fold_text(r['normalized_fields'].get(text_field)))
+                                for r in snapshot]).encode()).hexdigest()
+    plan_workload(details, policy, snapshot_digest=digest)
+    matrix = None
+    if documents:
+        vectorizer = CountVectorizer(analyzer='char_wb', ngram_range=config.ngram_range,
+                                     lowercase=False, dtype=np.float64)
+        try:
+            counts = vectorizer.fit_transform(documents).tocsr()
+        except ValueError as error:
+            if 'empty vocabulary' not in str(error):
+                raise
+        else:
+            present = counts.copy()
+            present.data[:] = 1
+            frequencies = np.asarray(present.T @ np.array([len(postings[text]) for text in documents])).ravel()
+            idf = np.log((1 + len(snapshot)) / (1 + frequencies)) + 1
+            counts.data = 1 + np.log(counts.data)
+            matrix = normalize(counts.multiply(idf), norm='l2').tocsr()
+            # Count actual pool-local shared-gram products before retrieval.
+            dot_products = 0
+            for rows in query_rows:
+                frequencies = defaultdict(int)
+                for column in matrix[rows].indices:
+                    frequencies[int(column)] += 1
+                dot_products += sum(n ** 2 for n in frequencies.values())
+            details['estimated_dot_products'] = dot_products
+            plan_workload(details, policy, snapshot_digest=digest)
+    return matrix, record_rows, details
+
 
 def _recall_v2_enabled():
     from masterone.mdm.engine_adapter import feature
@@ -108,8 +223,11 @@ class CandidateConfig:
     approved_plan_id: str | None = None
     recall_v2: bool = field(default_factory=_recall_v2_enabled)
     recall_v2_pair_budget: int = 200_000
+    mvp_step2: bool = False  # opt-in conditional review candidates; legacy defaults stay unchanged
 
     def __post_init__(self):
+        if type(self.mvp_step2) is not bool:
+            raise ValueError('MVP step 2 flag must be boolean')
         if type(self.recall_v2) is not bool or type(self.recall_v2_pair_budget) is not int or self.recall_v2_pair_budget < 1:
             raise ValueError('Recall v2 needs a boolean flag and a positive pair budget')
         for value in (self.max_block_size, self.name_block_size, self.contact_block_size, self.gram_block_size, self.max_pairs_per_block):
@@ -186,6 +304,13 @@ class CandidateEngine:
         if self.config.sparse_tfidf:
             return _isolated_copy(fields)
         kept = {key: fields[key] for key in ("name", "address", "dob") if key in fields}
+        if self.config.mvp_step2:
+            for key in ('phones', 'emails', 'government_id', 'government_id_namespace',
+                        'government_id_type', '_field_quality', '_phone_shared', '_phone_shared_risk',
+                        'phone_shared', 'phone_shared_risk', '_email_shared', '_email_shared_risk',
+                        'email_shared', 'email_shared_risk'):
+                if key in fields:
+                    kept[key] = fields[key]
         address_parts = fields.get("address_parts")
         if isinstance(address_parts, dict) and "province" in address_parts:
             kept["address_parts"] = {"province": address_parts["province"]}
@@ -200,6 +325,14 @@ class CandidateEngine:
                 raise ValueError("Duplicate snapshot record ID")
             fields = record["normalized_fields"]
             self.records[record_id] = {"id": record_id, "normalized_fields": self._retained(fields)}
+            if self.config.mvp_step2:
+                raw = record.get('raw_fields', {})
+                retained = self.records[record_id]['normalized_fields']
+                for field_name in ('phone', 'email'):
+                    if any(str(raw.get(key, '')).strip().lower() in {'true', '1'} for key in
+                           (f'_{field_name}_shared', f'_{field_name}_shared_risk',
+                            f'{field_name}_shared', f'{field_name}_shared_risk')):
+                        retained[f'_{field_name}_shared_risk'] = True
             for field_name, collection in (("phone", "phones"), ("email", "emails")):
                 source = f"exact_{field_name}"
                 values = {item["value"] for item in fields.get(collection, [])
@@ -257,8 +390,29 @@ class CandidateEngine:
             [] if config.include_tfidf else [f"tfidf_{name}" for name in (
                 config.tfidf.fields if config.sparse_tfidf else ("name",))])
         block_log = []
+        corroboration = {}
+        if config.mvp_step2:
+            frequencies = {(source.removeprefix('exact_'), key[0]): len(ids)
+                           for (source, key), ids in self.blocks.items()
+                           if source in {'exact_phone', 'exact_email'}}
+            corroboration = {rid: _corroboration_keys(record['normalized_fields'], frequencies)
+                             for rid, record in self.records.items()}
+            metrics['conditional_candidates'] = {
+                'enabled': True, 'version': 'mvp_step2_v1', 'rejected_pair_observations': 0,
+                'unique_pairs_after_gate': 0,
+                'rejection_count_unit': 'source/block observations, not distinct pairs',
+            }
 
-        if config.sparse_tfidf:
+        def reject(source, count):
+            stats = metrics['sources'].setdefault(source, {'generated_pairs': 0, 'skipped_pairs': 0})
+            stats['conditional_rejected_observations'] = stats.get('conditional_rejected_observations', 0) + count
+            stats['skipped_pairs'] += count
+            metrics['conditional_candidates']['rejected_pair_observations'] += count
+            metrics['skipped_pair_observations'] += count
+            metrics['skip_reasons']['secondary_corroboration_missing'] = (
+                metrics['skip_reasons'].get('secondary_corroboration_missing', 0) + count)
+
+        if config.sparse_tfidf and not config.mvp_step2:
             estimated_pairs = sum(len(ids) * (len(ids) - 1) // 2
                 for (source, _), ids in self.blocks.items()
                 if len(ids) <= min(config.max_block_size, limits[source])
@@ -290,6 +444,10 @@ class CandidateEngine:
             if pair is None:
                 return
             for source in sorted(sources):
+                if (config.mvp_step2 and _conditional_source(source)
+                        and not corroboration[left].intersection(corroboration[right])):
+                    reject(source, 1)
+                    continue
                 stats = metrics["sources"].setdefault(source, {"generated_pairs": 0, "skipped_pairs": 0})
                 stats["generated_pairs"] += 1
                 metrics["generated_observations"] += 1
@@ -320,7 +478,22 @@ class CandidateEngine:
             if skipped:
                 metrics["skip_reasons"][reason] = metrics["skip_reasons"].get(reason, 0) + skipped
             elif potential:
-                for left, right in combinations(sorted(ids), 2):
+                emissions = combinations(sorted(ids), 2)
+                if config.mvp_step2 and _conditional_source(source):
+                    # Partition before quadratic expansion. Deduplicate only the passing
+                    # pairs within this bounded block, never materialize rejected pairs.
+                    partitions = defaultdict(list)
+                    for rid in sorted(ids):
+                        for support_key in corroboration[rid]:
+                            partitions[support_key].append(rid)
+                    emissions = sorted({pair for members in partitions.values()
+                                        for pair in combinations(members, 2)})
+                    rejected = potential - len(emissions)
+                    reject(source, rejected)
+                    block_log[-1]['conditional_rejected_observations'] = rejected
+                    block_log[-1]['generated_pairs'] = len(emissions)
+                    block_log[-1]['skipped_pairs'] += rejected
+                for left, right in emissions:
                     merge(left, right, {source})
         metrics["excluded_records_by_source"] = dict(sorted(self.excluded.items()))
         metrics["exclusion_reason"] = "missing_value_or_required_valid_quality"
@@ -330,7 +503,68 @@ class CandidateEngine:
             from sklearn.feature_extraction.text import TfidfVectorizer  # noqa: F401
 
             snapshot = [self.records[key] for key in sorted(self.records)]
-            if config.sparse_tfidf:
+            if config.mvp_step2:
+                # Fit global corpus IDF once per field, then retrieve within
+                # corroborated pools. Gating after global top-k lets unsupported
+                # lookalikes crowd out supported neighbors before the gate sees them.
+                partitions = defaultdict(list)
+                for rid in sorted(corroboration):
+                    for support_key in corroboration[rid]:
+                        partitions[support_key].append(rid)
+                pools = sorted({tuple(ids) for ids in partitions.values() if len(ids) >= 2})
+                eligible_pools = []
+                oversized = 0
+                rejected_observations = 0
+                for ids in pools:
+                    potential = len(ids) * (len(ids) - 1) // 2
+                    if len(ids) > config.max_block_size or potential > config.max_pairs_per_block:
+                        oversized += 1
+                        rejected_observations += potential
+                    else:
+                        eligible_pools.append(ids)
+                metrics['conditional_candidates']['tfidf_partitions'] = {
+                    'unique_supported_pools': len(pools), 'searched_pools': len(eligible_pools),
+                    'oversized_pools': oversized,
+                    'oversized_pool_pair_observations': rejected_observations,
+                    'max_pool_size': config.max_block_size,
+                    'idf_scope': 'snapshot', 'top_k_scope': 'secondary_corroboration_pool',
+                }
+                metrics['tfidf'] = {}
+                policy = replace(config.workload, warning_pairs=config.workload.hard_pairs,
+                                 approval_pairs=config.workload.hard_pairs)
+                for text_field in config.tfidf.fields if config.sparse_tfidf else ('name',):
+                    source = f'tfidf_{text_field}'
+                    stats = metrics['sources'].setdefault(source, {'generated_pairs': 0, 'skipped_pairs': 0})
+                    stats['skipped_pairs'] += rejected_observations
+                    metrics['skipped_pair_observations'] += rejected_observations
+                    if rejected_observations:
+                        reason = 'tfidf_secondary_partition_limit'
+                        metrics['skip_reasons'][reason] = metrics['skip_reasons'].get(reason, 0) + rejected_observations
+                    if not eligible_pools:
+                        metrics['tfidf'][text_field] = {'status': 'no_eligible_corroborated_pool'}
+                        continue
+                    matrix, record_rows, workload = _mvp_tfidf_vectors(
+                        snapshot, text_field, eligible_pools, config.tfidf, policy)
+                    observations = 0
+                    if matrix is not None:
+                        for ids in eligible_pools:
+                            usable = [(rid, record_rows.get(rid)) for rid in ids]
+                            usable = [(rid, row) for rid, row in usable if row is not None]
+                            if len(usable) < 2:
+                                continue
+                            ids, rows = zip(*usable)
+                            candidates = _top_k_pairs(list(ids), matrix[list(rows)],
+                                                      config.tfidf.top_k, config.tfidf.min_similarity)
+                            observations += len(candidates)
+                            for left, right in sorted(candidates):
+                                merge(left, right, {source})
+                    metrics['tfidf'][text_field] = {
+                        **workload, 'status': 'searched_corroborated_pools',
+                        'corpus_records': len(snapshot), 'pool_pair_observations': observations,
+                        'matrix_nnz': matrix.nnz if matrix is not None else 0,
+                    }
+                    del matrix
+            elif config.sparse_tfidf:
                 metrics["tfidf"] = {}
                 # Engine approval covers the aggregate plan; each index still
                 # enforces hard memory, operation and emission limits.
@@ -352,6 +586,8 @@ class CandidateEngine:
                     log['reason'] in {'max_block_size', 'max_pairs_per_block'} for log in block_log),
                 'warning': 'CANDIDATE_PAIR_WARNING' if len(pairs) >= pair_budget * .8 else None}
         metrics["union_collapsed_observations"] = metrics["generated_observations"] - len(pairs)
+        if config.mvp_step2:
+            metrics['conditional_candidates']['unique_pairs_after_gate'] = len(pairs)
         logging.getLogger(__name__).info("candidate_workload %s", json.dumps(metrics, sort_keys=True))
         return CandidateResult(_PairSources(pairs, source_bits), metrics, block_log)
 

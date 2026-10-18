@@ -23,7 +23,7 @@ it('allows explicit review of one edge when the whole region exceeds the normal 
   blocked_reasons:['CLUSTER_REVIEW_TOO_LARGE']});
  const accept=vi.fn(),acceptPair=vi.fn();
  render(<SessionCacheProvider userId="large-single-edge"><WorkflowContext.Provider value={{workflow:w,refresh:vi.fn()}}><PairClusterReview pairId="ab" canWrite close={vi.fn()} accept={accept} acceptPair={acceptPair}/></WorkflowContext.Provider></SessionCacheProvider>);
- fireEvent.click(await screen.findByRole('button',{name:'Accept riêng cặp ab'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Đồng ý gộp riêng cặp ab'}));
  expect(acceptPair).toHaveBeenCalledWith(expect.objectContaining({pair_id:'ab',revision:0}));
  expect(accept).not.toHaveBeenCalled();
 });
@@ -31,23 +31,23 @@ function show(value:ReviewCluster=data,current:WorkflowRead=w){vi.mocked(getRevi
 it('shows each source once and passes only exact pending IDs to existing confirmation',async()=>{
  const accept=show();await screen.findByText('Person a');expect(screen.getAllByText('Person a')).toHaveLength(1);
  expect(screen.getByRole('table',{name:'Thành viên cụm'})).toBeVisible();
- fireEvent.click(screen.getByRole('button',{name:'Accept 3 cặp trong cụm'}));expect(accept).toHaveBeenCalledWith(data);
+ fireEvent.click(screen.getByRole('button',{name:'Đồng ý gộp 3 cặp trong cụm'}));expect(accept).toHaveBeenCalledWith(data);
 });
 it('does not offer batch acceptance for an incomplete component',async()=>{
  show({...data,complete:false,batch_allowed:false,blocked_reasons:['CLUSTER_REVIEW_TOO_LARGE']});
- await screen.findByText('Person a');expect(screen.getByRole('button',{name:'Accept 3 cặp trong cụm'})).toBeDisabled();
+ await screen.findByText('Person a');expect(screen.getByRole('button',{name:'Đồng ý gộp 3 cặp trong cụm'})).toBeDisabled();
  expect(screen.getByText(/Cụm vượt giới hạn/)).toBeVisible();
 });
 it('fences stale decision and assessment identities',async()=>{
  show(data,{...w,decision_revision:3,assessment_id:'new'});await screen.findByText('Person a');
- await waitFor(()=>expect(screen.getByRole('button',{name:'Accept 3 cặp trong cụm'})).toBeDisabled());
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Đồng ý gộp 3 cặp trong cụm'})).toBeDisabled());
  expect(screen.getByRole('alert')).toHaveTextContent('đã thay đổi');
 });
 
 it('identifies same-name conflicting edges by source ID and opens full evidence',async()=>{
  const sameNames={...data,records:data.records.map((r,i)=>({...r,source_system:i?'BILL':'CRM',raw_fields:{name:'Same Name',dob:i?'1981-01-01':'1980-01-01'}})),pairs:data.pairs.map((p,i)=>i?p:{...p,baseline:{...p.baseline,primary_group:'D',field_evidence:[{field:'dob',state:'CF',similarity:0}]},eligibility:{...p.eligibility,reason_required:true}})};
  show(sameNames);await screen.findByRole('table',{name:'Thành viên cụm'});
- const evidence=screen.getByText('Bằng chứng 3 cặp').closest('details')!;
+ const evidence=screen.getByText('Thông tin đối chiếu 3 cặp').closest('details')!;
  expect(evidence).toHaveAttribute('open');expect(evidence).toHaveTextContent('CRM · a');expect(evidence).toHaveTextContent('BILL · b');
  fireEvent.click(screen.getByRole('button',{name:'Đối chiếu đầy đủ cặp ab'}));
  expect(await screen.findByText('1980-01-01')).toBeVisible();expect(screen.getByText('1981-01-01')).toBeVisible();
@@ -57,7 +57,7 @@ it('identifies same-name conflicting edges by source ID and opens full evidence'
 it('shows recomputed absent-edge evidence without adding it to the acceptance scope',async()=>{
  const observed={...data.pairs[0],pair_id:'observed-only'};
  const accept=show({...data,additional_evidence:[observed]});await screen.findByText('Person a');
- expect(screen.getByText('Bằng chứng bổ sung đã tính từ bản ghi nguồn')).toBeVisible();
- fireEvent.click(screen.getByRole('button',{name:'Accept 3 cặp trong cụm'}));
+ expect(screen.getByText('Thông tin đối chiếu bổ sung đã tính từ hồ sơ nguồn')).toBeVisible();
+ fireEvent.click(screen.getByRole('button',{name:'Đồng ý gộp 3 cặp trong cụm'}));
  expect(accept.mock.calls[0][0].pending_pair_ids).toEqual(['ab','ac','bc']);
 });

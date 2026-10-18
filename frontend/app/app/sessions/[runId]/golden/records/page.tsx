@@ -1,5 +1,2 @@
-import GoldenReview from '@/components/GoldenReview';
-export default async function Page({searchParams}:{searchParams:Promise<{status?:string;cluster?:string}>}){
- const params=await searchParams;
- return <GoldenReview initialStatus={['review','confirmed','all'].includes(params.status||'')?params.status:undefined} initialClusterId={params.cluster}/>;
-}
+import {redirect} from 'next/navigation';
+export default async function Page({params,searchParams}:{params:Promise<{runId:string}>;searchParams:Promise<{cluster?:string}>}){const {runId}=await params,{cluster}=await searchParams;redirect(`/app/sessions/${encodeURIComponent(runId)}/golden${cluster?`?cluster=${encodeURIComponent(cluster)}`:''}`);}

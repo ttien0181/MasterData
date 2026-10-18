@@ -127,11 +127,15 @@ def aggregate(db, query, run_id, visibility=None, taxonomy=None):
     coordinated = coordinator == 'r1_v1'
     manual = case((coordinated, eligibility['manual_allowed'].as_boolean()), else_=None)
     automatic = case((coordinated, eligibility['auto_allowed'].as_boolean()), else_=None)
-    if taxonomy=='actions_v1':
+    if taxonomy in ('actions_v1', 'mvp_v1'):
         from masterone.mdm.review_taxonomy import taxonomy_columns
         reason=func.coalesce(fields.c.triage_reason,fields.c.reason) if db.bind.dialect.name=='postgresql' else func.coalesce(evaluation['triage_reason'].as_string(),evaluation['reason'].as_string())
         disagreement=fields.c.agent_disagreement if db.bind.dialect.name=='postgresql' else evaluation['agent_disagreement'].as_boolean()
         group,subgroup=taxonomy_columns(group,subgroup,baseline,triage,reason,disagreement)
+    if taxonomy == 'mvp_v1':
+        from masterone.mdm.review_taxonomy import mvp_columns
+        group, subgroup = mvp_columns(group, subgroup)
+        query = query.filter(group.notin_(('C', 'BLOCKED')))
     return query.with_entities(group, subgroup, baseline, triage, WorkflowPair.decision, negative, manual, automatic, func.count()).group_by(
         group, subgroup, baseline, triage, WorkflowPair.decision, negative, manual, automatic).all()
 
@@ -143,7 +147,8 @@ def pair_summary(db, run, filters=None):
     filters = dict(filters or {})
     visibility = filters.pop('visibility', None)
     taxonomy=filters.pop('taxonomy',None)
-    for group, subgroup, baseline, triage, decision, negative, manual, automatic, count in aggregate(db, scoped_pairs(db, run.id, filters), run.id, visibility,taxonomy):
+    scope_filters = {**filters, 'taxonomy': taxonomy} if filters.get('group') or filters.get('subgroup') else filters
+    for group, subgroup, baseline, triage, decision, negative, manual, automatic, count in aggregate(db, scoped_pairs(db, run.id, scope_filters), run.id, visibility,taxonomy):
         counters['total'] += count
         required = review_required(decision, {'decision': baseline, 'triage_status': triage})
         counters['needs_review'] += count if required else 0
@@ -187,11 +192,11 @@ def summary_merge_counts(db, run, request):
     filters = {k: v for k, v in (scope.get('filter') or {}).items() if v}
     if (request.decision != 'merge' or request.auto_only or scope.get('pair_ids') is not None
             or scope.get('excluded_pair_ids') or filters.get('resolution')
-            or filters.get('visibility') != 'review' or filters.get('taxonomy') != 'actions_v1'
+            or filters.get('visibility') != 'review' or filters.get('taxonomy') not in ('actions_v1', 'mvp_v1')
             or filters.get('subgroup') and not filters.get('group')):
         return None
     from masterone.mdm.pair_read_cache import cached_read
-    summary_filters = dict(visibility='review', taxonomy='actions_v1')
+    summary_filters = dict(visibility='review', taxonomy=filters['taxonomy'])
     data = cached_read(db, run, 'summary', summary_filters, lambda: pair_summary(db, run, summary_filters))
     empty = dict(total=0, manual_available=0, unresolved=0)
     if filters.get('group'):
@@ -201,7 +206,7 @@ def summary_merge_counts(db, run, request):
     if 'manual_available' not in data or 'unresolved' not in data:
         return None
     applicable = data['manual_available']
-    if applicable and filters.get('group') != 'A':
+    if applicable and not (filters.get('taxonomy') == 'actions_v1' and filters.get('group') == 'A'):
         return None
     return dict(total=data['total'], applicable=applicable, skipped=data['total']-data['unresolved'],
                 blocked=data['unresolved']-applicable, reason_required=0)

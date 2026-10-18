@@ -15,8 +15,8 @@ describe("SessionStatusBar", () => {
     fireEvent.click(trigger);
     const panel = screen.getByRole("region", { name: "Các phiên đang xử lý" });
     expect(within(panel).getByText("Nhập tháng 10")).toBeInTheDocument();
-    expect(within(panel).getByText("Đang phân giải · Đang đối chiếu")).toBeInTheDocument();
-    expect(within(panel).getByText("1.200 bản ghi · 3 file")).toBeInTheDocument();
+    expect(within(panel).getByText("Đang đối chiếu dữ liệu · Đang đối chiếu")).toBeInTheDocument();
+    expect(within(panel).getByText("1.200 hồ sơ · 3 tệp")).toBeInTheDocument();
 
     fireEvent.click(within(panel).getByRole("button", { name: /Nhập tháng 10/ }));
     expect(onOpenRun).toHaveBeenCalledWith("run-active-1");

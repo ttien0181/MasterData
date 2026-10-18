@@ -152,12 +152,16 @@ def run_assessment(operation_id, factory, progress):
         selected = db.get(ResolutionEngineSelection, run.id)
         profile, links = selected.configuration if selected else {}, load_cannot_links(db, run.id)
         model_scope = op.payload.get('model_scope')
+        use_embedding = run.use_embedding
     payload = compute_assessment(records, pairs, profile, links, progress, model_scope)
+    if not use_embedding:
+        for pair in payload['pairs']:
+            pair['embedding_enabled'] = False
     artifact_id = seal(factory, run_id, 'PAIR_ASSESSMENT', payload)
     agents_result = None
     with factory() as db:
         operation = db.get(WorkflowOperation, operation_id)
-        if operation.payload.get('matching_binding_id'):
+        if use_embedding and operation.payload.get('matching_binding_id'):
             originals = [row.baseline for row in db.query(WorkflowPair).filter_by(run_id=run_id).order_by(WorkflowPair.id)]
             source_artifact = db.query(WorkflowArtifact).filter_by(run_id=run_id, phase='DECIDE').order_by(WorkflowArtifact.created_at.desc()).first()
         else:
@@ -171,7 +175,7 @@ def run_assessment(operation_id, factory, progress):
             with factory() as db:
                 from masterone.mdm.models import ResolutionRun
                 config = config_for_operation(db, db.get(ResolutionRun, run_id), db.get(WorkflowOperation, operation_id))
-            if config['kind'] == 'RULE_HYBRID_DETERMINISTIC':
+            if config['kind'] == 'RULE_HYBRID_DETERMINISTIC' or config.get('mvp_step2'):
                 payload = coordinated_payload(factory, run_id, payload, agents_result, config)
                 artifact_id = seal(factory, run_id, 'PAIR_ASSESSMENT', payload)
     with factory.begin() as db:

@@ -115,9 +115,9 @@ export default function SessionsHub({ items, total, nextCursor, loading, error, 
     role={embedded ? "region" : "dialog"} aria-modal={embedded ? undefined : true} aria-labelledby="sessions-heading"
     onMouseDown={(event) => { if (!embedded && event.target === event.currentTarget) onClose(); }}>
     <section className="card sessions-hub">
-      <header className="sessions-heading"><div><p className="section-kicker">Không gian làm việc</p><h2 id="sessions-heading">Phiên phân giải</h2><p className="muted-copy">Tìm và quản lý các phiên thuộc tài khoản của bạn.</p></div><button ref={closeRef} type="button" className="dialog-close" aria-label="Đóng danh sách phiên" onClick={onClose}>×</button></header>
+      <header className="sessions-heading"><div><p className="section-kicker">Không gian làm việc</p><h2 id="sessions-heading">Phiên xử lý dữ liệu</h2><p className="muted-copy">Tìm và quản lý các phiên thuộc tài khoản của bạn.</p></div>{!embedded&&<button ref={closeRef} type="button" className="dialog-close" aria-label="Đóng danh sách phiên" onClick={onClose}>×</button>}</header>
       <div className="sessions-filters">
-        <label className="sessions-search"><ShellIcon name="search" size={17} /><input aria-label="Tìm phiên" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm theo tên phiên hoặc tên file" /></label>
+        <label className="sessions-search"><ShellIcon name="search" size={17} /><input aria-label="Tìm phiên" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm theo tên phiên hoặc tên tệp" /></label>
         <div className="sessions-filter-tabs" role="group" aria-label="Lọc trạng thái phiên">{[
           ["", "Tất cả"], ["QUEUED,RUNNING", "Đang chạy"], ["COMPLETED", "Hoàn tất"], ["FAILED,RETRYABLE_FAILED", "Lỗi"],
         ].map(([value, label]) => <button key={value} type="button" aria-pressed={statusFilter === value} className={statusFilter === value ? "is-active" : ""} onClick={() => setStatusFilter(value)}>{label}</button>)}</div>
@@ -137,7 +137,7 @@ export default function SessionsHub({ items, total, nextCursor, loading, error, 
             {canManage && <input className="sessions-row-check" type="checkbox" aria-label={`Chọn phiên ${run.name || run.files.join(", ")}`} checked={selected.has(run.run_id)} onChange={() => toggleOne(run.run_id)} />}
             <button type="button" className={`sessions-row ${preview?.run_id === run.run_id ? "selected" : ""}`} onClick={() => setPreview(run)} aria-pressed={preview?.run_id === run.run_id}>
               <span className="sessions-row-title">{run.name || run.files.join(", ") || `Phiên ${run.run_id.slice(0, 8)}`}</span>
-              <span className="sessions-row-meta">{new Date(run.created_at).toLocaleString("vi-VN")} · {run.record_count.toLocaleString("vi-VN")} bản ghi · {run.file_count} file</span>
+              <span className="sessions-row-meta">{new Date(run.created_at).toLocaleString("vi-VN")} · {run.record_count.toLocaleString("vi-VN")} hồ sơ · {run.file_count} tệp</span>
               <span className="sessions-row-statuses"><span className="session-status" data-status={run.status.toLowerCase()}>{runStatusLabel(run.status)}</span>{run.archived_at && <span className="session-status archived">Đã lưu trữ</span>}</span>
             </button>
             <button className="sessions-open-row" type="button" aria-label={`Mở phiên ${run.name || run.files.join(", ")}`} onClick={() => onOpen(run.run_id)}><ShellIcon name="chevron" size={17} /></button>
@@ -146,8 +146,8 @@ export default function SessionsHub({ items, total, nextCursor, loading, error, 
         </div>
         <aside className={`sessions-preview${preview ? " has-selection" : ""}`} aria-label="Xem nhanh phiên">
           {preview ? <><p className="section-kicker">Xem nhanh</p><h3>{preview.name || preview.files.join(", ") || `Phiên ${preview.run_id.slice(0, 8)}`}</h3>
-            {canManage && <form className="sessions-rename" onSubmit={(event) => { event.preventDefault(); void saveName(); }}><label htmlFor="sessions-rename-input">Tên phiên</label><div><input id="sessions-rename-input" maxLength={255} value={renameValue} onChange={(event) => setRenameValue(event.target.value)} placeholder="Tên file mặc định" /><button type="submit" className="button outline" disabled={actionBusy}>Lưu</button></div></form>}
-            <dl><div><dt>Trạng thái</dt><dd>{runStatusLabel(preview.status)}</dd></div><div><dt>Lưu trữ</dt><dd>{preview.archived_at ? "Đã lưu trữ" : "Đang hoạt động"}</dd></div><div><dt>Tạo lúc</dt><dd>{new Date(preview.created_at).toLocaleString("vi-VN")}</dd></div><div><dt>Bản ghi</dt><dd>{preview.record_count.toLocaleString("vi-VN")}</dd></div><div><dt>Tệp</dt><dd>{preview.file_count}</dd></div></dl><button type="button" className="button primary" onClick={() => onOpen(preview.run_id)}>Mở phiên</button>
+            {canManage && <form className="sessions-rename" onSubmit={(event) => { event.preventDefault(); void saveName(); }}><label htmlFor="sessions-rename-input">Tên phiên</label><div><input id="sessions-rename-input" maxLength={255} value={renameValue} onChange={(event) => setRenameValue(event.target.value)} placeholder="Tên tệp mặc định" /><button type="submit" className="button outline" disabled={actionBusy}>Lưu</button></div></form>}
+            <dl><div><dt>Trạng thái</dt><dd>{runStatusLabel(preview.status)}</dd></div><div><dt>Lưu trữ</dt><dd>{preview.archived_at ? "Đã lưu trữ" : "Đang hoạt động"}</dd></div><div><dt>Tạo lúc</dt><dd>{new Date(preview.created_at).toLocaleString("vi-VN")}</dd></div><div><dt>Hồ sơ</dt><dd>{preview.record_count.toLocaleString("vi-VN")}</dd></div><div><dt>Tệp</dt><dd>{preview.file_count}</dd></div></dl><button type="button" className="button primary" onClick={() => onOpen(preview.run_id)}>Mở phiên</button>
           </> : <p className="muted-copy">Chọn một phiên để xem thông tin nhanh.</p>}
         </aside>
       </div>

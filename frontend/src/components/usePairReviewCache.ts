@@ -111,10 +111,10 @@ export function usePairSummary(workflow: WorkflowRead, enabled: boolean) {
   const cache = useSessionCache();
   const run = workflow.run_id, revision = workflow.decision_revision, assessmentId = workflow.assessment_id, adviceRevision = workflow.advice_revision;
   const summaryLoad = useCallback(async (signal: AbortSignal) => {
-    const result = await getPairSummary(run, signal);
+    const result = await getPairSummary(run, signal, 'mvp_v1');
     return { ...result, decision_revision: result.decision_revision ?? revision };
   }, [run, revision, assessmentId, adviceRevision]);
-  const summary = useSessionRead(run, ['pair-summary'], {visibility:'review',taxonomy:'actions_v1',...(assessmentId?{assessment_id:assessmentId}:{}),...(adviceRevision?{advice_revision:adviceRevision}:{})}, summaryLoad, enabled, true, FRESH_TIME);
+  const summary = useSessionRead(run, ['pair-summary'], {visibility:'review',taxonomy:'mvp_v1',...(assessmentId?{assessment_id:assessmentId}:{}),...(adviceRevision?{advice_revision:adviceRevision}:{})}, summaryLoad, enabled, true, FRESH_TIME);
   useRevisionRefresh(run, 'pair-summary', revision, summary.data?.decision_revision, summary, enabled && !cache.blocked[run], workflow.active_operation?.operation_type === 'BULK_DECISIONS');
   return summary;
 }

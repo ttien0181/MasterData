@@ -3,7 +3,7 @@ from masterone.mdm.models import ResolutionAuditEvent, ResolutionRecord
 from masterone.mdm.workflow_models import WorkflowOperation, WorkflowPair
 
 from tests.test_mdm.test_workflow_contract import request
-from tests.test_mdm.test_workflow_stages import read, ready_decisions
+from tests.test_mdm.test_workflow_stages import read, ready_decisions, run_one
 
 
 def prepare_group(client, run_id):
@@ -18,6 +18,7 @@ def prepare_group(client, run_id):
     result = client.post(root + f'/pairs/{pid}/decision', json=request(
         read(client, run_id)['workflow_revision'], expected_pair_revision=revision, decision='merge'))
     assert result.status_code == 200, result.text
+    run_one(client)  # The accepted pair now schedules the first full refresh.
     return root, ids
 
 
@@ -31,7 +32,7 @@ def test_bulk_groups_preserve_per_group_receipts_and_replay(client, workflow_run
     assert client.post(root + '/group-approvals/bulk', json=body).json() == response.json()
     current = read(client, workflow_run)
     assert current['decision_revision'] == state['decision_revision'] + 2
-    assert current['workflow_revision'] == state['workflow_revision'] + 2
+    assert current['workflow_revision'] == state['workflow_revision'] + 3
     with client.session_factory() as db:
         assert db.query(WorkflowOperation).filter_by(run_id=workflow_run, operation_type='GROUP_APPROVAL').count() == 2
         assert db.query(ResolutionAuditEvent).filter_by(run_id=workflow_run, action='WORKFLOW_GROUP_APPROVAL').count() == 2

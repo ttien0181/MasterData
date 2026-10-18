@@ -45,6 +45,9 @@ services:
       WORK_DIR: /app/data/work
       HEAVY_JOBS_SERIALIZED: "true"
       AI_API_ONLY: "true"
+      DEMO_FAST_MODE: "false"
+      DEMO_ENABLED: "true"
+      WORKFLOW_AUTO_PROCESS: "true"
       HEAVY_JOB_LOCK_PATH: /app/data/work/heavy-job.lock
       SAMPLE_CHAT_ENABLED: "false"
       PAIR_AUTOMATION_ENABLED: "false"

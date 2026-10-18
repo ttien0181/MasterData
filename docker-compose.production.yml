@@ -1,0 +1,119 @@
+# Standalone deployment: do not merge with the local/QA Compose files.
+name: masterone
+
+x-app: &app
+  image: ${BACKEND_IMAGE:-masterone-backend:release}
+  build:
+    context: .
+    dockerfile: Dockerfile
+  init: true
+  env_file: ${APP_ENV_FILE:-.env.production}
+  environment: &app-env
+    APP_ENV: production
+    DATABASE_URL: postgresql+psycopg://masterone:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@database:5432/masterone
+    MDM_DATABASE_PROFILE: local
+    MDM_DATABASE_URL_LOCAL: postgresql+psycopg://masterone:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@database:5432/masterone
+    CORS_ORIGINS: https://${APP_DOMAIN:?Set APP_DOMAIN}
+    WORK_DIR: /app/data/work
+    WORKFLOW_ARTIFACT_DIR: /app/data/workflow-artifacts
+    HEAVY_JOB_LOCK_PATH: /app/data/work/heavy-job.lock
+  volumes:
+    - app_data:/app/data
+  restart: unless-stopped
+
+services:
+  database:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: masterone
+      POSTGRES_USER: masterone
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U masterone -d masterone"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    <<: *app
+    command: [python, -m, masterone.mdm.migrate]
+    restart: "no"
+    healthcheck:
+      disable: true
+    depends_on:
+      database:
+        condition: service_healthy
+
+  backend:
+    <<: *app
+    # Only the gateway is published; trust its sanitized forwarding headers.
+    command: [uvicorn, "masterone.main:app", --host, "0.0.0.0", --port, "8001", --workers, "1", --proxy-headers, --forwarded-allow-ips, "*"]
+    cpus: 1.0
+    mem_limit: 1g
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8001/ready')"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  worker:
+    <<: *app
+    command: [python, -m, masterone.mdm.resolution_worker]
+    cpus: 2.0
+    mem_limit: 8g
+    healthcheck:
+      disable: true
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-masterone-frontend:release}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: same-origin
+        NEXT_PUBLIC_BUFFER_EXPLANATIONS: "false"
+    init: true
+    environment:
+      NODE_ENV: production
+    mem_limit: 512m
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/login').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    restart: unless-stopped
+
+  gateway:
+    image: caddy:2-alpine
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  app_data:
+  postgres_data:
+  caddy_data:
+  caddy_config:

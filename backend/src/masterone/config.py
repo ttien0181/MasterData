@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     semantic_address_enabled: bool = False
     session_workflow_enabled: bool = False
     demo_fast_mode: bool = False
+    demo_enabled: bool = False
+    workflow_auto_process: bool = False
+    demo_max_active_sessions: int = Field(default=12, ge=1, le=100)
+    demo_session_seconds: int = Field(default=7200, ge=600, le=14400)
+    demo_idle_seconds: int = Field(default=3600, ge=300, le=7200)
     workflow_bulk_batch_rows: int = Field(default=500, ge=100, le=1000)
     matching_profile_registry_enabled: bool = False
     steward_feedback_capture_enabled: bool = False

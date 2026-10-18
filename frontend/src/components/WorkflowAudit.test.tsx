@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, expect, it, vi } from 'vitest';
 import ClusterWorkspace from './ClusterWorkspace';
 import DecisionWorkspace from './DecisionWorkspace';
+import PairExplanation from './PairExplanation';
 import { WorkflowContext } from './SessionWorkspace';
 import type { WorkflowRead } from '@/lib/workflowContracts';
 import * as api from '@/lib/workflowApi';
@@ -11,7 +12,7 @@ vi.mock('./AppSession', () => ({ useAppUser: () => ({ capabilities: ['read','exp
 vi.mock('@/lib/workflowApi', async orig => ({ ...await orig<typeof api>(),
   getClusters: vi.fn().mockResolvedValue({items:[{cluster_id:'c',member_count:1,singleton:true,status:'SINGLETON'}],total:1,next_cursor:null}),
   getPairSummary: vi.fn().mockResolvedValue({total:1,needs_review:1,accepted:0,denied:0,kept_separate:0,deferred:0,blocked:0,manual_available:1,auto_available:0,groups:[]}), getPairs: vi.fn().mockResolvedValue({items:[{pair_id:'p',revision:0,decision:'UNDECIDED',baseline:{left_id:'a',right_id:'b',decision:'REVIEW',field_evidence:[],score:1},eligibility:{manual_allowed:true,auto_allowed:false,blocked_reasons:[]}}],total:1,next_cursor:null}),
-  explainWorkflowPair: vi.fn().mockResolvedValue({status:'TEMPLATE',error_code:'PROVIDER_DENIED',explanation:{summary_vi:'Fallback',limitations:[]}})
+  streamWorkflowPairExplanation: vi.fn().mockResolvedValue({status:'TEMPLATE',error_code:'PROVIDER_DENIED',explanation:{summary_vi:'Fallback',limitations:[]}})
   ,getPair:vi.fn().mockResolvedValue({pair_id:'p',revision:0,decision:'UNDECIDED',baseline:{left_id:'a',right_id:'b',decision:'REVIEW',field_evidence:[],score:1},eligibility:{manual_allowed:true,auto_allowed:false,blocked_reasons:[]}})
 }));
 afterEach(cleanup);
@@ -20,14 +21,14 @@ function show(ui: React.ReactNode, state=w) { render(<SessionCacheProvider userI
 it('offers group checkboxes and resolution in partial generation', async () => {
   show(<ClusterWorkspace />, {...w,workflow_state:'DECIDE_REVIEW'});
   await waitFor(()=>expect(screen.getByRole('checkbox',{name:'Chọn nhóm c'})).toBeInTheDocument());
-  expect(screen.getByRole('button',{name:'Tự xử lý & tạo Golden'})).toBeEnabled();
+  fireEvent.click(screen.getByText('Công cụ bổ sung'));
+  expect(await screen.findByRole('button',{name:'Tự xử lý & tạo hồ sơ đại diện'})).toBeEnabled();
 });
 it('explains fallback source without calling a template AI output', async () => {
-  show(<DecisionWorkspace />, {...w,workflow_state:'DECIDE_REVIEW'});
-  fireEvent.click(await screen.findByRole('button',{name:'Đối chiếu cặp p'}));
-  fireEvent.click(await screen.findByRole('button',{name:'Giải thích bằng AI cặp p'}));
-  await waitFor(() => expect(api.explainWorkflowPair).toHaveBeenCalled());
-  expect(await screen.findByText('Giải thích theo quy tắc')).toBeInTheDocument();
+  show(<PairExplanation pair={{pair_id:'p',revision:0} as import('@/lib/workflowContracts').PairRead} />, {...w,workflow_state:'DECIDE_REVIEW'});
+  fireEvent.click(await screen.findByRole('button',{name:'Hỏi Master Bot cặp p'}));
+  await waitFor(() => expect(api.streamWorkflowPairExplanation).toHaveBeenCalled());
+  expect(await screen.findByText('Master Bot chưa có kết quả hợp lệ. Bạn có thể thử lại.')).toBeInTheDocument();
   expect(screen.getByText('Fallback')).toBeInTheDocument();
 });
 it('reloads comparison evidence after reassessment even when decision revision is unchanged', async () => {

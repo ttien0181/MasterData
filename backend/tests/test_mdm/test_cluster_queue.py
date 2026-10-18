@@ -21,16 +21,13 @@ def accepted_fixture(client, run):
     return url,identifier
 
 
-def test_accept_queue_builds_while_pending_remains_and_repeat_is_empty(client,workflow_run):
+def test_accept_auto_builds_while_pending_remains_and_manual_repeat_is_empty(client,workflow_run):
     url,identifier=accepted_fixture(client,workflow_run)
     before=read(client,workflow_run)
     assert any(b['code']=='PENDING_DECISIONS' for b in before['blockers'])
     queue=client.get(url+'/cluster-queue').json()
     assert queue['pending_count']==1
-    body=request(before['workflow_revision'],expected_decision_revision=before['decision_revision'],queue_mode='pending')
-    response=client.post(url+'/cluster-queue',json=body)
-    assert response.status_code==202,response.text
-    assert client.post(url+'/cluster-queue',json=body).json()['operation_id']==response.json()['operation_id']
+    assert before['active_operation']['operation_type']=='CLUSTER'
     run_one(client)
     after=read(client,workflow_run)
     assert after['cluster_revision']==1
@@ -49,13 +46,18 @@ def test_queue_command_rejects_stale_and_reading_does_not_enqueue(client,workflo
     url,_=accepted_fixture(client,workflow_run)
     before=read(client,workflow_run)
     for _ in range(2):assert client.get(url+'/cluster-queue').status_code==200
-    assert read(client,workflow_run)['active_operation'] is None
+    assert read(client,workflow_run)['active_operation']['operation_id']==before['active_operation']['operation_id']
     response=client.post(url+'/cluster-queue',json=request(before['workflow_revision']-1,expected_decision_revision=before['decision_revision'],queue_mode='all'))
     assert response.status_code==409
 
 
 def build(client,url,run,mode):
     state=read(client,run)
+    if state['active_operation'] and state['active_operation']['operation_type']=='CLUSTER':
+        # Accept already schedules the full refresh. Wait for its worker rather
+        # than trying to submit the removed manual action concurrently.
+        run_one(client)
+        return
     response=client.post(url+'/cluster-queue',json=request(state['workflow_revision'],expected_decision_revision=state['decision_revision'],queue_mode=mode))
     assert response.status_code==202,response.text
     run_one(client)
@@ -147,8 +149,7 @@ def test_viewer_cannot_build_queue_or_publish_queued_job(client,workflow_run):
     url,_=accepted_fixture(client,workflow_run)
     state=read(client,workflow_run)
     body=request(state['workflow_revision'],expected_decision_revision=state['decision_revision'],queue_mode='pending')
-    response=client.post(url+'/cluster-queue',json=body)
-    assert response.status_code==202,response.text
+    assert state['active_operation']['operation_type']=='CLUSTER'
     with client.session_factory.begin() as db:
         db.get(User,db.get(ResolutionRun,workflow_run).owner_user_id).role='VIEWER'
     assert client.get(url+'/cluster-queue').status_code==200

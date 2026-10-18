@@ -1,0 +1,81 @@
+import {expect,test} from '@playwright/test';
+test.use({baseURL:process.env.DEMO_BASE_URL||'http://localhost:3000'});
+
+test('a judge can use the real guided demo through AI, grouping and CSV export',async({page},info)=>{
+ test.skip(process.env.LIVE_PRODUCT_DEMO!=='1','Explicit opt-in: this test calls the real AI providers.');
+ test.setTimeout(360000);
+ await page.setViewportSize({width:1380,height:950});
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('/login');
+ await page.getByRole('button',{name:'Demo sản phẩm',exact:false}).click();
+ await expect(page).toHaveURL(/\/app\/demo/);
+ await expect(page.getByRole('heading',{name:/Một khách hàng/})).toBeVisible();
+ await page.screenshot({path:info.outputPath('demo-welcome.png'),fullPage:true,animations:'disabled'});
+ await page.getByRole('button',{name:/Bắt đầu trải nghiệm/}).click();
+ await expect(page).toHaveURL(/\/sessions\/[^/]+\/data/,{timeout:60000});
+ const dataUrl=page.url(),runId=dataUrl.match(/sessions\/([^/]+)/)![1];
+ await expect(page.getByRole('heading',{name:'Hồ sơ khách hàng',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Tìm hồ sơ trùng lặp',exact:true})).toHaveCount(0);
+ await expect(page.getByRole('region',{name:'Gợi ý trải nghiệm'})).toBeVisible({timeout:30000});
+ await page.screenshot({path:info.outputPath('demo-step1.png'),fullPage:true,animations:'disabled'});
+ await page.getByRole('button',{name:'Bỏ qua hướng dẫn',exact:true}).click();
+ await expect(page.getByRole('region',{name:'Gợi ý trải nghiệm'})).toHaveCount(0);
+ const next=page.getByRole('link',{name:/Xem các cặp cần đối chiếu/});
+ await expect(next).toBeVisible({timeout:300000});
+ await next.click();
+ await expect(page.locator('[data-demo="pair-compare"]').first()).toBeVisible({timeout:30000});
+ await page.locator('[data-demo="pair-compare"]').first().click();
+ await expect(page.getByRole('dialog',{name:'Đối chiếu cặp hồ sơ',exact:true})).toBeVisible();
+ await page.locator('[data-demo="comparison-close"]').click();
+ await page.getByRole('button',{name:'Hướng dẫn demo',exact:true}).click();
+ await expect(page.getByRole('region',{name:'Gợi ý trải nghiệm'})).toBeVisible();
+ await page.getByRole('button',{name:'Bỏ qua hướng dẫn',exact:true}).click();
+ const explanationResponse=page.waitForResponse(r=>r.url().includes('/explanation')&&r.request().method()==='POST',{timeout:60000});
+ await page.locator('[data-demo="pair-explain"]').first().click();
+ const response=await explanationResponse;expect(response.ok()).toBe(true);
+ await response.finished();expect(await response.text()).toMatch(/"status"\s*:\s*"READY"/);
+ await expect(page.getByRole('region',{name:'Master Bot giải thích cặp'})).toBeVisible({timeout:10000});
+ await expect(page.getByRole('region',{name:'Master Bot giải thích cặp'})).not.toContainText('Master Bot đang trả lời…',{timeout:10000});
+ await page.screenshot({path:info.outputPath('demo-step2-bot.png'),fullPage:true,animations:'disabled'});
+ await page.getByRole('button',{name:'Thu gọn Master Bot',exact:true}).click();
+ const accept=page.getByRole('button',{name:/^Đồng ý gộp cặp /}).filter({visible:true});
+ const eligible=page.locator('[data-demo="pair-decision"] button:not([disabled])').filter({hasText:'Đồng ý gộp'}).first();
+ await expect(eligible).toBeEnabled();await eligible.click();
+ // Some genuine conflict cases ask for a reason. Keep the user's decision explicit.
+ const reasonDialog=page.getByRole('dialog').filter({hasText:'Lý do'});
+ if(await reasonDialog.isVisible().catch(()=>false)){
+  await reasonDialog.getByRole('textbox').fill('Đã đối chiếu thông tin trong phiên demo.');
+  await reasonDialog.getByRole('button',{name:/Xác nhận|Đồng ý/}).last().click();
+ }
+ await page.getByRole('link',{name:/BƯỚC 03/}).click();
+ await expect(page.locator('[data-demo="group-open"]').first()).toBeVisible({timeout:90000});
+ await page.locator('[data-demo="group-open"]').first().click();
+ await expect(page.locator('[data-demo="source-choice"]').first()).toBeVisible({timeout:30000});
+ const source=page.locator('[data-demo="source-choice"][aria-pressed="false"]:not([disabled])').first();
+ if(await source.count()){
+  await source.click();await expect(page.locator('[data-demo="golden-save"]')).toBeEnabled();
+  await page.locator('[data-demo="golden-save"]').click();
+  await expect(page.locator('[data-demo="golden-save"]')).toBeDisabled({timeout:30000});
+ }
+ await page.screenshot({path:info.outputPath('demo-step3.png'),fullPage:true,animations:'disabled'});
+ await page.getByRole('button',{name:'Đóng chi tiết nhóm',exact:true}).click();
+ await page.getByRole('link',{name:/BƯỚC 04/}).click();
+ await expect(page.locator('[data-demo="golden-select"]')).toBeEnabled({timeout:30000});
+ await page.locator('[data-demo="golden-select"]').click();
+ const download=page.waitForEvent('download');await page.locator('[data-demo="golden-export"]').click();
+ expect((await download).suggestedFilename()).toMatch(/\.csv$/);
+ await expect(page.getByText('Bạn đã hoàn thành một lượt trải nghiệm!',{exact:true})).toBeVisible();
+ await page.screenshot({path:info.outputPath('demo-step4.png'),fullPage:true,animations:'disabled'});
+ await page.setViewportSize({width:390,height:844});
+ await page.screenshot({path:info.outputPath('demo-mobile.png'),fullPage:true,animations:'disabled'});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.goto('/app');await page.getByRole('button',{name:'Kho dữ liệu mẫu',exact:true}).click();
+ await expect(page.getByRole('dialog',{name:'Kho dữ liệu mẫu'})).toBeVisible();
+ const sample=page.waitForEvent('download');await page.getByRole('button',{name:'Tải cả bộ ZIP',exact:true}).click();
+ expect((await sample).suggestedFilename()).toMatch(/\.zip$/);
+ await page.getByRole('button',{name:'Đóng hộp thoại',exact:true}).click();
+ await page.getByRole('button',{name:'Kết thúc demo',exact:true}).click();
+ await expect(page).toHaveURL(/\/login/);
+ expect(errors).toEqual([]);
+ info.annotations.push({type:'demo-run',description:runId});
+});

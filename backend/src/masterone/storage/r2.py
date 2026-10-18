@@ -9,7 +9,8 @@ from masterone.storage.object_store import R2ObjectStore
 
 
 def get_store(settings: Settings) -> R2ObjectStore | None:
-    if not settings.r2_enabled:
+    from masterone.storage.demo_scope import local_only
+    if local_only() or not settings.r2_enabled:
         return None
     # One boto3 client per credential set: boto3 clients are thread-safe, and
     # upload/validate/commit call this once per part.

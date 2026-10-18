@@ -1,3 +1,4 @@
+import {userFacingError} from './userFacingError';
 import { exportChoices } from "./resolutionChoices";
 import type { ResolutionOverview, ResolutionRunHistory, ResolutionRun, ReviewCategory, SeparateRecord,
   ResolutionItem, ResolutionItemDetail, ResolutionExportReadiness, ResolutionExportSummary,
@@ -7,6 +8,7 @@ import type { ResolutionOverview, ResolutionRunHistory, ResolutionRun, ReviewCat
 export const getResolutionAnalytics = (runId: string) => request<ResolutionAnalytics>(`/runs/${runId}/analytics`);
 
 export function apiBase() {
+  if (process.env.NEXT_PUBLIC_API_BASE_URL === 'same-origin') return typeof window === 'undefined' ? '' : window.location.origin;
   if (process.env.NEXT_PUBLIC_API_BASE_URL) return process.env.NEXT_PUBLIC_API_BASE_URL;
   const host = typeof window !== "undefined" ? window.location.hostname : "localhost";
   return `http://${host === "127.0.0.1" ? host : "localhost"}:8001`;
@@ -20,19 +22,26 @@ export class ApiError extends Error {
   }
 }
 
-function errorMessage(detail: unknown, status: number) {
-  return typeof detail === "string" ? detail : `Yêu cầu thất bại (${status})`;
+function errorMessage(detail:unknown,status:number){return userFacingError(detail,status);}
+async function fetchForUser(input:RequestInfo|URL,init?:RequestInit){
+ try{return await fetch(input,init);}catch(cause){if(init?.signal?.aborted)throw cause;throw new ApiError(userFacingError(null,0),0);}
 }
 
-export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+// Shared authenticated transport for JSON and streaming responses.
+export async function requestResponse(path: string, init?: RequestInit): Promise<Response> {
   const method = init?.method?.toUpperCase() ?? "GET";
   const headers = new Headers(init?.headers);
   if (method !== "GET" && method !== "HEAD") headers.set("X-CSRF-Token", csrfToken);
-  const response = await fetch(`${apiBase()}/api/v1/mdm${path}`, { ...init, credentials: "include", headers });
+  const response = await fetchForUser(`${apiBase()}/api/v1/mdm${path}`, { ...init, credentials: "include", headers });
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
     throw new ApiError(errorMessage(detail?.detail, response.status), response.status, detail?.detail);
   }
+  return response;
+}
+
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await requestResponse(path, init);
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
@@ -40,12 +49,12 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export type { AuthUser } from "./contracts";
 export type BackendHealth = { status: string; env?: string };
 export async function getBackendHealth() {
-  const response = await fetch(`${apiBase()}/health`, { cache: "no-store" });
+  const response = await fetchForUser(`${apiBase()}/health`, { cache: "no-store" });
   if (!response.ok) throw new ApiError(`Health check failed (${response.status})`, response.status);
   return response.json() as Promise<BackendHealth>;
 }
 async function authRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBase()}/api/v1/auth${path}`, { ...init, credentials: "include" });
+  const response = await fetchForUser(`${apiBase()}/api/v1/auth${path}`, { ...init, credentials: "include" });
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
     throw new ApiError(errorMessage(detail?.detail, response.status), response.status);
@@ -54,6 +63,12 @@ async function authRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 export const getMe = () => authRequest<AuthUser>("/me");
+export const enterProductDemo = () => authRequest<AuthUser>('/demo', {method:'POST'});
+export const startProductDemo = (useEmbedding=false) => request<{run_id:string;status:string}>('/demo/start', {
+  method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({use_embedding:useEmbedding})});
+export type SampleCatalog = {version:string;title:string;description:string;record_count:number;file_count:number;synthetic:boolean;files:{name:string;source:string;description:string;record_count:number;byte_size:number}[]};
+export const getSampleCatalog = (signal?:AbortSignal) => request<SampleCatalog>('/demo/catalog', {signal});
+export const downloadSampleFile = (name:string) => requestCsv(`/demo/files/${encodeURIComponent(name)}`, 'GET', undefined, name);
 export const register = (email: string, password: string) => authRequest<{ id: string; email: string }>("/register", {
   method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }),
 });
@@ -105,9 +120,9 @@ export const replaceUploadSessionFile = (sessionId: string, fileId: string, file
 export const validateUploadSession = (sessionId: string) =>
   request<UploadSession>(`/upload-sessions/${sessionId}/validate`, { method: "POST" });
 // 201 with the run when created inline; 202 with run_id and profile null while the import job runs.
-export const commitUploadSession = (sessionId: string, workflowVersion: 1 | 2 = 1) =>
+export const commitUploadSession = (sessionId: string, workflowVersion: 1 | 2 = 1, useEmbedding?: boolean) =>
   request<{ run_id: string | null; status: string; profile: RunCommitProfile | null }>(
-    `/upload-sessions/${sessionId}/commit${workflowVersion === 2 ? '?workflow_version=2' : ''}`, { method: "POST" });
+    `/upload-sessions/${sessionId}/commit${workflowVersion === 2 ? `?workflow_version=2${useEmbedding===undefined?'':`&use_embedding=${useEmbedding}`}` : ''}`, { method: "POST" });
 export const deleteUploadSession = (sessionId: string) =>
   request<void>(`/upload-sessions/${sessionId}`, { method: "DELETE" });
 
@@ -122,8 +137,8 @@ export function uploadResolutionUploadPart(sessionId: string, fileId: string, pa
     xhr.setRequestHeader("X-CSRF-Token", csrfToken);
     xhr.setRequestHeader("X-Chunk-SHA256", digest);
     xhr.upload.onprogress = (event) => onProgress(event.loaded);
-    xhr.onerror = () => reject(new Error("Kết nối bị gián đoạn khi tải file."));
-    xhr.onabort = () => reject(new Error("Đã hủy khối upload."));
+    xhr.onerror = () => reject(new Error("Kết nối bị gián đoạn khi tải tệp."));
+    xhr.onabort = () => reject(new Error("Đã hủy khối tải dữ liệu."));
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) { resolve(); return; }
       let message = `Yêu cầu thất bại (${xhr.status})`;
@@ -155,8 +170,8 @@ export function putPartToStorage(target: PresignedPart, blob: Blob, onProgress: 
     xhr.open("PUT", target.upload_url);
     for (const [name, value] of Object.entries(target.headers)) xhr.setRequestHeader(name, value);
     xhr.upload.onprogress = (event) => onProgress(event.loaded);
-    xhr.onerror = () => reject(new Error("Kết nối bị gián đoạn khi tải file."));
-    xhr.onabort = () => reject(new Error("Đã hủy khối upload."));
+    xhr.onerror = () => reject(new Error("Kết nối bị gián đoạn khi tải tệp."));
+    xhr.onabort = () => reject(new Error("Đã hủy khối tải dữ liệu."));
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) { resolve(); return; }
       reject(new ApiError(`Kho lưu trữ từ chối khối (${xhr.status})`, xhr.status));
@@ -232,20 +247,20 @@ export const executeResolutionSplit = (runId: string, exportId: string, eventId:
       body: JSON.stringify({ member_id: memberId, version, execute_request_id: executeRequestId }),
     });
 
-async function requestCsv(path: string, method: "GET" | "POST", body?: object) {
+async function requestCsv(path: string, method: "GET" | "POST", body?: object, fallbackFilename="masterone.csv") {
   const headers = new Headers();
   if (method !== "GET") {
     headers.set("X-CSRF-Token", csrfToken);
     headers.set("Content-Type", "application/json");
   }
-  const response = await fetch(`${apiBase()}/api/v1/mdm${path}`, {
+  const response = await fetchForUser(`${apiBase()}/api/v1/mdm${path}`, {
     method, headers, credentials: "include", body: body ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
     throw new ApiError(errorMessage(detail?.detail, response.status), response.status);
   }
-  const filename = /filename="?([^";]+)"?/.exec(response.headers.get("Content-Disposition") ?? "")?.[1] ?? "masterone.csv";
+  const filename = /filename="?([^";]+)"?/.exec(response.headers.get("Content-Disposition") ?? "")?.[1] ?? fallbackFilename;
   const url = URL.createObjectURL(await response.blob());
   const link = document.createElement("a");
   link.href = url; link.download = filename; document.body.append(link); link.click(); link.remove();

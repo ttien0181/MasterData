@@ -68,7 +68,7 @@ test('decision progress replaces candidate count with classification progress an
   await expect(status.getByRole('status')).toHaveText('20 cặp');
   started = true; scored = 10;
   await expect(status.getByRole('progressbar')).toHaveAttribute('value', '50');
-  await expect(status.getByText('Đang tạo các cặp bản ghi')).toHaveCount(0);
+  await expect(status.getByText('Đang tạo các cặp hồ sơ')).toHaveCount(0);
   complete = true;
   await expect(status.getByRole('progressbar')).toHaveAttribute('value', '100');
   await expect(page.getByRole('heading', { name: 'Phân bố nhóm', exact: true })).toBeVisible();
@@ -80,21 +80,21 @@ test('hub, URL tabs, reload and Back/Forward read only until explicit finalize',
   const mock = await mockWorkflow(page); await page.addInitScript(() => localStorage.setItem('masterone.resolution-run.v1.mock-owner', 'old-run'));
   await page.goto('/app'); await expect(page.getByRole('heading', { name: 'Tổng quan', exact: true })).toBeVisible(); expect(page.url()).not.toContain('old-run');
   await page.goto('/app/sessions/r/data'); await expect(page.getByRole('button', { name: 'Bắt đầu phân loại cặp' })).toBeEnabled();
-  await page.getByRole('link', { name: /Các nhóm bản ghi/ }).click(); await expect(page.getByText(/Chưa có nhóm/)).toBeVisible(); await page.reload(); await page.goBack(); await page.goForward(); expect(mock.mutations).toEqual([]);
+  await page.getByRole('link', { name: /Các nhóm hồ sơ/ }).click(); await expect(page.getByText(/Chưa có nhóm/)).toBeVisible(); await page.reload(); await page.goBack(); await page.goForward(); expect(mock.mutations).toEqual([]);
   await page.getByRole('link', { name: /Tổng quan dữ liệu/ }).click(); await page.getByRole('button', { name: 'Bắt đầu phân loại cặp' }).click();
-  await page.getByRole('navigation', { name: 'Các bước trong phiên' }).getByRole('link', { name: /^Duyệt các cặp bản ghi$/ }).click(); await expect(page.getByRole('table', { name: 'Danh sách cặp bản ghi' }).getByText('Thiếu bằng chứng', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: 'Accept cặp p', exact: true })).toBeDisabled();
+  await page.getByRole('navigation', { name: 'Các bước trong phiên' }).getByRole('link', { name: /^Các cặp hồ sơ khách hàng$/ }).click(); await expect(page.getByRole('table', { name: 'Danh sách cặp hồ sơ' }).getByText('Thiếu thông tin đối chiếu', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: 'Đồng ý gộp cặp p', exact: true })).toBeDisabled();
   await page.reload(); expect(mock.mutations.filter(p => p.endsWith('/finalize-decisions'))).toHaveLength(0);
   await page.getByRole('link',{name:'Sang B\u01b0\u1edbc 3',exact:true}).click();
   expect(mock.mutations).toHaveLength(1);
   await page.getByRole('button',{name:'T\u1ea1o nh\u00f3m m\u1edbi',exact:true}).click();
   await expect(page).toHaveURL(/\/clusters$/); await expect(page.getByRole('button', { name: /Singleton c/ })).toBeVisible(); expect(mock.mutations.filter(p => p.endsWith('/cluster-queue'))).toHaveLength(1);
 });
-test('stale Golden saves reload server and preserve draft without automatic retry', async ({ page }) => {
+test('stale hồ sơ đại diện saves reload hệ thống and preserve draft without automatic retry', async ({ page }) => {
   const mock = await mockWorkflow(page); mock.setState('GOLDEN_REVIEW'); await page.goto('/app/sessions/r/clusters?cluster=c');
-  await page.getByRole('textbox', { name: 'Chỉnh tay name' }).fill('My unsaved draft'); mock.staleNextSave(); await page.getByRole('button', { name: 'Lưu lựa chọn Golden' }).click();
-  await expect(page.getByRole('textbox', { name: 'Chỉnh tay name' })).toHaveValue('My unsaved draft'); await expect(page.getByRole('button', { name: 'Lưu lựa chọn Golden' })).toBeDisabled();
+  await page.getByRole('textbox', { name: 'Nhập trực tiếp name' }).fill('My unsaved draft'); mock.staleNextSave(); await page.getByRole('button', { name: 'Lưu lựa chọn hồ sơ đại diện' }).click();
+  await expect(page.getByRole('textbox', { name: 'Nhập trực tiếp name' })).toHaveValue('My unsaved draft'); await expect(page.getByRole('button', { name: 'Lưu lựa chọn hồ sơ đại diện' })).toBeDisabled();
   await expect(page.getByText(/Server đã có revision mới/)).toBeVisible(); expect(mock.mutations.filter(p => p.endsWith('/golden'))).toHaveLength(1);
-  await expect(page.getByText('091', { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Bỏ bản nháp' }).click(); await expect(page.getByRole('textbox', { name: 'Chỉnh tay name' })).toHaveValue('');
+  await expect(page.getByText('091', { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Bỏ bản nháp' }).click(); await expect(page.getByRole('textbox', { name: 'Nhập trực tiếp name' })).toHaveValue('');
 });
 test('viewer has no upload or compute permission; desktop/mobile themes retain four tabs', async ({ page }) => {
   const mock = await mockWorkflow(page, true); await page.goto('/app'); await expect(page.getByRole('heading', { name: 'Tổng quan', exact: true })).toBeVisible(); await expect(page.getByRole('link', { name: 'Upload / tạo phiên' })).toHaveCount(0);
@@ -109,7 +109,7 @@ test('failed data reads recover explicitly and keyboard tabs remain read only', 
     : route.fallback());
   await page.goto('/app/sessions/r/data');
   await expect(page.locator('.workflow-main').getByRole('alert')).toContainText('Synthetic read unavailable');
-  unavailable = false; await page.getByRole('button', { name: 'Thử đọc lại' }).click();
+  unavailable = false; await page.getByRole('button', { name: 'Tải lại' }).click();
   await page.getByText('1 tệp tải lên · 1 trường dữ liệu', { exact: true }).click();
   await expect(page.getByText('synthetic.csv', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Bắt đầu phân loại cặp' })).toBeEnabled();
@@ -117,11 +117,11 @@ test('failed data reads recover explicitly and keyboard tabs remain read only', 
   await tabs.getByRole('link', { name: /Tổng quan dữ liệu/ }).focus(); await page.keyboard.press('Tab');
   await expect(tabs.getByRole('button', { name: 'Thu gọn mục con Tổng quan dữ liệu', exact: true })).toBeFocused();
   await page.keyboard.press('Enter'); await page.keyboard.press('Tab');
-  await expect(tabs.getByRole('link', { name: /Phân loại các cặp bản ghi/ })).toBeFocused();
+  await expect(tabs.getByRole('link', { name: /Các cặp hồ sơ khách hàng/ })).toBeFocused();
   await page.keyboard.press('Enter'); await expect(page).toHaveURL(/\/decisions$/);
   expect(mock.mutations).toEqual([]);
 });
-test('final Golden values remain readable on mobile and export action stays above the dock', async ({ page }) => {
+test('final hồ sơ đại diện values remain readable on mobile and export action stays above the dock', async ({ page }) => {
   const mock = await mockWorkflow(page); mock.setState('FINALIZED');
   await page.route(/\/workflow\/golden(?:\?|$)/, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
     items: [{ cluster_id: 'synthetic-cluster', status: 'FINALIZED', fields: { name: { value: 'Server name', provenance: 'MANUAL_OVERRIDE' }, phone: { values: [{ value: '090', source_system: 'CRM' }, { value: '091', source_system: 'BILL' }] } } }], total: 1, next_cursor: null,

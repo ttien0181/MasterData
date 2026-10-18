@@ -33,7 +33,8 @@ def save_stage_checkpoint(
     local_path = paths.local_stage(settings.work_dir, stage) / Path(output_key).name
     write_parquet_atomic(rows, local_path)
     output_uri = f"file://{local_path.resolve()}"
-    if all((settings.r2_endpoint_url, settings.r2_access_key_id, settings.r2_secret_access_key, settings.r2_bucket)):
+    from masterone.storage.demo_scope import local_only
+    if not local_only() and all((settings.r2_endpoint_url, settings.r2_access_key_id, settings.r2_secret_access_key, settings.r2_bucket)):
         store = R2ObjectStore(settings.r2_endpoint_url, settings.r2_access_key_id, settings.r2_secret_access_key, settings.r2_bucket)
         store.upload_file(local_path, output_key, "application/vnd.apache.parquet")
         head = store.client.head_object(Bucket=settings.r2_bucket, Key=output_key)

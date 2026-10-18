@@ -8,30 +8,30 @@ const pageCopy: Record<Stage, { title: string; description: string }> = {
   import: {
     title: "Nạp dữ liệu",
     description:
-      "Tải một hoặc nhiều file để tìm bản ghi trùng trên toàn bộ dữ liệu.",
+      "Tải một hoặc nhiều tệp để tìm hồ sơ trùng trên toàn bộ dữ liệu.",
   },
   auto: {
     title: "Tự động gộp",
     description:
-      "Các bản ghi trùng được gom thành một hồ sơ. Danh sách gồm kết quả tự động và kết quả bạn đã xác nhận; kiểm tra thông tin trước khi gộp và xuất CSV.",
+      "Các hồ sơ trùng được gom thành một hồ sơ. Danh sách gồm kết quả tự động và kết quả bạn đã xác nhận; kiểm tra thông tin trước khi gộp và xuất CSV.",
   },
   review: {
     title: "Cần xem xét",
     description:
-      "Lọc theo nhóm lý do, so sánh từng cặp bản ghi và xác nhận gộp hoặc không gộp.",
+      "Lọc theo nhóm lý do, so sánh từng cặp hồ sơ và xác nhận gộp hoặc không gộp.",
   },
   no_merge: {
     title: "Không gộp",
     description:
-      "Các cặp được xác định khác nhau hoặc bạn đã từ chối gộp. Bản ghi nguồn vẫn được giữ lại.",
+      "Các cặp được xác định khác nhau hoặc bạn đã từ chối gộp. Hồ sơ nguồn vẫn được giữ lại.",
   },
   history: {
     title: "Lịch sử",
     description:
-      "Tải lại CSV và xem các bản ghi trước, sau xử lý trong lần nạp này.",
+      "Tải lại CSV và xem các hồ sơ trước, sau xử lý trong lần nạp này.",
   },
   audit: {
-    title: "Audit phiên",
+    title: "Lịch sử thao tác trong phiên",
     description: "Xem các thao tác đã được ghi nhận trong phiên phân giải này.",
   },
   policy: {

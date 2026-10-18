@@ -39,8 +39,8 @@ it('pages frozen server members and sends the complete receipt rather than a dis
 it('shows paginated additional evidence on request',async()=>{
  vi.mocked(api.getReviewGroupEvidence).mockResolvedValue({items:[{id:'computed',left_id:'r98',right_id:'r99',decision:'REVIEW',score:1,field_evidence:[],computed_only:true}],total:4950,next_cursor:'25'});
  render(<SessionCacheProvider userId="large-evidence"><WorkflowContext.Provider value={{workflow:w,refresh:vi.fn()}}><GroupApprovalDialog recordIds={members.map(m=>m.record_id)} members={members.slice(0,25)} fingerprint={'f'.repeat(64)} previewOperationId="preview" close={vi.fn()} approved={vi.fn()}/></WorkflowContext.Provider></SessionCacheProvider>);
- fireEvent.click(screen.getByRole('button',{name:'Xem bằng chứng giữa các thành viên'}));
+ fireEvent.click(screen.getByRole('button',{name:'Xem thông tin đối chiếu giữa các thành viên'}));
  expect(await screen.findByText(/1 \/ 4950 cặp/)).toBeVisible();
  expect(screen.getByText(/r98 \/ r99/)).toBeVisible();
- expect(screen.getByRole('button',{name:'Trang bằng chứng tiếp'})).toBeEnabled();
+ expect(screen.getByRole('button',{name:'Trang thông tin đối chiếu tiếp'})).toBeEnabled();
 });

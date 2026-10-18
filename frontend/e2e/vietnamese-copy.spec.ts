@@ -1,0 +1,34 @@
+import {expect,test} from '@playwright/test';
+for(const width of [390,1380])test(`business language is clear across public pages, uploads and history at ${width}px`,async({page},info)=>{
+ await page.setViewportSize({width,height:900});
+ await page.addInitScript(()=>localStorage.setItem('masterbot-introductions:copy-test','off'));
+ await page.route('**/health',route=>route.fulfill({status:200,contentType:'application/json',body:'{"status":"ok"}'}));
+ await page.route('**/api/v1/**',async route=>{
+  const path=new URL(route.request().url()).pathname;let body:unknown={};
+  if(path.endsWith('/auth/login'))return route.fulfill({status:401,contentType:'application/json',body:'{"detail":"Invalid email or password"}'});
+  if(path.endsWith('/auth/me'))body={id:'copy-test',email:'user@example.test',role:'STEWARD',csrf_token:'test',capabilities:['read','read_audit','create_run']};
+  else if(path.endsWith('/workflow'))body={run_id:'r',workflow_version:2,workflow_state:'GOLDEN_REVIEW',workflow_revision:1,decision_revision:1,cluster_revision:1,golden_revision:1,counts:{},allowed_actions:[],blockers:[],active_operation:null};
+  else if(path.endsWith('/audit'))body={items:[{id:'event',action:'CSV_EXPORTED',created_at:'2026-10-18T02:00:00Z',actor_user_id:'copy-test',details:{row_count:1721}}],total:1};
+  else if(path.endsWith('/exports')||path.endsWith('/upload-sessions')||path.endsWith('/runs'))body={items:[],total:0,next_cursor:null};
+  await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)});
+ });
+ await page.goto('/');await expect(page.getByText('QUẢN LÝ DỮ LIỆU KHÁCH HÀNG',{exact:true})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Xem lại và xuất CSV',exact:true})).toBeVisible();
+ await page.screenshot({path:info.outputPath('landing.png'),fullPage:true});
+ await page.goto('/login');await expect(page.getByRole('button',{name:'Đăng nhập bằng tài khoản công ty',exact:true})).toBeDisabled();
+ await page.getByLabel('Email',{exact:true}).fill('user@example.test');await page.getByLabel('Mật khẩu',{exact:true}).fill('wrong-password-123');
+ await page.getByRole('button',{name:'Đăng nhập',exact:true}).click();await expect(page.getByRole('alert').filter({hasText:'Email hoặc mật khẩu chưa đúng'})).toContainText('Email hoặc mật khẩu chưa đúng');
+ await page.screenshot({path:info.outputPath('login.png'),fullPage:true});
+ await page.goto('/register');await expect(page.getByRole('heading',{name:'Tạo tài khoản',exact:true})).toBeVisible();
+ await page.goto('/app/uploads/new');await expect(page.getByRole('heading',{name:'Chuẩn bị dữ liệu',exact:true})).toBeVisible();
+ await expect(page.getByText('Kéo thả tệp vào đây',{exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:/Tài khoản/})).toBeVisible();
+ await page.screenshot({path:info.outputPath('upload.png'),fullPage:true});
+ await page.goto('/app/sessions/r/utilities');await expect(page.getByRole('heading',{name:'Lịch sử và quy định',exact:true})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Lịch sử thao tác trong phiên',exact:true})).toBeVisible();
+ await expect(page.getByRole('combobox',{name:'Loại thao tác',exact:true})).toBeVisible();
+ await expect(page.getByRole('article').getByText('Xuất CSV',{exact:true})).toBeVisible();
+ await expect(page.getByText('CSV_EXPORTED',{exact:true})).toHaveCount(0);
+ await page.screenshot({path:info.outputPath('history.png'),fullPage:true});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});

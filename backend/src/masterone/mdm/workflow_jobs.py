@@ -11,12 +11,20 @@ from masterone.mdm.workflow_artifacts import load, seal
 from masterone.mdm.workflow_models import WorkflowArtifact, WorkflowOperation, WorkflowPair
 from masterone.mdm.matching_agents.execution_budget import integration_job
 from masterone.mdm.workflow_telemetry import measured_operation, record_timing, timed_stage
+from masterone.storage.demo_scope import demo_job
 
 
 def authorize_job(db, run, op):
     from masterone.auth.models import User
     from masterone.auth.security import ROLE_CAPABILITIES
     from masterone.config import get_settings
+    from masterone.auth.models import DemoGrant
+    import time
+    demo = db.get(DemoGrant, op.actor_user_id)
+    if demo and (demo.run_id != run.id or demo.state not in ('STARTING', 'READY')
+            or demo.expires_at_epoch <= int(time.time())
+            or demo.last_seen_epoch + get_settings().demo_idle_seconds <= int(time.time())):
+        raise ValueError('WORKFLOW_AUTHORIZATION_CHANGED')
     actor = db.query(User).filter_by(id=op.actor_user_id).with_for_update().populate_existing().one_or_none()
     required = {'PREPARE': {'create_run'}, 'DECIDE': {'start_run'},
                 'BULK_DECISIONS': {'approve_pair' if op.payload.get('decision') == 'merge' else 'reject_pair'},
@@ -67,6 +75,7 @@ def finish(db, run, op, task, state):
     status, phase = ('DEGRADED', 'degraded') if matching_operation_degraded else ('COMPLETED', 'completed')
     op.status, op.stage = status, phase
     task.status, task.phase = status, phase
+    op.error_code = task.error_code = None
     run.status, run.phase = ('DEGRADED', 'degraded') if degraded else (status, phase)
     if matching_operation_degraded:
         op.error_code = task.error_code = 'MATCHING_AGENTS_DEGRADED'
@@ -74,14 +83,23 @@ def finish(db, run, op, task, state):
     run.workflow_revision += 1
     from masterone.mdm.workflow_processing import continue_processing
     continue_processing(db, run, op)
+    if (op.operation_type == 'BULK_DECISIONS' and op.payload.get('decision') == 'merge'
+            and op.result.get('checkpoint', {}).get('counts', {}).get('applied', 0) > 0):
+        from masterone.mdm.workflow_cluster_queue import schedule_cluster_refresh
+        schedule_cluster_refresh(db, run, op)
+    elif op.operation_type == 'CLUSTER_PREVIEW':
+        from masterone.mdm.workflow_cluster_queue import activate_cluster_refresh
+        activate_cluster_refresh(db, run)
 
 
 @measured_operation
+@demo_job
 @integration_job
 def execute_workflow(operation_id, factory, progress):
     with factory.begin() as db:
         run, op, task = job_identity(db, operation_id)
         run_id, kind, revision, policy = run.id, op.operation_type, run.workflow_revision, run.policy_version
+        use_embedding = run.use_embedding
         agents_config = None
         if op.payload.get('matching_binding_id'):
             from masterone.mdm.matching_agents.workflow_agents import config_for_operation
@@ -164,7 +182,7 @@ def execute_workflow(operation_id, factory, progress):
                 with track_decision(progress):
                     candidate_progress(0, force=True)
                     integration_candidates = None
-                    if agents_config and agents_config['kind'] == 'RULE_HYBRID_DETERMINISTIC':
+                    if agents_config and agents_config['kind'] == 'RULE_HYBRID_DETERMINISTIC' and not op.payload.get('mvp_step2'):
                         from masterone.mdm.matching_agents.candidate_union import build_union
                         from masterone.mdm.matching_agents.workflow_agents import vectors_for_operation, seal_agent
                         with timed_stage('embedding-retrieval'):
@@ -176,7 +194,10 @@ def execute_workflow(operation_id, factory, progress):
                                                    {'observations': provenance, 'config_digest': digest(agents_config)})
                         integration_candidates.metrics['provenance_artifact_id'] = provenance_id
                     with timed_stage('candidate-rule-scoring'):
-                        output = runner.run_decide(records, policy, negative_pairs, store=store, factory=factory,
+                        from masterone.mdm.pipeline.candidate_engine import CandidateConfig
+                        output = runner.run_decide(records, policy, negative_pairs,
+                                                   candidate_config=CandidateConfig(mvp_step2=True) if op.payload.get('mvp_step2') else None,
+                                                   store=store, factory=factory,
                                                    integration_candidates=integration_candidates)
                 try:
                     payload = {k: output[k] for k in ('candidate_count', 'insufficient_count', 'candidate_metrics', 'scoring_metrics', 'streaming')}
@@ -199,21 +220,27 @@ def execute_workflow(operation_id, factory, progress):
         assessed_payload, assessed_artifact = None, None
         if kind == 'DECIDE':
             from masterone.config import get_settings
-            if (op.payload.get('processing') or
+            if (not use_embedding or op.payload.get('processing') or
                     (agents_config['assessment_auto_enabled'] if agents_config else get_settings().pair_assessment_auto_enabled)):
                 from masterone.mdm.workflow_assessment import compute_assessment
                 assessed_payload = compute_assessment(records, payload['pairs'], profile, negative_pairs, progress,
                                                       op.payload.get('model_scope'))
+                if not use_embedding:
+                    for pair in assessed_payload['pairs']:
+                        pair['embedding_enabled'] = False
         agents_result = None
-        if (kind == 'DECIDE' and op.payload.get('matching_binding_id')
+        if (kind == 'DECIDE' and op.payload.get('matching_binding_id') and agents_config
+                and use_embedding
                 and not (agents_config and agents_config.get('experiment') in ('E0', 'E1'))):
             from masterone.mdm.matching_agents.workflow_agents import run_agents
             with timed_stage('embedding-evidence'):
+                from masterone.mdm.demo_embeddings import seed
+                seed(factory, operation_id, records)
                 agents_result = run_agents(factory, run_id, operation_id, records, payload['pairs'],
                     payload['scoring_metrics'], progress, source_artifact_id=artifact_id,
                     effective_pairs=assessed_payload['pairs'] if assessed_payload else None,
-                    skip_advisory=bool(op.payload.get('demo_fast_mode')))
-            if agents_result and agents_config['kind'] == 'RULE_HYBRID_DETERMINISTIC':
+                    skip_advisory=bool(op.payload.get('demo_fast_mode')) and not op.payload.get('mvp_step2'))
+            if agents_result and (agents_config['kind'] == 'RULE_HYBRID_DETERMINISTIC' or op.payload.get('mvp_step2')):
                 from masterone.mdm.matching_agents.workflow_agents import coordinated_payload
                 if assessed_payload is None:
                     from masterone.mdm.workflow_assessment import compute_assessment

@@ -97,3 +97,23 @@ def taxonomy(result: Mapping) -> dict:
     if result.get('agent_disagreement') is True or reason == 'AGENT_DISAGREEMENT':
         tags.add('AGENT_DISAGREEMENT')
     return {'review_group': group, 'review_subgroup': subgroup, 'evidence_tags': sorted(tags)}
+
+
+def mvp_columns(group, subgroup):
+    """Map the effective actions taxonomy to the four Step 2 review groups."""
+    return (case((group == 'A', case((subgroup == 'A_CONTACT', 'A_CONTACT'),
+                                       (subgroup.in_(('A_IDENTIFIER', 'A_MULTI_SIGNAL')), 'A_STRONG'), else_='B_SUPPORT')),
+                 (group == 'B', case((subgroup.in_(('B_AGENT_DISAGREEMENT', 'B_SOFT_CONFLICT')), 'B_CONFLICT'),
+                                     else_='B_SUPPORT')), else_=group).label('mvp_group'),
+            subgroup.label('mvp_subgroup'))
+
+
+def mvp_taxonomy(result):
+    action = taxonomy(result)
+    group, subgroup = action['review_group'], action['review_subgroup']
+    if group == 'A':
+        group = ('A_CONTACT' if subgroup == 'A_CONTACT' else
+                 'A_STRONG' if subgroup in ('A_IDENTIFIER', 'A_MULTI_SIGNAL') else 'B_SUPPORT')
+    elif group == 'B':
+        group = 'B_CONFLICT' if subgroup in ('B_AGENT_DISAGREEMENT', 'B_SOFT_CONFLICT') else 'B_SUPPORT'
+    return {'mvp_group': group, 'mvp_subgroup': subgroup}

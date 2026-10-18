@@ -1,0 +1,63 @@
+import {expect,test} from '@playwright/test';
+const generation={revision:1,source_decision_revision:1,stale:false,read_only:false,publication_status:'COMPLETE',clusters:2,multi_record_groups:1,singletons:1,covered_records:4,unresolved_records:0,total_records:4};
+const fields=Object.fromEntries(['name','phone','email','address','dob','government_id'].map(key=>[key,{present:key==='email'?2:4,missing:key==='email'?2:0}]));
+for(const mobile of [false,true])test(`${mobile?'mobile':'desktop'} metric explanations work across all steps without API writes`,async({page},info)=>{
+ test.setTimeout(45000);
+ const writes:string[]=[];
+ if(mobile)await page.setViewportSize({width:390,height:844});
+ await page.addInitScript(()=>localStorage.setItem('masterbot-introductions:metric-test','off'));
+ await page.route('**/api/v1/**',async route=>{
+  const req=route.request(),url=new URL(req.url()),path=url.pathname;
+  if(req.method()!=='GET')writes.push(path);
+  let body:unknown={};
+  if(path.endsWith('/auth/me'))body={id:'metric-test',email:'metrics@example.test',role:'STEWARD',csrf_token:'test',capabilities:['read','export_data']};
+  else if(path.endsWith('/workflow'))body={run_id:'r',workflow_version:2,workflow_state:'GOLDEN_REVIEW',workflow_revision:3,decision_revision:1,assessment_id:'a',cluster_revision:1,golden_revision:1,counts:{records:{value:4,unit:'records'},pairs:{value:3,unit:'pairs'}},allowed_actions:[],blockers:[],active_operation:null,cluster_result:generation};
+  else if(path.endsWith('/data'))body={files:[{filename:'a.csv',row_count:4}],schema:[],profile:{record_count:4,source_counts:{CRM:3,ERP:1},quality_flags:{INVALID_EMAIL_FORMAT:1},records_with_quality_flags:1,field_quality:{},field_completeness:fields},samples:{items:[],total:4,next_cursor:null}};
+  else if(path.endsWith('/pairs/summary'))body={total:3,needs_review:1,accepted:1,denied:1,kept_separate:0,deferred:0,blocked:0,manual_available:3,auto_available:0,decision_revision:1,assessment:{mvp_step2:true},groups:[{key:'A_CONTACT',total:2,pending:1,unresolved:1,subgroups:[]},{key:'B_CONFLICT',total:1,pending:0,unresolved:0,subgroups:[]}]};
+  else if(path.endsWith('/pairs'))body={items:[],total:0,offset:0,next_cursor:null};
+  else if(path.endsWith('/cluster-queue'))body={pending_count:0,accepted_count:1,published_count:1,decision_revision:1,cluster_revision:1};
+  else if(path.endsWith('/clusters'))body={items:[],total:2,next_cursor:null,generation};
+  else if(path.endsWith('/golden/index'))body={items:[],total:2,next_cursor:null,summary:{total:2,confirmed:0,needs_review:2},generation};
+  else if(path.endsWith('/runs')||path.endsWith('/upload-sessions'))body={items:[],total:0,next_cursor:null};
+  await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)});
+ });
+ const bubble=page.getByRole('region',{name:'Trò chuyện với Master Bot'});
+ async function explain(label:string,expected:string){
+  const button=page.getByRole('button',{name:`Giải thích chỉ số ${label}`,exact:true});
+  await button.click();await expect(bubble).toContainText(expected);
+  await expect(bubble.locator('mark').first()).toBeVisible();
+  await page.getByRole('button',{name:'Thu gọn Master Bot',exact:true}).click();
+ }
+ await page.goto('/app/sessions/r/data');
+ expect(await page.getByText('Tổng hồ sơ khách hàng',{exact:true}).evaluate(el=>Number(getComputedStyle(el).fontWeight))).toBeGreaterThanOrEqual(600);
+ await explain('Tỷ lệ hồ sơ cần kiểm tra','25%');
+ await explain('Đầy đủ Email','50%');
+ await explain('Nguồn CRM','3 hồ sơ (75%)');
+ await explain('Email sai định dạng','1 hồ sơ');
+ await page.screenshot({path:info.outputPath('data-metrics.png'),fullPage:true});
+ await page.goto('/app/sessions/r/decisions');
+ await expect(page.getByRole('button',{name:'Chọn trang',exact:true})).toHaveCount(0);
+ const actions=page.getByRole('region',{name:'Thao tác theo phạm vi'}),merge=page.getByRole('button',{name:'Đồng ý gộp theo phạm vi',exact:true});
+ await expect(merge).toBeVisible();
+ const barBox=await actions.boundingBox(),mergeBox=await merge.boundingBox();
+ expect(mergeBox!.x-barBox!.x).toBeLessThan(18);
+ const search=page.getByPlaceholder('Họ tên, điện thoại, mã hồ sơ');
+ await expect(search).toBeVisible();
+ if(!mobile)expect((await search.boundingBox())!.width).toBeLessThan(500);
+
+ await explain('Tỷ lệ cặp đã có quyết định','66,7%');
+ await page.screenshot({path:info.outputPath('decisions-overview.png'),fullPage:true});
+ await page.getByRole('button',{name:/Trùng thông tin liên hệ/}).click();
+ await expect(bubble).toContainText('2 cặp (66,7%)');
+ await page.getByRole('button',{name:'Thu gọn Master Bot',exact:true}).click();
+ await page.goto('/app/sessions/r/clusters');
+ await explain('Số hồ sơ giảm sau tổng hợp','2.');
+ await page.screenshot({path:info.outputPath('clusters-overview.png'),fullPage:true});
+ await page.goto('/app/sessions/r/golden');
+ await page.getByRole('button',{name:'Giải thích chỉ số Tỷ lệ giảm số hồ sơ',exact:true}).click();
+ await expect(bubble).toContainText('số tiền tiết kiệm.');
+ await page.screenshot({path:info.outputPath('metric-explanation.png')});
+ await page.getByRole('button',{name:'Thu gọn Master Bot',exact:true}).click();
+ await page.getByRole('button',{name:'Mở trò chuyện Master Bot'}).click();await expect(bubble).toContainText('50%');
+ expect(writes).toEqual([]);
+});

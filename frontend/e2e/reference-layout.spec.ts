@@ -60,7 +60,7 @@ for (const theme of ["light", "dark"] as const) {
 
     await page.route("**/api/v1/mdm/runs/*/workflow", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ workflow_version: 1 }) }));
   await page.goto("/app/legacy?run=run-1");
-    await expect(page.getByText("Bản ghi", { exact: true })).toBeVisible();
+    await expect(page.getByText("Hồ sơ", { exact: true })).toBeVisible();
     await expect(page.locator(".analytics-decisions")).toBeVisible();
     await page.screenshot({ path: `test-results/overview-${theme}.png`, fullPage: true });
     await page.locator(".sessions-orbit").click();
@@ -86,9 +86,9 @@ for (const theme of ["light", "dark"] as const) {
     await expect(panel).toHaveClass(/from-left/);
     await page.screenshot({ path: `test-results/upload-empty-${theme}.png`, animations: "disabled" });
     await panel.getByLabel("Tên phiên").fill("Customer mới");
-    await panel.getByLabel("Chọn các file CSV").setInputFiles({ name: "customer.csv", mimeType: "text/csv", buffer: Buffer.from("record_id,source,name\n1,CRM,Ada\n") });
+    await panel.getByLabel("Chọn các tệp CSV").setInputFiles({ name: "customer.csv", mimeType: "text/csv", buffer: Buffer.from("record_id,source,name\n1,CRM,Ada\n") });
     await expect(panel.getByRole("button", { name: "Bắt đầu phân giải", exact: true })).toBeEnabled();
-    await expect(panel.getByText("4.213 bản ghi", { exact: true })).toBeVisible();
+    await expect(panel.getByText("4.213 hồ sơ", { exact: true })).toBeVisible();
     expect(commitCount).toBe(0);
     await page.screenshot({ path: `test-results/upload-ready-${theme}.png` });
     await panel.getByLabel("Đổi hoặc tiếp tục tải customer.csv").setInputFiles({ name: "invalid.csv", mimeType: "text/csv", buffer: Buffer.from("name\nAda\n") });

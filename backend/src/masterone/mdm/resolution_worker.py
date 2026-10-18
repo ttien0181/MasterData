@@ -188,8 +188,23 @@ class ResolutionWorker:
         return True
 
     def run_forever(self):
+        next_demo_cleanup = 0
+        cleanup_thread = None
+        def cleanup():
+            try:
+                from masterone.mdm.demo_service import expire_demos
+                from masterone.mdm.demo_cleanup import purge
+                expire_demos(self.factory)
+                purge(self.factory)
+            except Exception as error:
+                logger.warning('DEMO_MAINTENANCE_RETRY error_type=%s', type(error).__name__)
         while not self.stop_event.is_set():
             try:
+                if time.monotonic() >= next_demo_cleanup:
+                    if cleanup_thread is None or not cleanup_thread.is_alive():
+                        cleanup_thread = threading.Thread(target=cleanup, name='demo-cleanup', daemon=True)
+                        cleanup_thread.start()
+                    next_demo_cleanup = time.monotonic() + 60
                 if not self.run_once():
                     self.stop_event.wait(self.poll_seconds)
             except Exception as error:

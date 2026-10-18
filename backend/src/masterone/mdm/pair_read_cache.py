@@ -27,6 +27,9 @@ _remote = None
 
 def remote_store():
     global _remote
+    from masterone.storage.demo_scope import local_only
+    if local_only():
+        return None
     fields = [os.getenv('PAIR_CACHE_R2_' + key, '') for key in
               ('ENDPOINT_URL', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY', 'BUCKET')]
     if not all(fields):
@@ -42,7 +45,7 @@ def identity(db, run, resource, params):
     # DB namespace prevents collisions between independent local/QA deployments.
     value = [str(db.bind.url), run.owner_user_id, run.id,
              run.workflow_revision, run.decision_revision, run.cluster_revision,
-             assessment.id if assessment else None, 'actions_v1-summary-v2' if resource == 'summary' else 'actions_v1-cache-v1', resource, params]
+             assessment.id if assessment else None, 'step2-taxonomies-summary-v3' if resource == 'summary' else 'step2-taxonomies-cache-v2', resource, params]
     return sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
 
 

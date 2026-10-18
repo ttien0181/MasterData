@@ -1,2 +1,6 @@
-import DecisionWorkspace from '@/components/DecisionWorkspace';
-export default function Page() { return <DecisionWorkspace />; }
+import { redirect } from 'next/navigation';
+
+export default async function Page({ params }: { params: Promise<{ runId: string }> }) {
+  const { runId } = await params;
+  redirect(`/app/sessions/${encodeURIComponent(runId)}/decisions`);
+}

@@ -85,7 +85,9 @@ async def api_engine_context(request: Request, db=Depends(get_session)):
     # Async yield keeps ContextVar setup/reset in the request task; sync routes
     # inherit that context through FastAPI's thread pool. Ownership stays in routes.
     selection = db.get(ResolutionEngineSelection, request.path_params["run_id"]) if "run_id" in request.path_params else None
-    with engine_context(selection.configuration if selection else None):
+    from masterone.storage.demo_scope import is_demo_run, local_storage
+    with engine_context(selection.configuration if selection else None), local_storage(
+            is_demo_run(db, request.path_params['run_id']) if 'run_id' in request.path_params else False):
         yield
 
 

@@ -11,7 +11,7 @@ it('puts exact identity anchors and conflicts first without inventing a probabil
  expect(text).not.toContain('Khớp email');expect(text).not.toContain('%');
 });
 it('keeps insufficient and blocked conclusions ahead of matching fields',()=>{
- expect(pairEvidenceSummary({...base,decision:'INSUFFICIENT_EVIDENCE'})).toContain('Chưa đủ bằng chứng');
+ expect(pairEvidenceSummary({...base,decision:'INSUFFICIENT_EVIDENCE'})).toContain('Chưa đủ bằng chứng nhận dạng; giữ riêng');
  expect(pairEvidenceSummary({...base,decision:'NOT_MERGEABLE',reason:'VERIFIED_DOB_CONFLICT'})).toContain('Ngày sinh đã xác minh mâu thuẫn');
 });
 it('explains manual recovery without hiding contradictory fields or inventing confidence',()=>{

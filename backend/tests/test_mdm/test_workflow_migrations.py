@@ -45,3 +45,22 @@ def test_generation_receipts_upgrade_real_0031_layout(tmp_path):
 def workflow_cluster_id_length():
     from masterone.mdm.workflow_models import WorkflowCluster
     return WorkflowCluster.__table__.c.id.type.length
+
+
+def test_optional_embedding_migration_preserves_existing_run_mode(tmp_path):
+    url = f"sqlite:///{(tmp_path / 'embedding.db').as_posix()}"
+    cfg = alembic_config(url)
+    command.upgrade(cfg, '0038_demo_feedback_retention')
+    engine = create_engine(url)
+    # Old migrations can import current ORM tables; reproduce the actual old layout.
+    with engine.begin() as db:
+        for table in ('mdm_resolution_runs', 'mdm_resolution_upload_sessions'):
+            if 'use_embedding' in {c['name'] for c in inspect(db).get_columns(table)}:
+                db.execute(text(f'ALTER TABLE {table} DROP COLUMN use_embedding'))
+        db.execute(text("INSERT INTO mdm_resolution_runs (id, owner_user_id, status, phase, policy_version, record_count, file_count, candidate_count, insufficient_count, created_at) VALUES ('legacy', 'owner', 'COMPLETED', 'completed', 'person-v3', 0, 0, 0, 0, CURRENT_TIMESTAMP)"))
+    upgrade_database(url)
+    with engine.connect() as db:
+        assert db.execute(text("SELECT use_embedding, status FROM mdm_resolution_runs WHERE id='legacy'")).one() == (1, 'COMPLETED')
+    for table in ('mdm_resolution_runs', 'mdm_resolution_upload_sessions'):
+        assert 'use_embedding' in {c['name'] for c in inspect(engine).get_columns(table)}
+    engine.dispose()

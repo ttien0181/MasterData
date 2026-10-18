@@ -16,8 +16,8 @@ export function useWorkflowAction() {
         await refresh().catch(() => undefined);
         const detail=cause.detail&&typeof cause.detail==='object'?cause.detail as Record<string,unknown>:null;
         setError(detail?.code==='GROUP_APPROVAL_BLOCKED'&&typeof detail.reason==='string'
-          ?`Không thể duyệt ngoại lệ nhóm: ${reasonLabel(detail.reason)}. Đã đọc lại server; lý do chưa lưu vẫn được giữ. Hãy đối chiếu các thành viên trước khi thao tác lại.`
-          :'Phiên đã thay đổi hoặc chưa đủ điều kiện. Đã đọc lại server; lựa chọn chưa lưu vẫn được giữ. Hãy đối chiếu rồi thao tác lại.');
+          ?`Không thể duyệt ngoại lệ nhóm: ${reasonLabel(detail.reason)}. Đã tải lại dữ liệu; lý do chưa lưu vẫn được giữ. Hãy đối chiếu các thành viên trước khi thao tác lại.`
+          :'Phiên đã thay đổi hoặc chưa đủ điều kiện. Đã tải lại dữ liệu; lựa chọn chưa lưu vẫn được giữ. Hãy đối chiếu rồi thao tác lại.');
       } else setError(cause instanceof Error ? cause.message : 'Không thực hiện được thao tác.');
       return undefined;
     }

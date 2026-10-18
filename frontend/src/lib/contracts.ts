@@ -4,6 +4,7 @@ export type Capability = "read" | "read_audit" | "create_run" | "start_run" | "a
   | "learn_match_profile" | "apply_match_profile" | "manage_entity_structure";
 export type AuthUser = {
   id: string; email: string; csrf_token: string; role: string; capabilities: Capability[];
+  demo?: {run_id:string|null;state:string;expires_at_epoch:number;dataset_version:string}|null;
 };
 export type UploadState = "empty" | "selected" | "uploading" | "validating" | "uploaded" | "error";
 export type RunStatus = "UPLOADED" | "IMPORTING" | "QUEUED" | "RUNNING" | "COMPLETED" | "DEGRADED" | "RETRYABLE_FAILED" | "FAILED";
@@ -31,6 +32,7 @@ export type RunCommitProfile = {
   files: { filename: string; row_count: number; sha256: string }[];
 };
 export type UploadSession = {
+  use_embedding?: boolean;
   session_id: string; name: string | null; status: UploadSessionStatus; total_bytes: number;
   // "direct": browser PUTs parts to R2 through presigned URLs. "proxy": parts pass through the API (local staging).
   upload_mode: "direct" | "proxy";

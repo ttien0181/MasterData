@@ -31,7 +31,13 @@ def config_for_operation(db, run, op):
     if binding is None:
         return None
     profile = db.get(MatchingProfile, binding.profile_id)
-    return profile.config_json if profile.config_json['kind'] in ('RULE_WITH_EMBEDDING_EVIDENCE', 'RULE_HYBRID_DETERMINISTIC') else None
+    if profile.config_json['kind'] not in ('RULE_WITH_EMBEDDING_EVIDENCE', 'RULE_HYBRID_DETERMINISTIC'):
+        return None
+    config = dict(profile.config_json)
+    if op.payload.get('mvp_step2'):
+        config.update(mvp_step2=True, mvp_contract_version=op.payload['mvp_contract_version'],
+                      coordinator=dict(op.payload['mvp_coordinator']), fallback_mode='fail_operation')
+    return config
 
 
 def latest_result(db, run_id):
@@ -263,4 +269,9 @@ def coordinated_payload(factory, run_id, payload, agents_result, config):
             evidence.append({'pair_id': row['rule']['original_baseline_reference']['pair_id'],
                              'fields': row['embedding']['fields'] if row['embedding'] else {},
                              'constraints': {'codes': list(hard.violations), 'cannot_link': hard.cannot_link}})
-    return coordinate_assessment(payload, {'pairs': evidence}, overlays, config)
+    coordinated = coordinate_assessment(payload, {'pairs': evidence}, overlays, config)
+    if config.get('mvp_step2'):
+        coordinated.update(mvp_step2=True, mvp_contract_version=config['mvp_contract_version'],
+                           matching_agents_status=agents_result['status'],
+                           matching_profile_digest=agents_result.get('profile_digest'))
+    return coordinated

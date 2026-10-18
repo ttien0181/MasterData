@@ -18,11 +18,11 @@ afterEach(() => { cleanup(); vi.resetAllMocks(); });
 it("shows source record counts regardless of quality assessments and the actual distribution", async () => {
   vi.mocked(getResolutionAnalytics).mockResolvedValue(metrics);
   render(<SessionAnalytics runId="r" revision="1" />);
-  expect(await screen.findByRole("img", { name: "25% bản ghi được phân loại tự xử lý" })).toBeInTheDocument();
-  const sources = within(screen.getByLabelText("Số lượng bản ghi theo nguồn"));
-  expect(sources.getByTitle("CRM: 2 bản ghi")).toHaveTextContent("2");
-  expect(sources.getByTitle("ERP: 1 bản ghi")).toHaveTextContent("1");
-  expect(sources.getByText("Tổng 3 bản ghi đầu vào từ 2 nguồn.")).toBeInTheDocument();
+  expect(await screen.findByRole("img", { name: "25% hồ sơ được phân loại tự xử lý" })).toBeInTheDocument();
+  const sources = within(screen.getByLabelText("Số lượng hồ sơ theo nguồn"));
+  expect(sources.getByTitle("CRM: 2 hồ sơ")).toHaveTextContent("2");
+  expect(sources.getByTitle("ERP: 1 hồ sơ")).toHaveTextContent("1");
+  expect(sources.getByText("Tổng 3 hồ sơ đầu vào từ 2 nguồn.")).toBeInTheDocument();
   expect(sources.queryByText("75")).not.toBeInTheDocument();
   expect(sources.queryByText("Chưa đánh giá")).not.toBeInTheDocument();
 });

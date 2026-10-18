@@ -1,2 +1,2 @@
-import DecisionOverview from '@/components/DecisionOverview';
-export default function Page() { return <DecisionOverview />; }
+import DecisionWorkspace from '@/components/DecisionWorkspace';
+export default function Page() { return <DecisionWorkspace />; }

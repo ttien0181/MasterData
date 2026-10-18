@@ -34,7 +34,7 @@ export default function AppShell({ stage, pendingCount, mergeCount, totalCount, 
 
   return <div className={`app-shell ${legacyShell ? "legacy-shell" : ""}`}>
     <div className="shell-main">
-      <ShellTopBar currentLabel={{ overview: "Tổng quan", import: "Nạp dữ liệu", auto: "Tự động gộp", review: "Cần xem xét", no_merge: "Không gộp", history: "Lịch sử xuất", audit: "Audit", policy: "Chính sách" }[stage]}
+      <ShellTopBar currentLabel={{ overview: "Tổng quan", import: "Nạp dữ liệu", auto: "Tự động gộp", review: "Cần xem xét", no_merge: "Không gộp", history: "Lịch sử xuất", audit: "Lịch sử thao tác", policy: "Chính sách" }[stage]}
         sessionLabel={sessionLabel} runStatus={runStatus} user={user} onLogout={onLogout} onOpenSessions={onOpenSessions} />
       <main className="shell-content">{children}</main>
     </div>

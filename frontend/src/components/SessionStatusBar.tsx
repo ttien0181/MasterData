@@ -20,7 +20,7 @@ export default function SessionStatusBar({ runStatus, totalCount, canCreate, act
     <div className="status-current-run">
       <span className="session-overline">Trạng thái phiên đang xem</span>
       <strong>{runStatus ? runStatusLabel(runStatus) : "Chưa có lần nạp dữ liệu"}</strong>
-      <small>{totalCount ? `${totalCount.toLocaleString("vi-VN")} bản ghi đầu vào` : canCreate ? "Nạp CSV để bắt đầu" : "Tài khoản đang ở chế độ chỉ xem"}</small>
+      <small>{totalCount ? `${totalCount.toLocaleString("vi-VN")} hồ sơ đầu vào` : canCreate ? "Nạp CSV để bắt đầu" : "Tài khoản đang ở chế độ chỉ xem"}</small>
     </div>
     <div className="status-active-runs">
       <button type="button" className={`status-active-trigger${activeStale ? " is-stale" : ""}`}
@@ -38,7 +38,7 @@ export default function SessionStatusBar({ runStatus, totalCount, canCreate, act
             <button type="button" onClick={() => { setDetailsOpen(false); onOpenRun(run.run_id); }}>
               <strong>{run.name || run.files.join(", ") || `Phiên ${run.run_id.slice(0, 8)}`}</strong>
               <span>{runStatusLabel(run.status)} · {runPhaseLabel(run.phase)}</span>
-              <small>{run.record_count.toLocaleString("vi-VN")} bản ghi · {run.file_count} file</small>
+              <small>{run.record_count.toLocaleString("vi-VN")} hồ sơ · {run.file_count} tệp</small>
             </button>
           </li>)}
         </ul> : <p>{activeTotal ? "Đang tải danh sách phiên…" : "Các phiên đã xử lý xong sẽ không xuất hiện ở đây."}</p>}

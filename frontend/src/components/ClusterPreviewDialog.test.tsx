@@ -14,7 +14,7 @@ const host=(workflow=w,pending=0)=><SessionCacheProvider userId="preview-user"><
 it('previews safe groups and binds creation to token even after workflow-only revision changes',async()=>{
  vi.mocked(api.previewClusters).mockResolvedValue(op());vi.mocked(api.finalizeDecisions).mockResolvedValue(op());
  const view=render(host());await screen.findByText('a / b');expect(api.finalizeDecisions).not.toHaveBeenCalled();
- expect(screen.getByText(/2 \/ 5 bản ghi/)).toBeInTheDocument();expect(screen.getByText(/c \/ d \/ e/)).toBeInTheDocument();
+ expect(screen.getByText(/2 \/ 5 hồ sơ/)).toBeInTheDocument();expect(screen.getByText(/c \/ d \/ e/)).toBeInTheDocument();
  view.rerender(host({...w,workflow_revision:5}));fireEvent.click(screen.getByRole('button',{name:'Tạo các nhóm đủ điều kiện'}));
  await waitFor(()=>expect(api.finalizeDecisions).toHaveBeenCalledWith('r',expect.objectContaining({expected_workflow_revision:5,preview_operation_id:'preview',preview_token:'token',allow_partial:true})));
 });
@@ -26,7 +26,7 @@ it('blocks creation for pending queue work and decision drift',async()=>{
 it('distinguishes server pending pairs from queued local requests in the diagnostic preview',async()=>{
  vi.mocked(api.previewClusters).mockResolvedValue(op());
  render(host({...w,blockers:[{code:'PENDING_DECISIONS',count:7,unit:'pairs'}]},2));await screen.findByText('a / b');
- expect(screen.getByText('Server còn 7 cặp chưa duyệt hoặc đang hoãn.')).toBeInTheDocument();expect(screen.getByText(/2 yêu cầu đang chờ; chỉ xem trước/)).toBeInTheDocument();
+ expect(screen.getByText('Hệ thống còn 7 cặp chưa duyệt hoặc đang hoãn.')).toBeInTheDocument();expect(screen.getByText(/2 yêu cầu đang chờ; chỉ xem trước/)).toBeInTheDocument();
 });
 it('discloses when prospective groups and conflicts show only part of the result',async()=>{
  const groups=Array.from({length:25},(_,index)=>({member_record_ids:[`group-${index}`],singleton:true,status:'DRAFT'}));
@@ -38,12 +38,12 @@ it('discloses when prospective groups and conflicts show only part of the result
 it('uses total pending pairs and discloses the first 100 record IDs in a large region',async()=>{
  const region={record_ids:Array.from({length:101},(_,index)=>`record-${index+1}`),record_count:140,pending_pair_ids:Array.from({length:25},(_,index)=>`pair-${index}`),pending_pair_count:35};
  vi.mocked(api.previewClusters).mockResolvedValue(op({...result,pending_regions:[region]}));
- render(host());await screen.findByText(/35 cặp còn chờ/);expect(screen.getByText('Hiển thị 100 / 140 mã bản ghi (tối đa 100).')).toBeInTheDocument();
+ render(host());await screen.findByText(/35 cặp còn chờ/);expect(screen.getByText('Hiển thị 100 / 140 mã hồ sơ (tối đa 100).')).toBeInTheDocument();
  const members=screen.getByText(/record-1 \/ record-2/);expect(members).toHaveTextContent('record-100');expect(members).not.toHaveTextContent('record-101');
 });
 it('falls back to returned pending IDs when the total pending-pair count is unavailable',async()=>{
  vi.mocked(api.previewClusters).mockResolvedValue(op());render(host());await screen.findByText(/1 cặp còn chờ/);
- expect(screen.getByText('Hiển thị 3 / 3 mã bản ghi (tối đa 100).')).toBeInTheDocument();
+ expect(screen.getByText('Hiển thị 3 / 3 mã hồ sơ (tối đa 100).')).toBeInTheDocument();
 });
 it('requires explicit reason for a bridge exception and recalculates preview after approval',async()=>{
  const conflict={pair_id:'p',reason:'CLUSTER_BRIDGE_MISSING_EVIDENCE',record_ids:['a','b','c']};
@@ -87,7 +87,7 @@ it('shows names, sources and a member comparison before creation',async()=>{
  fireEvent.click(screen.getByRole('button',{name:'Đối chiếu nhóm Nguyễn Văn An'}));
  expect(screen.getByRole('table',{name:'Đối chiếu thành viên nhóm'})).toBeVisible();
  expect(screen.getByText('1990-05-15')).toBeVisible();expect(screen.getByText('1990-05-16')).toBeVisible();
- expect(screen.getByText('Golden dự kiến')).toBeVisible();
+ expect(screen.getByText('hồ sơ đại diện dự kiến')).toBeVisible();
 });
 
 it('reads subsequent pages without requesting another preview job',async()=>{

@@ -31,7 +31,7 @@ export default function LargeFileUpload({ csrfToken }: { csrfToken: string }) {
           }),
         },
       );
-      if (!urlResponse.ok) throw new Error("Không lấy được quyền upload");
+      if (!urlResponse.ok) throw new Error("Chưa thể bắt đầu tải tệp. Hãy thử lại.");
       const { object_name, upload_url } = await urlResponse.json();
       await putToSignedUrl(upload_url, file, setProgress);
       const complete = await fetch(`${apiBase}/api/v1/large-imports/complete`, {
@@ -44,19 +44,19 @@ export default function LargeFileUpload({ csrfToken }: { csrfToken: string }) {
         body: JSON.stringify({ object_name }),
       });
       if (!complete.ok)
-        throw new Error("Upload xong nhưng chưa khởi chạy xử lý");
+        throw new Error("Tải dữ liệu xong nhưng chưa khởi chạy xử lý");
       setMessage(
-        "Đã lưu file thành công trên Cloudflare R2.",
+        "Đã tải và lưu tệp thành công.",
       );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Upload thất bại");
+      setMessage(error instanceof Error ? error.message : "Tải dữ liệu thất bại");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <section aria-label="Upload file lớn">
+    <section aria-label="Tải dữ liệu tệp lớn">
       <input
         type="file"
         accept=".csv,text/csv"
@@ -68,13 +68,13 @@ export default function LargeFileUpload({ csrfToken }: { csrfToken: string }) {
         onClick={() => void upload()}
         disabled={!file || busy}
       >
-        {busy ? "Đang upload…" : "Upload trực tiếp lên R2"}
+        {busy ? "Đang tải dữ liệu…" : "Tải tệp lên"}
       </button>
       {progress && (
         <progress
           value={progress.percent}
           max="100"
-          aria-label={`Đã upload ${progress.percent}%`}
+          aria-label={`Đã tải dữ liệu ${progress.percent}%`}
         />
       )}
       {progress && <span>{progress.percent}%</span>}
