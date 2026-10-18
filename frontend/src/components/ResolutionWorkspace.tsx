@@ -20,7 +20,23 @@ import PolicyAdmin from "./PolicyAdmin";
 function activeRunKey(userId: string) { return `masterone.resolution-run.v1.${userId}`; }
 const RUNS_PAGE_SIZE = 25;
 const ACTIVE_RUNS_PAGE_SIZE = 5;
+const RUN_PROGRESS_STEPS = ["Chờ xử lý", "Nạp dữ liệu", "Đối chiếu", "Lưu kết quả"];
 const stages: Stage[] = ["overview", "import", "auto", "review", "no_merge", "history", "audit", "policy"];
+function activeRunStep(status: string, phase: string) {
+  if (status === "QUEUED") return 0;
+  if (status === "IMPORTING") return 1;
+  const phaseStep = ["loading", "blocking", "persisting"].indexOf(phase.toLowerCase());
+  return phaseStep < 0 ? -1 : phaseStep + 1;
+}
+function runProgressMessage(status: string, phase: string) {
+  if (status === "QUEUED") return "Đã nhận yêu cầu. Đợt xử lý sẽ bắt đầu khi đến lượt.";
+  switch (phase.toLowerCase()) {
+    case "loading": return "Hệ thống đang đọc dữ liệu đã nạp để chuẩn bị đối chiếu.";
+    case "blocking": return "Hệ thống đang tìm những dòng có thể thuộc cùng một hồ sơ.";
+    case "persisting": return "Hệ thống đang lưu các nhóm và kết quả đối chiếu.";
+    default: return "Hệ thống đang xử lý dữ liệu của đợt này.";
+  }
+}
 function readLocation() {
   const params = new URLSearchParams(window.location.search);
   const requestedStage = params.get("view") as Stage | null;
@@ -63,6 +79,7 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
   const [message, setMessageState] = useState("");
   const [messageVersion, setMessageVersion] = useState(0);
   const session = overview ? toSessionViewModel(overview, user, runHistory.find((run) => run.run_id === runId)) : null;
+  const progressStep = overview ? activeRunStep(overview.status, overview.phase) : -1;
   const estimatedEntityCount = overview?.estimated_entity_count ?? overview?.counts.separate ?? 0;
   const duplicateRecordCount = overview?.duplicate_record_count
     ?? Math.max(0, (overview?.record_count ?? 0) - estimatedEntityCount);
@@ -458,12 +475,27 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
         </div>
         <>
           {overviewStale && <div className="run-stale" role="status"><span>Chưa kết nối được để cập nhật đợt xử lý; đang giữ trạng thái gần nhất.</span><button type="button" onClick={() => void refreshOverview(runId).catch(() => setOverviewStale(true))}>Thử cập nhật</button></div>}
-          {overview.status !== "COMPLETED" && <div className="run-progress card"><div><span>{session?.statusLabel}</span><strong>{runPhaseLabel(overview.phase)}</strong></div>
-            {session?.processing && <p role="status">Đang chờ kết quả xử lý. Chưa có phần trăm tiến độ chi tiết.</p>}
-            <small>{overview.record_count.toLocaleString("vi-VN")} dòng thông tin đầu vào</small>
+          {overview.status !== "COMPLETED" && <section className={`run-progress card${overviewStale ? " is-stale" : ""}`} aria-label="Tiến trình xử lý">
+            <div className="run-progress-head">
+              <span className="run-progress-kicker"><i aria-hidden="true" /> TIẾN TRÌNH XỬ LÝ</span>
+              <h3>{runPhaseLabel(overview.phase)}</h3>
+              {session?.processing && <p role="status">{runProgressMessage(overview.status, overview.phase)}</p>}
+            </div>
+            {session?.processing && progressStep >= 0 &&
+              <ol className="run-progress-steps" aria-label="Các bước xử lý">
+                {RUN_PROGRESS_STEPS.map((label, index) => {
+                  const state = index > progressStep ? "upcoming" : index === progressStep ? "current" : "done";
+                  return <li className={`run-progress-step is-${state}${state === "current" && overview.status !== "QUEUED" ? " is-working" : ""}`} aria-current={state === "current" ? "step" : undefined} key={label}>
+                    <span className="run-progress-step-marker" aria-hidden="true">{state === "done" ? "✓" : null}</span>
+                    <span className="run-progress-step-copy"><strong>{label}</strong><small>{state === "done" ? "Đã xong" : state === "current" ? overview.status === "QUEUED" ? "Đang chờ" : "Đang xử lý" : "Sắp tới"}</small></span>
+                  </li>;
+                })}
+              </ol>}
+            <div className="run-progress-footer"><small>{overview.record_count.toLocaleString("vi-VN")} dòng thông tin · {overview.file_count} file</small>
+              {session?.processing && <small>Kết quả sẽ tự cập nhật. Bạn có thể xem mục khác trong lúc chờ.</small>}</div>
             {session?.errorCode && <p>Mã lỗi: {session.errorCode}</p>}
             {(session?.actions.start || session?.actions.retry) && <button className="button outline" type="button" disabled={busy} onClick={() => void retryRun()}>{session.actions.start ? "Bắt đầu xử lý" : "Chạy lại"}</button>}
-          </div>}
+          </section>}
           {overview.status === "COMPLETED" && <section className="overview-dashboard">
             <div className="overview-dashboard-kpis">
               <div className="card overview-kpi"><strong>{overview.record_count.toLocaleString("vi-VN")}</strong><span>Dòng thông tin</span><small>Từ {overview.file_count} file dữ liệu</small></div>
