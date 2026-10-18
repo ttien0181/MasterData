@@ -3,8 +3,11 @@
 import csv
 from io import StringIO
 
+import pytest
+
 from masterone.auth.models import User
 from masterone.mdm.models import (
+    ResolutionAuditEvent,
     ResolutionExport,
     ResolutionFile,
     ResolutionPair,
@@ -131,6 +134,46 @@ def test_stage_all_filtered_pairs_across_pages_without_merging(client):
     returned = client.post(f"{prefix}/review-pairs/extra-00/unstage")
     assert returned.status_code == 200, returned.text
     assert client.get(f"{prefix}/items/review_pairs").json()["total"] == 3
+
+
+@pytest.mark.parametrize("saved_choice", [False, True])
+def test_unstage_group_preserves_audit_history_with_foreign_keys(client, saved_choice):
+    engine = client.session_factory.kw["bind"]
+    run_id = seed_run(client)
+    prefix = f"/api/v1/mdm/runs/{run_id}"
+    staged = client.post(f"{prefix}/review-pairs/stage", json={"pair_ids": ["uncertain-bc"]})
+    assert staged.status_code == 200, staged.text
+    group_id = client.get(f"{prefix}/items/merge").json()["items"][0]["id"]
+
+    if saved_choice:
+        detail = client.get(f"{prefix}/items/merge/{group_id}").json()
+        saved = client.put(f"{prefix}/merge-items/{group_id}/choices", json={
+            "revision": detail["revision"], "choices": {"phone": "c"}})
+        assert saved.status_code == 200, saved.text
+
+    with engine.connect() as connection:
+        connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+        assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
+
+    response = client.post(f"{prefix}/merge-items/{group_id}/unstage")
+    assert response.status_code == 200, response.text
+    assert response.json()["unstaged_count"] == 1
+
+    with client.session_factory() as db:
+        assert db.get(ResolutionProposal, group_id) is None
+        assert db.get(ResolutionPair, "uncertain-bc").staged_for_merge is False
+        events = db.query(ResolutionAuditEvent).filter_by(run_id=run_id).all()
+        group_events = [event for event in events if event.details.get("proposal_id") == group_id]
+        assert {event.action for event in group_events} == (
+            {"PAIR_UNSTAGED_FOR_MERGE", "STAGED_GROUP_CHOICES_SAVED"}
+            if saved_choice else {"PAIR_UNSTAGED_FOR_MERGE"})
+        assert all(event.proposal_id is None for event in group_events)
+
+    audit = client.get(f"{prefix}/audit", params={"proposal_id": group_id})
+    assert audit.status_code == 200, audit.text
+    assert audit.json()["total"] == len(group_events)
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
 
 
 def test_staged_pair_is_checked_and_merged_only_at_csv_preview(client):

@@ -437,7 +437,10 @@ def get_run_audit(run_id: str, limit: int = Query(25, ge=1, le=100), offset: int
     if pair_id:
         query = query.filter_by(pair_id=pair_id)
     if proposal_id:
-        query = query.filter_by(proposal_id=proposal_id)
+        query = query.filter(or_(
+            ResolutionAuditEvent.proposal_id == proposal_id,
+            ResolutionAuditEvent.details["proposal_id"].as_string() == proposal_id,
+        ))
     total = query.count()
     events = query.order_by(ResolutionAuditEvent.created_at.desc(), ResolutionAuditEvent.id.desc()).offset(offset).limit(limit).all()
     return {"total": total, "items": [{"id": event.id, "run_id": event.run_id,
