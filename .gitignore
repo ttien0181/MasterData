@@ -229,3 +229,4 @@ backend/data/export-artifacts/
 /.pytest-tmp*/
 /.tmp-review*/
 
+.agents/skills
