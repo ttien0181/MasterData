@@ -156,3 +156,4 @@ CI (`.github/workflows/ci.yml`) chạy ruff, pytest `backend/tests/` và các l�
 | [docs/reference/ENTITY_RESOLUTION_SPEC_v3.1.md](docs/reference/ENTITY_RESOLUTION_SPEC_v3.1.md) | Đặc tả thiết kế tham chiếu v3.1 (một phần chưa triển khai) |
 
 Đóng góp theo [CONTRIBUTING.md](CONTRIBUTING.md), báo lỗi bảo mật theo [SECURITY.md](SECURITY.md); dự án dùng giấy phép [MIT](LICENSE).
+
