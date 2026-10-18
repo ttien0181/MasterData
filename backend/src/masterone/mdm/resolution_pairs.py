@@ -29,9 +29,74 @@ def pending_pairs(db: Session, run_id: str):
     )
 
 
+def _sync_staged_groups(db: Session, run_id: str,
+                        submitted_choices: dict[str, dict[str, str]] | None = None) -> None:
+    """Materialize connected staged pairs without running export guards."""
+    from masterone.mdm.resolution_preview import _plan_staged_pairs
+
+    plan = _plan_staged_pairs(db, run_id, validate=False)
+    previous = db.query(ResolutionProposal).filter_by(
+        run_id=run_id, status="STAGED_FOR_MERGE").all()
+    covered = []
+    for start in range(0, len(plan["superseded_ids"]), 500):
+        covered.extend(db.query(ResolutionProposal).filter(
+            ResolutionProposal.id.in_(plan["superseded_ids"][start:start + 500])).all())
+    by_id = {row.id: row for row in previous}
+    desired = {entry["id"] for entry in plan["proposals"]}
+    for entry in plan["proposals"]:
+        members = set(entry["member_record_ids"])
+        selected: dict[str, str] = {}
+        conflicts: set[str] = set()
+        for old in previous:
+            if not members.intersection(old.member_record_ids):
+                continue
+            for field, source_id in old.golden_fields.get("_selected_sources", {}).items():
+                if source_id not in members:
+                    continue
+                if field in selected and selected[field] != source_id:
+                    conflicts.add(field)
+                else:
+                    selected[field] = source_id
+            conflicts.update(old.golden_fields.get("_choice_conflicts", []))
+        if submitted_choices:
+            from masterone.mdm.resolution_items import _options, _records, _valid_choices
+            options = _options(_records(db, members))
+            for old in covered:
+                if not members.intersection(old.member_record_ids):
+                    continue
+                valid = _valid_choices(submitted_choices.get(old.id, {}), options)
+                for field, source_id in valid.items():
+                    if field in selected and selected[field] != source_id:
+                        conflicts.add(field)
+                    else:
+                        selected[field] = source_id
+        for field in conflicts:
+            selected.pop(field, None)
+        golden = entry["golden_fields"]
+        golden["_covered_proposal_ids"] = [row.id for row in covered
+                                            if members.intersection(row.member_record_ids)]
+        golden["_selected_sources"] = selected
+        if conflicts:
+            golden["_choice_conflicts"] = sorted(conflicts)
+        row = by_id.get(entry["id"])
+        if row is None:
+            db.add(ResolutionProposal(id=entry["id"], run_id=run_id,
+                member_record_ids=entry["member_record_ids"], golden_fields=golden,
+                status="STAGED_FOR_MERGE", origin="REVIEW",
+                decision_reason="STAGED_PAIRS_PREVIEWED"))
+        else:
+            row.golden_fields = golden
+            row.revision += 1
+    for row in previous:
+        if row.id not in desired:
+            db.delete(row)
+    db.flush()
+
+
 def stage_review_pairs(db: Session, run_id: str, *, all_matching: bool,
                        pair_ids: list[str], excluded_ids: list[str],
-                       primary_group: str | None, subgroup: str | None, actor: str):
+                       primary_group: str | None, subgroup: str | None, actor: str,
+                       choices: dict[str, dict[str, str]] | None = None):
     """Mark a filtered set without loading each page or building merge groups."""
     if all_matching == bool(pair_ids) or len(pair_ids) != len(set(pair_ids)):
         raise HTTPException(422, "Danh sách cặp được chọn không hợp lệ")
@@ -49,6 +114,7 @@ def stage_review_pairs(db: Session, run_id: str, *, all_matching: bool,
         query = query.filter(ResolutionPair.id.in_(pair_ids))
     changed = query.update({ResolutionPair.staged_for_merge: True}, synchronize_session=False)
     if changed:
+        _sync_staged_groups(db, run_id, choices)
         db.execute(update(ResolutionRunSummary).where(ResolutionRunSummary.run_id == run_id)
                    .values(version=ResolutionRunSummary.version + 1))
         db.add(ResolutionAuditEvent(run_id=run_id, actor_user_id=actor,
@@ -62,12 +128,57 @@ def unstage_review_pair(db: Session, run_id: str, pair_id: str, actor: str):
         staged_for_merge=True).update({ResolutionPair.staged_for_merge: False}, synchronize_session=False)
     if not changed:
         raise HTTPException(404, "Cặp không còn chờ kiểm tra")
+    _sync_staged_groups(db, run_id)
     db.execute(update(ResolutionRunSummary).where(ResolutionRunSummary.run_id == run_id)
                .values(version=ResolutionRunSummary.version + 1))
     db.add(ResolutionAuditEvent(run_id=run_id, actor_user_id=actor,
         pair_id=pair_id, action="PAIR_UNSTAGED_FOR_MERGE", details={}))
     db.commit()
     return {"pair_id": pair_id}
+
+
+def unstage_group(db: Session, run_id: str, proposal_id: str, actor: str):
+    group = db.get(ResolutionProposal, proposal_id)
+    if group is None or group.run_id != run_id or group.status != "STAGED_FOR_MERGE":
+        raise HTTPException(404, "Nhóm không còn ở Chờ gộp")
+    members = set(group.member_record_ids)
+    changed = db.query(ResolutionPair).filter(
+        ResolutionPair.run_id == run_id, ResolutionPair.staged_for_merge.is_(True),
+        ResolutionPair.left_record_id.in_(members),
+        ResolutionPair.right_record_id.in_(members)).update(
+            {ResolutionPair.staged_for_merge: False}, synchronize_session=False)
+    _sync_staged_groups(db, run_id)
+    if changed:
+        db.execute(update(ResolutionRunSummary).where(ResolutionRunSummary.run_id == run_id)
+                   .values(version=ResolutionRunSummary.version + 1))
+        db.add(ResolutionAuditEvent(run_id=run_id, actor_user_id=actor,
+            proposal_id=proposal_id, action="PAIR_UNSTAGED_FOR_MERGE", details={"count": changed}))
+    db.commit()
+    return {"unstaged_count": changed}
+
+
+def save_staged_group_choices(db: Session, run_id: str, proposal_id: str,
+                              choices: dict[str, str], revision: int, actor: str):
+    from masterone.mdm.resolution_items import _options, _records, _valid_choices
+
+    group = db.get(ResolutionProposal, proposal_id)
+    if group is None or group.run_id != run_id or group.status != "STAGED_FOR_MERGE":
+        raise HTTPException(404, "Nhóm không còn ở Chờ gộp")
+    if group.revision != revision:
+        raise HTTPException(409, "Nhóm đã thay đổi; hãy tải lại")
+    options = _options(_records(db, group.member_record_ids))
+    if _valid_choices(choices, options) != choices:
+        raise HTTPException(422, "Lựa chọn nguồn của nhóm không hợp lệ")
+    golden = {**group.golden_fields, "_selected_sources": choices}
+    golden.pop("_choice_conflicts", None)
+    group.golden_fields = golden
+    group.revision += 1
+    db.execute(update(ResolutionRunSummary).where(ResolutionRunSummary.run_id == run_id)
+               .values(version=ResolutionRunSummary.version + 1))
+    db.add(ResolutionAuditEvent(run_id=run_id, actor_user_id=actor,
+        proposal_id=proposal_id, action="STAGED_GROUP_CHOICES_SAVED", details={"fields": sorted(choices)}))
+    db.commit()
+    return {"revision": group.revision, "choices": choices}
 
 
 def pair_categories(db: Session, run_id: str):

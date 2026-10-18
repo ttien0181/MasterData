@@ -31,7 +31,7 @@ export default function PolicyAdmin({ user, runId }: { user: AuthUser; runId: st
   useEffect(() => { void loadPolicy(); }, [loadPolicy]);
 
   const handleSimulate = async () => {
-    if (!runId) { setSimError("Chưa chọn phiên để mô phỏng"); return; }
+    if (!runId) { setSimError("Chưa chọn đợt xử lý để mô phỏng"); return; }
     setSimRunning(true);
     setSimError(null);
     setSimResult(null);
@@ -53,7 +53,7 @@ export default function PolicyAdmin({ user, runId }: { user: AuthUser; runId: st
       <div className="policy-admin-header">
         <div>
           <p className="section-kicker">CHÍNH SÁCH</p>
-          <h2>Cấu hình quy tắc phân giải</h2>
+          <h2>Cấu hình quy tắc đối chiếu và gộp</h2>
           {policyVersion && <small>Phiên bản: <code>{policyVersion}</code></small>}
         </div>
         <div className="policy-admin-actions">

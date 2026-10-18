@@ -54,7 +54,7 @@ describe("run to session contract", () => {
   it("uses files only from the matching run", () => {
     const history = { run_id: "other", files: ["other.csv"], status: "COMPLETED",
       created_at: "2026-10-06", record_count: 1, file_count: 1 };
-    expect(toSessionViewModel(overview, user, history).title).toBe("Phiên run-1");
+    expect(toSessionViewModel(overview, user, history).title).toBe("Đợt xử lý run-1");
     expect(toSessionViewModel(overview, user, { ...history, run_id: "run-1" }).title).toBe("other.csv");
   });
 

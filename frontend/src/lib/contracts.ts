@@ -51,7 +51,7 @@ export type ResolutionAnalytics = {
   decisions: { basis: "initial_classification"; unit: "source_record"; total: number;
     automatic: number; review: number; no_duplicate_detected: number; automatic_percent: number };
   conflicts: { basis: "pending_review_pairs"; unit: "pair"; review_pair_count: number;
-    fields: { field: string; count: number }[] };
+    fields: { field: string; count: number; difference_count?: number; conflict_count?: number }[] };
   quality: { basis: "valid_assessed_fields"; fields: string[];
     sources: { source: string; record_count: number; valid_fields: number; assessed_fields: number;
       expected_fields: number; score_percent: number | null; coverage_percent: number }[] };
@@ -80,6 +80,7 @@ export type ResolutionItemDetail = ResolutionItem & {
   records: ResolutionRecord[];
   field_options: Record<string, { source_record_id: string; source_system: string; external_id: string; value: string }[]>;
   choices: Record<string, string>; missing_fields: string[];
+  choice_conflicts?: string[];
   field_evidence?: { field: string; similarity: number; left: string; right: string }[];
   pairs?: { id: string; left_external_id: string; right_external_id: string;
     primary_group?: string | null; subgroup?: string | null; score: number;

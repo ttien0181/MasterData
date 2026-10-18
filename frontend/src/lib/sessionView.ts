@@ -2,7 +2,7 @@ import type { AuthUser, ResolutionOverview, ResolutionRunHistory, RunStatus } fr
 import { can } from "./permissions";
 
 const STATUS_LABELS: Record<RunStatus, string> = {
-  UPLOADED: "Đã nạp, chưa xử lý", IMPORTING: "Đang nạp dữ liệu", QUEUED: "Đang chờ xử lý", RUNNING: "Đang phân giải",
+  UPLOADED: "Đã nạp, chưa xử lý", IMPORTING: "Đang nạp dữ liệu", QUEUED: "Đang chờ xử lý", RUNNING: "Đang tìm dữ liệu trùng",
   COMPLETED: "Đã xử lý", RETRYABLE_FAILED: "Xử lý bị gián đoạn", FAILED: "Xử lý thất bại",
 };
 export function runStatusLabel(status: string) {
@@ -14,7 +14,7 @@ export function runPhaseLabel(phase?: string | null) {
   const labels: Record<string, string> = {
     uploaded: "Sẵn sàng bắt đầu",
     idle: "Sẵn sàng bắt đầu",
-    queued: "Đang chờ worker",
+    queued: "Đang chờ đến lượt xử lý",
     loading: "Đang nạp dữ liệu",
     blocking: "Đang đối chiếu",
     persisting: "Đang lưu kết quả",
@@ -46,7 +46,7 @@ export function toSessionViewModel(overview: ResolutionOverview, user: AuthUser,
   // They are not a measurable fraction of the complete computation.
   return {
     runId: overview.run_id,
-    title: (history?.run_id === overview.run_id ? history.files.join(", ") : "") || `Phiên ${overview.run_id.slice(0, 8)}`,
+    title: (history?.run_id === overview.run_id ? history.files.join(", ") : "") || `Đợt xử lý ${overview.run_id.slice(0, 8)}`,
     status: overview.status, statusLabel: runStatusLabel(overview.status), phase: overview.phase,
     processing, resultsAvailable: completed,
     reviewState: completed ? overview.counts.review > 0 ? "pending" : "clear" : "unavailable",
@@ -62,12 +62,12 @@ export function toSessionViewModel(overview: ResolutionOverview, user: AuthUser,
       prepareExport: completed && can(user, "export_data"),
     },
     metrics: {
-      records: { value: overview.record_count, unit: "record", label: "Bản ghi đầu vào" },
+      records: { value: overview.record_count, unit: "record", label: "Dòng thông tin đầu vào" },
       files: { value: overview.file_count, unit: "file", label: "File đã nạp" },
       candidates: { value: overview.candidate_count, unit: "pair", label: "Cặp được đối chiếu" },
-      merge: { value: overview.counts.auto, unit: "merge_group", label: "Cụm chờ gộp" },
-      review: { value: overview.counts.review, unit: "review_item", label: "Item cần review" },
-      separate: { value: overview.counts.separate, unit: "record", label: "Bản ghi dự kiến giữ riêng" },
+      merge: { value: overview.counts.auto, unit: "merge_group", label: "Nhóm chờ gộp" },
+      review: { value: overview.counts.review, unit: "review_item", label: "Mục đang chờ xem xét" },
+      separate: { value: overview.counts.separate, unit: "record", label: "Dòng thông tin dự kiến giữ riêng" },
       exports: { value: overview.history_count, unit: "snapshot", label: "CSV đã xuất" },
     },
   };

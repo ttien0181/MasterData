@@ -43,7 +43,7 @@ export default function SeparateRecordsDialog({ runId, onClose }: { runId: strin
       setItems(result.items); setTotal(result.total); setLoading(false);
     }).catch((cause: unknown) => {
       if (cancelled) return;
-      setError(cause instanceof Error ? cause.message : "Không tải được bản ghi"); setLoading(false);
+      setError(cause instanceof Error ? cause.message : "Không tải được dòng thông tin"); setLoading(false);
     });
     return () => { cancelled = true; };
   }, [runId, offset, search]);
@@ -55,12 +55,12 @@ export default function SeparateRecordsDialog({ runId, onClose }: { runId: strin
 
   return <div className="history-overlay" role="dialog" aria-modal="true" aria-labelledby="separate-heading" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <div ref={dialogRef} className="card separate-records-dialog">
-      <div className="separate-dialog-head"><div><p className="section-kicker">BẢN GHI ĐẦU VÀO</p><h2 id="separate-heading">Dự kiến giữ riêng</h2><p>Các bản ghi chưa thuộc cụm Chờ gộp. Kết quả này có thể thay đổi sau khi bạn duyệt item.</p></div><button ref={closeRef} type="button" className="dialog-close" aria-label="Đóng" onClick={onClose}>×</button></div>
-      <label className="separate-search">Tìm bản ghi<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tên, mã bản ghi hoặc nguồn" /></label>
+      <div className="separate-dialog-head"><div><p className="section-kicker">DÒNG THÔNG TIN ĐẦU VÀO</p><h2 id="separate-heading">Dự kiến giữ riêng</h2><p>Các dòng thông tin dự kiến được giữ riêng trong file kết quả. Danh sách có thể thay đổi sau khi bạn duyệt các cặp nghi trùng.</p></div><button ref={closeRef} type="button" className="dialog-close" aria-label="Đóng" onClick={onClose}>×</button></div>
+      <label className="separate-search">Tìm dòng thông tin<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tên, mã dòng thông tin hoặc nguồn" /></label>
       <div className="separate-list" aria-busy={loading}>
-        {loading ? <p role="status">Đang tải bản ghi…</p> : error ? <p role="alert">{error}</p> : items.length ? items.map((item) => <details key={item.id} className="separate-record"><summary><strong>{item.raw_fields.name || item.external_id}</strong><span>{item.source_system} · {item.external_id}</span><small>{item.review_pending ? "Còn cần review" : "Giữ riêng"}</small></summary><dl>{Object.entries(item.raw_fields).map(([field, value]) => <div key={field}><dt>{field}</dt><dd>{value || "—"}</dd></div>)}</dl></details>) : <p>Không tìm thấy bản ghi phù hợp.</p>}
+        {loading ? <p role="status">Đang tải dòng thông tin…</p> : error ? <p role="alert">{error}</p> : items.length ? items.map((item) => <details key={item.id} className="separate-record"><summary><strong>{item.raw_fields.name || item.external_id}</strong><span>{item.source_system} · {item.external_id}</span><small>{item.review_pending ? "Còn cần xem xét" : "Giữ riêng"}</small></summary><dl>{Object.entries(item.raw_fields).map(([field, value]) => <div key={field}><dt>{field}</dt><dd>{value || "—"}</dd></div>)}</dl></details>) : <p>Không tìm thấy dòng thông tin phù hợp.</p>}
       </div>
-      <div className="separate-pagination"><span>{total ? `${offset + 1}–${Math.min(offset + PAGE_SIZE, total)} / ${total}` : "0 bản ghi"}</span><button className="button outline" type="button" disabled={loading || offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>← Trước</button><button className="button outline" type="button" disabled={loading || offset + PAGE_SIZE >= total} onClick={() => setOffset(offset + PAGE_SIZE)}>Sau →</button></div>
+      <div className="separate-pagination"><span>{total ? `${offset + 1}–${Math.min(offset + PAGE_SIZE, total)} / ${total}` : "0 dòng thông tin"}</span><button className="button outline" type="button" disabled={loading || offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>← Trước</button><button className="button outline" type="button" disabled={loading || offset + PAGE_SIZE >= total} onClick={() => setOffset(offset + PAGE_SIZE)}>Sau →</button></div>
     </div>
   </div>;
 }

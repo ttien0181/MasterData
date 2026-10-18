@@ -4,7 +4,7 @@ Snapshot trước migration thuật toán, 2026-10-08. Source of truth: route đ
 
 ## API surface thật
 
-Auth dùng cookie/session, mutation CSRF và capabilities; ownership theo run/upload/export, cross-owner không được truy cập. Base frontend: `NEXT_PUBLIC_API_BASE_URL` hoặc host local port 8001; MDM prefix `/api/v1/mdm`.
+Auth dùng cookie/session, mutation CSRF và capabilities; ownership theo run/upload/export, cross-owner không được truy cập. Base frontend: `NEXT_PUBLIC_API_BASE_URL` hoặc host local port 8101; MDM prefix `/api/v1/mdm`.
 
 | Method/path (sau prefix) | Contract cần giữ |
 | --- | --- |

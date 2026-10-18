@@ -1,7 +1,7 @@
 .PHONY: run test lint format typecheck check clean
 
 run:
-	uv run --python .venv python -m uvicorn masterone.main:app --reload --host 0.0.0.0 --port 8001
+	uv run --python .venv python -m uvicorn masterone.main:app --reload --host 0.0.0.0 --port 8101
 
 test:
 	uv run --python .venv python -m pytest backend/tests/ -v

@@ -22,7 +22,7 @@ test("closing panels keeps uploads alive; reload recovers a commit whose respons
     else if (path.endsWith("/upload-sessions") && request.method() === "POST") {
       creates++;
       const input = request.postDataJSON();
-      upload = { session_id: "recover-upload", name: input.name, status: "UPLOADING", total_bytes: input.files[0].size, committed_run_id: null, error_message: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), files: [{ file_id: "file-1", filename: input.files[0].filename, expected_size: input.files[0].size, received_size: 0, position: 0, status: "UPLOADING", sha256: null, row_count: null, source_counts: {}, validation_error: null, parts: [] }] };
+      upload = { session_id: "recover-upload", name: input.name, status: "UPLOADING", upload_mode: "proxy", total_bytes: input.files[0].size, committed_run_id: null, error_message: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), files: [{ file_id: "file-1", filename: input.files[0].filename, expected_size: input.files[0].size, received_size: 0, position: 0, status: "UPLOADING", sha256: null, row_count: null, source_counts: {}, validation_error: null, parts: [] }] };
       body = upload;
     } else if (upload && path.includes("/parts/")) {
       partRequested = true;
@@ -49,24 +49,24 @@ test("closing panels keeps uploads alive; reload recovers a commit whose respons
   await expect(panel).toBeHidden();
   await expect(page.locator(".upload-pending-dot")).toBeVisible();
   await page.locator(".sessions-orbit").click();
-  await page.getByRole("dialog", { name: "Lịch sử phiên" }).getByRole("button", { name: "Đóng bảng bên" }).click();
+  await page.getByRole("dialog", { name: "Lịch sử đợt xử lý" }).getByRole("button", { name: "Đóng bảng bên" }).click();
   await page.locator(".upload-orbit").click();
   await expect(panel.getByText("resume.csv", { exact: true })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Chờ tải lên hoàn tất" })).toBeDisabled();
   expect(creates).toBe(1);
   releasePart();
-  await expect(panel.getByRole("button", { name: "Bắt đầu phân giải", exact: true })).toBeEnabled();
+  await expect(panel.getByRole("button", { name: "Bắt đầu xử lý", exact: true })).toBeEnabled();
 
   await page.reload();
   await page.locator(".upload-orbit").click();
   await expect(panel.getByText("resume.csv", { exact: true })).toBeVisible();
-  await panel.getByRole("button", { name: "Bắt đầu phân giải", exact: true }).click();
-  await expect(panel.getByRole("button", { name: "Tiếp tục phiên phân giải" })).toBeEnabled();
+  await panel.getByRole("button", { name: "Bắt đầu xử lý", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Tiếp tục đợt xử lý" })).toBeEnabled();
   expect(starts).toBe(0);
 
   await page.reload();
   await page.locator(".upload-orbit").click();
-  await panel.getByRole("button", { name: "Tiếp tục phiên phân giải" }).click();
+  await panel.getByRole("button", { name: "Tiếp tục đợt xử lý" }).click();
   await expect(panel).toBeHidden();
   await expect(page).toHaveURL(/run=recovered-run/);
   expect(starts).toBe(1);

@@ -35,7 +35,7 @@ Có thể bật thêm `SEMANTIC_ADDRESS_ENABLED=true` để Gemini so sánh **ch
 Mở **hai terminal PowerShell**, cả hai đều bắt đầu tại thư mục gốc repo. Terminal thứ nhất chạy backend:
 
 ```powershell
-uv run --python .venv python -m uvicorn masterone.main:app --reload --port 8001
+uv run --python .venv python -m uvicorn masterone.main:app --reload --port 8101
 ```
 
 Terminal thứ hai chạy frontend:
@@ -44,7 +44,7 @@ Terminal thứ hai chạy frontend:
 npm --prefix frontend run dev
 ```
 
-Mở địa chỉ Next.js in ra khi khởi động (thường là <http://localhost:3000>; nếu cổng này đã dùng, có thể là `localhost:3001`). Trang `/` là landing page; sau khi đăng ký hoặc đăng nhập, không gian làm việc ở `/app`. API docs ở <http://localhost:8001/docs>. Khi chạy local, frontend tự dùng cùng hostname (`localhost` hoặc `127.0.0.1`) để gọi API ở cổng 8001; đặt `NEXT_PUBLIC_API_BASE_URL` trước khi chạy frontend nếu API dùng địa chỉ khác. Backend chỉ chấp nhận các origin loopback theo cổng bất kỳ trong chế độ development; production chỉ chấp nhận các origin liệt kê trong `CORS_ORIGINS`, phân cách bằng dấu phẩy. Dùng cùng hostname cho frontend và backend để cookie hoạt động nhất quán.
+Mở địa chỉ Next.js in ra khi khởi động (thường là <http://localhost:3000>; nếu cổng này đã dùng, có thể là `localhost:3001`). Trang `/` là landing page; sau khi đăng ký hoặc đăng nhập, không gian làm việc ở `/app`. API docs ở <http://localhost:8101/docs>. Khi chạy local, frontend tự dùng cùng hostname (`localhost` hoặc `127.0.0.1`) để gọi API ở cổng 8101; đặt `NEXT_PUBLIC_API_BASE_URL` trước khi chạy frontend nếu API dùng địa chỉ khác. Backend chỉ chấp nhận các origin loopback theo cổng bất kỳ trong chế độ development; production chỉ chấp nhận các origin liệt kê trong `CORS_ORIGINS`, phân cách bằng dấu phẩy. Dùng cùng hostname cho frontend và backend để cookie hoạt động nhất quán.
 
 Luôn chạy lệnh backend từ **thư mục gốc repo**: `.env`, `backend/alembic.ini` và đường dẫn SQLite tương đối đều được đọc từ đó. SQLite mặc định nằm tại `data/masterone.db`. Khi có migration mới, dừng backend, sao lưu database rồi chạy lại `uv run --python .venv python -m masterone.mdm.migrate` trước khi khởi động. App sẽ báo lỗi nếu schema chưa ở revision mới nhất; nó không tự sửa schema khi khởi động. Trong môi trường production, đặt `AUTH_CSRF_SECRET` là chuỗi bí mật ít nhất 32 ký tự và chạy qua HTTPS.
 

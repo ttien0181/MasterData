@@ -6,28 +6,30 @@ import type { ResolutionAuditEvent } from "@/lib/contracts";
 
 const PAGE_SIZE = 25;
 const ACTION_LABELS: Record<string, string> = {
-  SESSION_CREATED: "Tạo phiên phân giải",
-  SESSION_RENAMED: "Đổi tên phiên",
-  SESSION_ARCHIVED: "Lưu trữ phiên",
-  SESSION_RESTORED: "Khôi phục phiên",
+  SESSION_CREATED: "Tạo đợt xử lý",
+  SESSION_RENAMED: "Đổi tên đợt xử lý",
+  SESSION_ARCHIVED: "Lưu trữ đợt xử lý",
+  SESSION_RESTORED: "Khôi phục đợt xử lý",
   RUN_STARTED: "Bắt đầu xử lý",
-  RUN_RETRIED: "Chạy lại phiên",
+  RUN_RETRIED: "Chạy lại đợt xử lý",
   CSV_EXPORTED: "Xuất CSV",
   PREVIEW_EXECUTED: "Xác nhận bản xem trước",
+  PAIRS_STAGED_FOR_MERGE: "Đưa các cặp đã chọn sang Chờ gộp",
+  PAIR_UNSTAGED_FOR_MERGE: "Đưa cặp trở lại Cặp cần xem xét",
   PAIR_REJECTED: "Từ chối ghép cặp",
-  PAIR_ACCEPTED: "Xác nhận gộp cặp bản ghi",
-  REVIEW_CASE_APPROVED: "Duyệt trường hợp review",
+  PAIR_ACCEPTED: "Xác nhận gộp cặp nghi trùng",
+  REVIEW_CASE_APPROVED: "Duyệt trường hợp cần xem xét",
   DEFERRED_PROPOSAL_APPROVED: "Duyệt đề xuất",
   REVIEW_TO_MERGE: "Chuyển sang Chờ gộp",
-  REVIEW_STAGED_CONFLICT: "Đưa cụm xung đột sang Chờ gộp",
-  STAGED_CONFLICT_SPLIT: "Tách cụm xung đột",
+  REVIEW_STAGED_CONFLICT: "Đưa nhóm xung đột sang Chờ gộp",
+  STAGED_CONFLICT_SPLIT: "Tách nhóm xung đột",
   GOLDEN_RECORD_OVERRIDE: "Chỉnh giá trị hợp nhất",
   PROPOSAL_SPLIT: "Tách đề xuất",
-  ENTITY_SPLIT: "Tách bản ghi đã gộp",
+  ENTITY_SPLIT: "Tách dòng thông tin đã gộp",
 };
 
 function actionLabel(action: string) {
-  return ACTION_LABELS[action] ?? "Thao tác: " + action;
+  return ACTION_LABELS[action] ?? "Thao tác khác";
 }
 
 function formatTime(value: string) {
@@ -80,7 +82,7 @@ export default function AuditTrail({ runId }: { runId: string }) {
         setTotal(result.total);
       })
       .catch((reason: unknown) => {
-        if (current) setError(reason instanceof Error ? reason.message : "Không tải được audit của phiên.");
+        if (current) setError(reason instanceof Error ? reason.message : "Không tải được lịch sử thao tác của đợt xử lý.");
       })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
@@ -100,29 +102,29 @@ export default function AuditTrail({ runId }: { runId: string }) {
     setFilters({});
   }
 
-  return <section className="audit-trail" aria-label="Audit phiên">
+  return <section className="audit-trail" aria-label="Lịch sử thao tác">
     <div className="audit-trail-intro">
-      <div><p className="section-kicker">LỊCH SỬ THAO TÁC</p><h2>Audit phiên</h2>
-        <p>Các sự kiện đã được hệ thống ghi nhận cho phiên này. Dữ liệu chỉ đọc và được tải theo trang.</p></div>
+      <div><p className="section-kicker">LỊCH SỬ THAO TÁC</p><h2>Lịch sử thao tác</h2>
+        <p>Các thao tác đã được ghi nhận trong đợt xử lý này. Bạn có thể lọc để tìm thao tác cần xem.</p></div>
       <strong className="audit-total">{total.toLocaleString("vi-VN")} sự kiện</strong>
     </div>
 
     <form className="audit-filters card" onSubmit={applyFilters}>
       <label>Loại thao tác<input value={actionInput} onChange={(event) => setActionInput(event.target.value)}
         placeholder="Ví dụ: RUN_STARTED" /></label>
-      <label>ID cặp<input value={pairInput} onChange={(event) => setPairInput(event.target.value)} placeholder="Không bắt buộc" /></label>
-      <label>ID đề xuất<input value={proposalInput} onChange={(event) => setProposalInput(event.target.value)} placeholder="Không bắt buộc" /></label>
+      <label>Mã cặp<input value={pairInput} onChange={(event) => setPairInput(event.target.value)} placeholder="Không bắt buộc" /></label>
+      <label>Mã đề xuất<input value={proposalInput} onChange={(event) => setProposalInput(event.target.value)} placeholder="Không bắt buộc" /></label>
       <div className="audit-filter-actions"><button className="button primary" type="submit">Lọc</button>
         <button className="button outline" type="button" onClick={clearFilters}>Xóa lọc</button></div>
     </form>
 
-    {loading ? <div className="card audit-state" role="status">Đang tải audit…</div>
+    {loading ? <div className="card audit-state" role="status">Đang tải lịch sử thao tác…</div>
       : error ? <div className="card audit-state" role="alert"><p>{error}</p>
         <button type="button" className="button outline" onClick={() => setRetry((value) => value + 1)}>Thử lại</button></div>
         : events.length ? <div className="audit-event-list">{events.map((item) => <AuditRow key={item.id} event={item} />)}</div>
           : <div className="card audit-state"><strong>Chưa có sự kiện phù hợp</strong><p>Thử xóa bộ lọc hoặc xem lại sau khi có thao tác được ghi nhận.</p></div>}
 
-    {!loading && !error && total > 0 && <nav className="audit-pagination" aria-label="Phân trang audit">
+    {!loading && !error && total > 0 && <nav className="audit-pagination" aria-label="Phân trang lịch sử thao tác">
       <span>{(offset + 1).toLocaleString("vi-VN")}–{Math.min(offset + events.length, total).toLocaleString("vi-VN")} / {total.toLocaleString("vi-VN")}</span>
       <button type="button" className="button outline" disabled={offset === 0}
         onClick={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}>Trước</button>

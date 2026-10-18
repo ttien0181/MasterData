@@ -236,7 +236,7 @@
 .analytics-legend .is-review { background: var(--chart-review); }
 .analytics-conflict-list { display: grid; gap: 14px; }
 .analytics-conflict-row { display: grid; grid-template-columns: 82px minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 14px; }
-.analytics-conflict-row b { min-width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+.analytics-conflict-row b { min-width: 28px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .analytics-bar-track { height: 12px; border-radius: 8px; background: var(--bg-subtle); overflow: hidden; }
 .analytics-bar-track i { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
 .analytics-quality-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(65px, 1fr)); align-items: start; gap: 16px; }
@@ -284,6 +284,12 @@
   .overview-source-card { grid-column: 1 / -1; }
 }
 @media (max-width: 650px) {
+  .analytics-decision-content { flex-direction: column; align-items: stretch; }
+  .analytics-donut { align-self: center; }
+  .analytics-legend { flex: auto; width: 100%; }
+  .app-shell:not(.legacy-shell) .workspace-dock { overflow-x: auto; }
+  .app-shell:not(.legacy-shell) .workspace-dock .sidebar-link { flex: 0 0 auto; width: auto; padding: 7px 10px; }
+  .app-shell:not(.legacy-shell) .workspace-dock .sidebar-link-label { font-size: 10px; overflow: visible; text-overflow: clip; }
   .overview-dashboard-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
   .app-shell .overview-kpi { min-height: 96px; padding: 13px; }
   .overview-kpi strong { font-size: 22px; }

@@ -32,7 +32,7 @@ for (const theme of ["light", "dark"] as const) {
       } else if (path.endsWith("/upload-sessions") && request.method() === "GET") body = { items: upload ? [upload] : [] };
       else if (path.endsWith("/upload-sessions") && request.method() === "POST") {
         const input = request.postDataJSON();
-        upload = { session_id: "upload-1", name: input.name, status: "UPLOADING", total_bytes: input.files[0].size, committed_run_id: null, error_message: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), files: input.files.map((file: { filename: string; size: number }, index: number) => ({ file_id: `file-${index}`, position: index, filename: file.filename, expected_size: file.size, received_size: 0, status: "UPLOADING", sha256: null, row_count: null, source_counts: {}, validation_error: null, parts: [] })) };
+        upload = { session_id: "upload-1", name: input.name, status: "UPLOADING", upload_mode: "proxy", total_bytes: input.files[0].size, committed_run_id: null, error_message: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), files: input.files.map((file: { filename: string; size: number }, index: number) => ({ file_id: `file-${index}`, position: index, filename: file.filename, expected_size: file.size, received_size: 0, status: "UPLOADING", sha256: null, row_count: null, source_counts: {}, validation_error: null, parts: [] })) };
         body = upload;
       } else if (upload && path.endsWith("/replace")) {
         const input = request.postDataJSON();
@@ -59,24 +59,24 @@ for (const theme of ["light", "dark"] as const) {
     });
 
     await page.goto("/app?run=run-1");
-    await expect(page.getByText("Bản ghi", { exact: true })).toBeVisible();
+    await expect(page.getByText("Dòng thông tin", { exact: true })).toBeVisible();
     await expect(page.locator(".analytics-decisions")).toBeVisible();
     await page.screenshot({ path: `test-results/overview-${theme}.png`, fullPage: true });
     await page.locator(".sessions-orbit").click();
-    const sessions = page.getByRole("dialog", { name: "Lịch sử phiên" });
+    const sessions = page.getByRole("dialog", { name: "Lịch sử đợt xử lý" });
     await expect(sessions).toHaveClass(/from-right/);
-    await expect(sessions.getByRole("button", { name: "Mở phiên Customer tháng 10" })).toBeVisible();
-    await expect(sessions.getByRole("button", { name: "Xem tất cả phiên" })).toBeInViewport();
+    await expect(sessions.getByRole("button", { name: "Mở đợt xử lý Customer tháng 10" })).toBeVisible();
+    await expect(sessions.getByRole("button", { name: "Xem tất cả đợt xử lý" })).toBeInViewport();
     await sessions.getByRole("button", { name: "Lỗi", exact: true }).click();
     await expect.poll(() => lastStatusFilter).toBe("FAILED,RETRYABLE_FAILED");
-    await expect(sessions.getByRole("button", { name: "Mở phiên Billing tháng 9" })).toBeVisible();
+    await expect(sessions.getByRole("button", { name: "Mở đợt xử lý Billing tháng 9" })).toBeVisible();
     await sessions.getByRole("button", { name: "Tất cả", exact: true }).click();
-    await expect(sessions.getByRole("button", { name: "Mở phiên Customer tháng 10" })).toBeVisible();
+    await expect(sessions.getByRole("button", { name: "Mở đợt xử lý Customer tháng 10" })).toBeVisible();
     await page.screenshot({ path: `test-results/sessions-${theme}.png` });
-    await sessions.getByRole("button", { name: "Xem tất cả phiên" }).click();
+    await sessions.getByRole("button", { name: "Xem tất cả đợt xử lý" }).click();
     await expect(sessions).toHaveClass(/is-expanded/);
     await sessions.locator(".sessions-row").first().click();
-    await expect(sessions.getByRole("button", { name: "Mở phiên", exact: true })).toBeVisible();
+    await expect(sessions.getByRole("button", { name: "Mở đợt xử lý", exact: true })).toBeVisible();
     await page.screenshot({ path: `test-results/sessions-expanded-${theme}.png` });
     await sessions.getByRole("button", { name: "Đóng bảng bên" }).click();
 
@@ -84,19 +84,19 @@ for (const theme of ["light", "dark"] as const) {
     const panel = page.getByRole("dialog", { name: "Nạp dữ liệu" });
     await expect(panel).toHaveClass(/from-left/);
     await page.screenshot({ path: `test-results/upload-empty-${theme}.png`, animations: "disabled" });
-    await panel.getByLabel("Tên phiên").fill("Customer mới");
+    await panel.getByLabel("Tên đợt xử lý").fill("Customer mới");
     await panel.getByLabel("Chọn các file CSV").setInputFiles({ name: "customer.csv", mimeType: "text/csv", buffer: Buffer.from("record_id,source,name\n1,CRM,Ada\n") });
-    await expect(panel.getByRole("button", { name: "Bắt đầu phân giải", exact: true })).toBeEnabled();
-    await expect(panel.getByText("4.213 bản ghi", { exact: true })).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Bắt đầu xử lý", exact: true })).toBeEnabled();
+    await expect(panel.getByText("4.213 dòng thông tin", { exact: true })).toBeVisible();
     expect(commitCount).toBe(0);
     await page.screenshot({ path: `test-results/upload-ready-${theme}.png` });
     await panel.getByLabel("Đổi hoặc tiếp tục tải customer.csv").setInputFiles({ name: "invalid.csv", mimeType: "text/csv", buffer: Buffer.from("name\nAda\n") });
     await expect(panel.getByText("Thiếu cột bắt buộc: record_id", { exact: true })).toBeVisible();
-    await expect(panel.getByRole("button", { name: "Bắt đầu phân giải", exact: true })).toBeDisabled();
-    await expect(panel.getByLabel("Tên phiên")).toHaveValue("Customer mới");
+    await expect(panel.getByRole("button", { name: "Bắt đầu xử lý", exact: true })).toBeDisabled();
+    await expect(panel.getByLabel("Tên đợt xử lý")).toHaveValue("Customer mới");
     await page.screenshot({ path: `test-results/upload-error-${theme}.png` });
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(panel.getByRole("button", { name: "Bắt đầu phân giải", exact: true })).toBeInViewport();
+    await expect(panel.getByRole("button", { name: "Bắt đầu xử lý", exact: true })).toBeInViewport();
     expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     await page.screenshot({ path: `test-results/upload-mobile-${theme}.png` });
     await page.setViewportSize({ width: 1280, height: 900 });

@@ -121,8 +121,9 @@ def test_stage_all_filtered_pairs_across_pages_without_merging(client):
     assert response.json()["staged_count"] == 28
     assert client.get(f"{prefix}/items/review_pairs").json()["total"] == 2
     staged = client.get(f"{prefix}/items/merge").json()
-    assert staged["total"] == 29
-    assert client.get(f"{prefix}/overview").json()["counts"]["auto"] == 29
+    assert staged["total"] == 1
+    assert staged["items"][0]["member_count"] == 30
+    assert client.get(f"{prefix}/overview").json()["counts"]["auto"] == 1
     assert staged["items"][0]["status"] == "STAGED_FOR_MERGE"
     with client.session_factory() as db:
         assert db.get(ResolutionPair, "extra-00").user_decision == "UNDECIDED"
@@ -137,6 +138,13 @@ def test_staged_pair_is_checked_and_merged_only_at_csv_preview(client):
     prefix = f"/api/v1/mdm/runs/{run_id}"
     staged = client.post(f"{prefix}/review-pairs/stage", json={"pair_ids": ["uncertain-bc"]})
     assert staged.status_code == 200, staged.text
+    groups = client.get(f"{prefix}/items/merge").json()
+    assert groups["total"] == 1
+    assert groups["items"][0]["kind"] == "proposal"
+    group_id = groups["items"][0]["id"]
+    detail = client.get(f"{prefix}/items/merge/{group_id}").json()
+    assert set(detail["member_record_ids"]) == {"a", "b", "c"}
+    assert detail["choices"]["phone"] in {"a", "b", "c"}
     assert client.post(f"{prefix}/exports", json={"acknowledge_unreviewed": True}).status_code == 409
     with client.session_factory() as db:
         assert db.get(ResolutionPair, "uncertain-bc").user_decision == "UNDECIDED"
@@ -161,6 +169,43 @@ def test_staged_pair_is_checked_and_merged_only_at_csv_preview(client):
     assert len(rows) == 1
     assert rows[0]["source_record_ids"] == "A|B|C"
     assert rows[0]["phone_number"] == "111"
+
+
+def test_staged_group_choice_is_editable_and_used_in_csv(client):
+    run_id = seed_run(client)
+    prefix = f"/api/v1/mdm/runs/{run_id}"
+    assert client.post(f"{prefix}/review-pairs/stage", json={
+        "pair_ids": ["uncertain-bc"]}).status_code == 200
+    group_id = client.get(f"{prefix}/items/merge").json()["items"][0]["id"]
+    detail = client.get(f"{prefix}/items/merge/{group_id}").json()
+    saved = client.put(f"{prefix}/merge-items/{group_id}/choices", json={
+        "revision": detail["revision"], "choices": {"phone": "c"}})
+    assert saved.status_code == 200, saved.text
+    assert client.get(f"{prefix}/items/merge/{group_id}").json()["choices"]["phone"] == "c"
+    preview = client.post(f"{prefix}/previews", json={})
+    assert preview.status_code == 200, preview.text
+    exported = client.post(f"{prefix}/previews/{preview.json()['preview_id']}/execute",
+                           json={"execute_request_id": "edited-choice"})
+    assert exported.status_code == 200, exported.text
+    assert read_csv(exported)[0]["phone_number"] == "222"
+
+
+def test_staging_preserves_existing_group_choice(client):
+    run_id = seed_run(client)
+    prefix = f"/api/v1/mdm/runs/{run_id}"
+    with client.session_factory.begin() as db:
+        row = db.get(ResolutionRecord, "b")
+        row.raw_fields = {**row.raw_fields, "phone": "333"}
+    staged = client.post(f"{prefix}/review-pairs/stage", json={
+        "pair_ids": ["uncertain-bc"], "choices": {"safe-ab": {"phone": "b"}}})
+    assert staged.status_code == 200, staged.text
+    group_id = client.get(f"{prefix}/items/merge").json()["items"][0]["id"]
+    assert client.get(f"{prefix}/items/merge/{group_id}").json()["choices"]["phone"] == "b"
+    preview = client.post(f"{prefix}/previews", json={})
+    assert preview.status_code == 200, preview.text
+    exported = client.post(f"{prefix}/previews/{preview.json()['preview_id']}/execute",
+                           json={"execute_request_id": "existing-choice"})
+    assert read_csv(exported)[0]["phone_number"] == "333"
 
 
 def test_staged_conflict_blocks_preview_without_accepting_pair(client):

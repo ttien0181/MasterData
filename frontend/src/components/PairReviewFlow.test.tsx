@@ -52,8 +52,8 @@ it("keeps viewers read-only and hides decision actions in the rejected group", a
 it("filters subgroups on the server instead of filtering the current page", async () => {
   render(<PairReviewFlow {...props} />);
   await screen.findByRole("option", { name: /Nhiều thông tin trùng khớp/ });
-  fireEvent.change(screen.getByRole("combobox", { name: "Nhóm xem xét" }), { target: { value: "A" } });
-  fireEvent.change(screen.getByRole("combobox", { name: "Phân nhóm chi tiết" }), { target: { value: "A1_NAME_PHONE" } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Lý do cần xem xét" }), { target: { value: "A" } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Lý do chi tiết" }), { target: { value: "A1_NAME_PHONE" } });
   await waitFor(() => expect(getResolutionItems).toHaveBeenCalledWith("run", "review_pairs", {
     limit: 25, offset: 0, primary_group: "A", subgroup: "A1_NAME_PHONE",
   }));
@@ -64,10 +64,10 @@ it("stages all matching pages with an exclusion and warns about default fields",
   render(<PairReviewFlow {...props} />);
   fireEvent.click(await screen.findByRole("checkbox", { name: /Chọn tất cả 30 cặp trên mọi trang/ }));
   fireEvent.click(screen.getByRole("checkbox", { name: "Chọn cặp p" }));
-  fireEvent.click(screen.getByRole("button", { name: "Đưa sang Tự động gộp" }));
+  fireEvent.click(screen.getByRole("button", { name: "Đưa sang Chờ gộp" }));
   const dialog = await screen.findByRole("dialog");
-  expect(within(dialog).getByText(/giá trị mặc định cho các trường/)).toBeInTheDocument();
-  fireEvent.click(within(dialog).getByRole("button", { name: "Đưa sang Tự động gộp" }));
+  expect(within(dialog).getByText(/giá trị theo quy tắc mặc định/)).toBeInTheDocument();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Đưa sang Chờ gộp" }));
   await waitFor(() => expect(stageReviewPairs).toHaveBeenCalledWith("run", {
     all_matching: true, pair_ids: [], excluded_ids: ["p"],
   }));

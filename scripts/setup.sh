@@ -19,4 +19,4 @@ fi
 mkdir -p data/chroma
 
 uv run --python .venv python -m masterone.mdm.migrate
-echo "Setup complete! Run: uv run --python .venv python -m uvicorn masterone.main:app --reload --port 8001"
+echo "Setup complete! Run: uv run --python .venv python -m uvicorn masterone.main:app --reload --port 8101"

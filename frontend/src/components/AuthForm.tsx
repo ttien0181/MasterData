@@ -90,7 +90,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
         <div className="auth-form-content">
           <p className="auth-eyebrow">MASTERONE WORKSPACE</p>
           <h2 id="auth-title">{isRegister ? "Tạo tài khoản" : "Đăng nhập"}</h2>
-          <p className="auth-description">{isRegister ? "Tạo tài khoản để bắt đầu làm việc với dữ liệu của bạn." : "Truy cập không gian phân giải dữ liệu của bạn."}</p>
+          <p className="auth-description">{isRegister ? "Tạo tài khoản để bắt đầu làm việc với dữ liệu của bạn." : "Truy cập không gian xử lý dữ liệu của bạn."}</p>
           <form onSubmit={(event) => void submit(event)}>
             <label htmlFor="email">Email</label>
             <input className="auth-input" id="email" type="email" autoComplete="email" required value={email}
@@ -125,7 +125,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           </>}
           <p className="auth-switch">{isRegister ? "Đã có tài khoản?" : "Chưa có tài khoản?"} <Link href={isRegister ? "/login" : "/register"}>{isRegister ? "Đăng nhập" : "Đăng ký"}</Link></p>
         </div>
-        <footer className="auth-footer">© 2026 MasterOne <span>·</span> Phân giải dữ liệu</footer>
+        <footer className="auth-footer">© 2026 MasterOne <span>·</span> Đối chiếu và gộp dữ liệu</footer>
       </section>
     </div>
   </main>;

@@ -48,8 +48,8 @@ for (const theme of ["light", "dark"]) {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("/app?run=layout-run&view=review");
     await expect(page.locator(".pair-list-table tbody tr")).toHaveCount(25);
-    await page.getByRole("combobox", { name: "Nhóm xem xét", exact: true }).selectOption("A");
-    await page.getByRole("combobox", { name: "Phân nhóm chi tiết", exact: true }).selectOption("A1_NAME_PHONE");
+    await page.getByRole("combobox", { name: "Lý do cần xem xét", exact: true }).selectOption("A");
+    await page.getByRole("combobox", { name: "Lý do chi tiết", exact: true }).selectOption("A1_NAME_PHONE");
     await expect.poll(() => lastFilter).toBe("A1_NAME_PHONE");
 
     for (const width of [1440, 1024, 768, 390]) {
@@ -62,10 +62,10 @@ for (const theme of ["light", "dark"]) {
       }))).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await page.getByRole("button", { name: "So sánh cặp pair-1", exact: true }).click();
-      const dialog = page.getByRole("dialog", { name: "So sánh hai bản ghi" });
+      const dialog = page.getByRole("dialog", { name: "So sánh hai dòng thông tin" });
       await expect(dialog.locator("thead th")).toHaveCount(3);
       await expect(dialog.locator("tbody tr")).toHaveCount(4);
-      await expect(dialog.getByText(/tổng cộng 3 bản ghi/)).toBeVisible();
+      await expect(dialog.getByText(/tổng cộng 3 dòng thông tin/)).toBeVisible();
       await expect(dialog.getByRole("button", { name: "Xác nhận gộp", exact: true })).toBeEnabled();
       await page.screenshot({ path: `test-results/review-detail-${theme}-${width}.png` });
       expect(await dialog.locator(".pair-comparison-dialog").evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);

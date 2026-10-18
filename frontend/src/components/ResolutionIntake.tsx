@@ -57,7 +57,7 @@ function withoutKey(items: Record<string, string>, key: string) {
 
 function validationOutcome(status: UploadSession["status"]) {
   return status === "READY"
-    ? "Kiểm tra xong: dữ liệu hợp lệ. Bạn có thể bắt đầu phân giải."
+    ? "Kiểm tra xong: dữ liệu hợp lệ. Bạn có thể bắt đầu xử lý."
     : "Kiểm tra xong: có file chưa hợp lệ. Xem lỗi ở từng file để sửa.";
 }
 
@@ -194,11 +194,11 @@ export default function ResolutionIntake({
           rememberUpload(id);
           setMessage(
             restored.status === "COMMITTED"
-              ? "Phiên đã được tạo. Bấm tiếp tục để mở hoặc bắt đầu xử lý."
+              ? "Đợt xử lý đã được tạo. Bấm tiếp tục để mở hoặc bắt đầu xử lý."
               : restored.status === "READY"
-                ? "Đã khôi phục dữ liệu. Bạn có thể bắt đầu phân giải."
+                ? "Đã khôi phục dữ liệu. Bạn có thể bắt đầu xử lý."
                 : restored.status === "COMMITTING"
-                  ? "Phiên đang được tạo. Trang sẽ cập nhật khi xong."
+                  ? "Đợt xử lý đang được tạo. Trang sẽ cập nhật khi xong."
                   : "Đã khôi phục tiến độ. Chọn lại file để tiếp tục phần chưa tải xong.",
           );
         }
@@ -223,7 +223,7 @@ export default function ResolutionIntake({
   useEffect(() => {
     onPendingChange?.(
       activity === "starting" || activity === "committing"
-        ? "Đang tạo phiên phân giải"
+        ? "Đang tạo đợt xử lý"
         : activity === "uploading"
           ? "Đang tải dữ liệu"
           : validating
@@ -398,7 +398,7 @@ export default function ResolutionIntake({
   async function uploadFiles(incoming: File[]) {
     if (!incoming.length || busy || uploadInFlight.current || session) return;
     if (incoming.some((file) => !file.name.toLowerCase().endsWith(".csv"))) {
-      setMessage("Chỉ hỗ trợ file CSV. Hãy chọn lại các file cần phân giải.");
+      setMessage("Chỉ hỗ trợ file CSV. Hãy chọn lại các file cần xử lý.");
       return;
     }
     const files = incoming.filter(
@@ -411,7 +411,7 @@ export default function ResolutionIntake({
         ) === index,
     );
     if (files.length > 10) {
-      setMessage("Mỗi phiên hiện hỗ trợ tối đa 10 file CSV.");
+      setMessage("Mỗi đợt xử lý hiện hỗ trợ tối đa 10 file CSV.");
       return;
     }
     uploadInFlight.current = true;
@@ -527,10 +527,10 @@ export default function ResolutionIntake({
     try {
       const updated = await renameUploadSession(session.session_id, name);
       setSession(updated);
-      setMessage("Đã lưu tên phiên.");
+      setMessage("Đã lưu tên đợt xử lý.");
     } catch (error) {
       setMessage(
-        error instanceof Error ? error.message : "Không lưu được tên phiên.",
+        error instanceof Error ? error.message : "Không lưu được tên đợt xử lý.",
       );
     } finally {
       setBusy(false);
@@ -570,10 +570,10 @@ export default function ResolutionIntake({
         return { run_id: latest.committed_run_id, status: "UPLOADED", profile: latest.committed_profile };
       }
       if (latest.status !== "COMMITTING") {
-        throw new Error(latest.error_message || "Không thể tạo phiên. Hãy thử lại.");
+        throw new Error(latest.error_message || "Không thể tạo đợt xử lý. Hãy thử lại.");
       }
     }
-    throw new Error("Phiên vẫn đang được tạo. Hãy tải lại trang sau ít phút.");
+    throw new Error("Đợt xử lý vẫn đang được tạo. Hãy tải lại trang sau ít phút.");
   }
 
   async function commitDraft() {
@@ -601,13 +601,13 @@ export default function ResolutionIntake({
       setSession(null);
       setName("");
       setMessage(
-        `Đã tạo phiên với ${created.profile.row_count.toLocaleString("vi-VN")} bản ghi.`,
+        `Đã tạo đợt xử lý với ${created.profile.row_count.toLocaleString("vi-VN")} dòng thông tin.`,
       );
     } catch (error) {
       setMessage(
         error instanceof Error
           ? error.message
-          : "Không thể tạo phiên phân giải.",
+          : "Không thể tạo đợt xử lý.",
       );
       try {
         setSession(await getUploadSession(session.session_id));
@@ -630,7 +630,7 @@ export default function ResolutionIntake({
   const actionLabel = restoring
     ? "Đang khôi phục dữ liệu…"
     : activity === "starting" || activity === "committing"
-      ? "Đang bắt đầu phân giải…"
+      ? "Đang bắt đầu xử lý…"
       : validating
         ? "Đang kiểm tra dữ liệu…"
         : activity === "uploading"
@@ -638,8 +638,8 @@ export default function ResolutionIntake({
           : !session
             ? "Chọn file để bắt đầu"
             : session.status === "COMMITTED"
-              ? "Tiếp tục phiên phân giải"
-              : "Bắt đầu phân giải";
+              ? "Tiếp tục đợt xử lý"
+              : "Bắt đầu xử lý";
 
   return (
     <section
@@ -649,7 +649,7 @@ export default function ResolutionIntake({
       <div className="upload-intake-body">
         <label className="upload-session-name">
           <span>
-            Tên phiên <small>Không bắt buộc</small>
+            Tên đợt xử lý <small>Không bắt buộc</small>
           </span>
           <div>
             <input
@@ -735,7 +735,7 @@ export default function ResolutionIntake({
             <details className="upload-schema-help">
               <summary>Định dạng CSV cần có</summary>
               <p>
-                Mỗi dòng là một bản ghi. Cột source xác định nguồn CRM, ERP hoặc
+                Mỗi dòng CSV chứa thông tin từ một nguồn. Cột source xác định nguồn CRM, ERP hoặc
                 BILL.
               </p>
               <div className="intake-schema" aria-label="Các cột CSV">
@@ -872,8 +872,7 @@ export default function ResolutionIntake({
                       <div className="upload-file-facts">
                         {candidate.row_count !== null && (
                           <span>
-                            {candidate.row_count.toLocaleString("vi-VN")} bản
-                            ghi
+                            {candidate.row_count.toLocaleString("vi-VN")} dòng thông tin
                           </span>
                         )}
                         <span className="is-valid">
@@ -920,7 +919,7 @@ export default function ResolutionIntake({
             )}
             {session.status === "READY" && !busy && (
               <p className="upload-info-note">
-                Chưa bắt đầu phân giải. Bạn có thể đổi file trước khi xử lý.
+                Chưa bắt đầu xử lý. Bạn có thể đổi file trước khi xử lý.
               </p>
             )}
             {!ready && complete && !busy && (
@@ -1003,10 +1002,10 @@ export default function ResolutionIntake({
             : validating
               ? "Chờ kiểm tra xong để tiếp tục"
               : activity === "committing"
-                ? "Phiên đang được tạo, có thể đợi hoặc quay lại sau"
+                ? "Đợt xử lý đang được tạo, có thể đợi hoặc quay lại sau"
               : session?.status === "ERROR"
                 ? "Sửa lỗi hoặc đổi file để tiếp tục"
-                : "Phiên được tạo khi bạn bấm bắt đầu phân giải"}
+                : "Đợt xử lý được tạo khi bạn bấm bắt đầu xử lý"}
         </small>
       </footer>
     </section>

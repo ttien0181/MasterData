@@ -36,7 +36,7 @@ def compute_payload(db: Session, run: ResolutionRun) -> dict:
     counts = {
         "auto": db.query(ResolutionProposal).filter(
             ResolutionProposal.run_id == run_id,
-            ResolutionProposal.status.in_(["AUTO_READY", "REVIEW_APPROVED", "REVIEW_STAGED_CONFLICT"])).count(),
+            ResolutionProposal.status.in_(["AUTO_READY", "REVIEW_APPROVED", "REVIEW_STAGED_CONFLICT", "STAGED_FOR_MERGE"])).count(),
         "rejected": db.query(ResolutionPair).filter(
             ResolutionPair.run_id == run_id,
             or_(ResolutionPair.pair_decision.in_(["NON_MATCH", "NOT_MERGEABLE"]),
@@ -45,7 +45,15 @@ def compute_payload(db: Session, run: ResolutionRun) -> dict:
         "review_cases": len(_review_groups(db, run_id)),
         "manual": db.query(ResolutionProposal).filter_by(run_id=run_id, status="REVIEW_REQUIRED").count(),
     }
-    counts["auto"] += db.query(ResolutionPair).filter_by(run_id=run_id, staged_for_merge=True).count()
+    staged_groups = db.query(ResolutionProposal).filter_by(
+        run_id=run_id, status="STAGED_FOR_MERGE").all()
+    if staged_groups:
+        covered_ids = {proposal_id for group in staged_groups
+                       for proposal_id in group.golden_fields.get("_covered_proposal_ids", [])}
+        counts["auto"] -= len(covered_ids)
+    else:
+        counts["auto"] += db.query(ResolutionPair).filter_by(
+            run_id=run_id, staged_for_merge=True).count()
     counts["review"] = counts["review_cases"] + counts["manual"]
     counts["review_pairs"] = pending_pairs(db, run_id).count()
     counts["hard_blocked"] = db.query(ResolutionPair).filter_by(run_id=run_id, pair_decision="NOT_MERGEABLE").count()
