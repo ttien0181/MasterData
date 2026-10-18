@@ -32,15 +32,23 @@ def test_distribution_counts_each_source_record_once_with_review_precedence(clie
     assert data["decisions"] == {"basis": "initial_classification", "unit": "source_record",
         "total": 4, "automatic": 1, "review": 2, "no_duplicate_detected": 1, "automatic_percent": 25.0}
     fields = {row["field"]: row for row in data["conflicts"]["fields"]}
-    assert fields["name"]["count"] == 1
-    assert fields["name"]["conflict_count"] == 1
-    assert fields["address"]["count"] == 1
-    assert fields["address"]["conflict_count"] == 0
-    assert fields["phone"]["count"] == 0
-    assert fields["phone"]["conflict_count"] == 0
+    # The review table compares raw values, even when stored evidence says otherwise.
+    assert fields["name"]["count"] == 0
+    assert fields["address"]["count"] == 0
+    assert fields["phone"]["count"] == 1
     assert fields["email"]["count"] == 0
-    assert fields["email"]["conflict_count"] == 0
     assert data["conflicts"]["review_pair_count"] == 1
+
+
+def test_review_pair_counts_each_raw_field_difference_including_missing_values(client):
+    prefix = seed_analytics(client)
+    with client.session_factory.begin() as db:
+        row = db.get(ResolutionRecord, "b")
+        row.raw_fields = {**row.raw_fields, "name": "An ", "email": "an@example.com", "address": "Quận 1"}
+    conflicts = client.get(f"{prefix}/analytics").json()["conflicts"]
+    assert conflicts["review_pair_count"] == 1
+    assert {row["field"]: row["count"] for row in conflicts["fields"]} == {
+        "name": 1, "phone": 1, "email": 1, "address": 1}
 
 
 def test_quality_uses_field_validation_not_source_share_or_fake_zero(client):

@@ -78,9 +78,9 @@ export default function SessionAnalytics({ runId, revision }: { runId: string; r
       <section className="card overview-insight-card analytics-conflicts" aria-label="Thông tin không khớp trong các cặp đang chờ">
         <h3>THÔNG TIN KHÔNG KHỚP</h3>
         <div className="analytics-conflict-list">{conflicts.fields.map((entry) => <div className="analytics-conflict-row" data-field={entry.field} key={entry.field}>
-          <span>{fieldLabels[entry.field] || entry.field}</span><div className="analytics-bar-track" aria-hidden="true"><i style={{ width: `${entry.count / maxConflict * 100}%` }} /></div><b>{entry.conflict_count !== undefined && entry.count > 0 ? `${number(entry.count)} (${number(entry.conflict_count)} xung đột)` : number(entry.count)}</b>
+          <span>{fieldLabels[entry.field] || entry.field}</span><div className="analytics-bar-track" aria-hidden="true"><i style={{ width: `${entry.count / maxConflict * 100}%` }} /></div><b>{number(entry.count)}</b>
         </div>)}</div>
-        <p>{conflicts.review_pair_count ? `Trong ${number(conflicts.review_pair_count)} cặp đang chờ xem xét. Mỗi số là số cặp có thông tin khác biệt ở mục đó (kèm số cặp xung đột loại trừ). Một cặp có thể khác ở nhiều mục.` : "Không còn cặp chờ xem xét."}</p>
+        <p>{conflicts.review_pair_count ? `Trong ${number(conflicts.review_pair_count)} cặp đang chờ xem xét. Mỗi số là số cặp có giá trị gốc khác nhau ở mục đó, giống như trong bảng Cần xem xét. Một cặp có thể khác ở nhiều mục.` : "Không còn cặp chờ xem xét."}</p>
       </section>
       <section className="card overview-insight-card analytics-quality" aria-label="Số lượng dòng thông tin theo nguồn">
         <h3>SỐ LƯỢNG DÒNG THÔNG TIN THEO NGUỒN</h3>
@@ -96,7 +96,7 @@ export default function SessionAnalytics({ runId, revision }: { runId: string; r
     <details className="analytics-definitions"><summary>Cách tính các chỉ số</summary>
       <p><b>Phân loại ban đầu:</b> đếm các dòng thông tin đầu vào, không đếm cặp. Dòng liên quan đến cặp cần xem xét được ưu tiên xếp vào Cần xem xét ban đầu, rồi đến Đề xuất gộp tự động; phần còn lại là Chưa phát hiện trùng. Ba nhóm cộng lại bằng tổng số dòng. Quyết định duyệt sau đó không đổi biểu đồ này.</p>
       <p><b>Cặp đang chờ xem xét:</b> mỗi cặp gồm hai dòng thông tin. Ví dụ, 500 cặp không dùng chung dòng tương ứng với 1.000 dòng; hai cặp A–B và B–C chỉ có 3 dòng khác nhau. Số cặp đang chờ giảm khi bạn xác nhận hoặc đưa cặp sang Chờ gộp.</p>
-      <p><b>Thông tin không khớp:</b> số cặp đang chờ có giá trị khác biệt ở từng mục, trong đó ghi rõ số lượng có xung đột (bằng chứng loại trừ, không thể cùng thực thể). Thiếu dữ liệu hoặc chỉ khác cách viết không được tính vào số này.</p>
+      <p><b>Thông tin không khớp:</b> số cặp đang chờ có giá trị gốc khác nhau ở từng mục trong bảng Cần xem xét. Một bên trống hoặc khác cách viết cũng được tính; một cặp có thể xuất hiện ở nhiều mục.</p>
       <p><b>Dòng thông tin theo nguồn:</b> số dòng thông tin đầu vào của từng nguồn trong đợt xử lý, trước khi gộp. Các file có cùng nguồn được cộng chung; chiều cao cột tỷ lệ với số lượng dòng thông tin.</p>
     </details>
   </div>;

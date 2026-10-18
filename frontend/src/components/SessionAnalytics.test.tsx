@@ -61,7 +61,7 @@ it("shows an error and retries instead of substituting sample metrics", async ()
   fireEvent.click(screen.getByRole("button", { name: "Tải lại số liệu" }));
   await waitFor(() => expect(screen.getByLabelText("Phân loại dòng thông tin ban đầu")).toBeInTheDocument());
 });
-it("displays difference count with conflict breakdown for discrepant fields", async () => {
+it("displays only the raw difference count for each review field", async () => {
   const customMetrics: ResolutionAnalytics = {
     ...metrics,
     conflicts: {
@@ -69,18 +69,19 @@ it("displays difference count with conflict breakdown for discrepant fields", as
       unit: "pair",
       review_pair_count: 84,
       fields: [
-        { field: "name", count: 16, difference_count: 16, conflict_count: 16 },
-        { field: "address", count: 18, difference_count: 18, conflict_count: 0 },
-        { field: "phone", count: 0, difference_count: 0, conflict_count: 0 },
-        { field: "email", count: 0, difference_count: 0, conflict_count: 0 },
+        { field: "name", count: 16 },
+        { field: "address", count: 18 },
+        { field: "phone", count: 0 },
+        { field: "email", count: 0 },
       ],
     },
   };
   vi.mocked(getResolutionAnalytics).mockResolvedValue(customMetrics);
   render(<SessionAnalytics runId="r" revision="1" />);
   const conflictsSection = await screen.findByLabelText("Thông tin không khớp trong các cặp đang chờ");
-  expect(within(conflictsSection).getByText("16 (16 xung đột)")).toBeInTheDocument();
-  expect(within(conflictsSection).getByText("18 (0 xung đột)")).toBeInTheDocument();
+  expect(within(conflictsSection).getByText("16")).toBeInTheDocument();
+  expect(within(conflictsSection).getByText("18")).toBeInTheDocument();
+  expect(conflictsSection).not.toHaveTextContent("xung đột");
   expect(within(conflictsSection).getByText("Họ tên").closest(".analytics-conflict-row")).toHaveAttribute("data-field", "name");
   expect(within(conflictsSection).getByText("Địa chỉ").closest(".analytics-conflict-row")).toHaveAttribute("data-field", "address");
   expect(within(conflictsSection).getAllByText("0")).toHaveLength(2);
