@@ -1,7 +1,7 @@
 """SQL aggregates for the session dashboard; never materialize source rows in Python."""
 
-from sqlalchemy import case, func, select, true, union_all
-from sqlalchemy.orm import Session
+from sqlalchemy import case, func, select, union_all
+from sqlalchemy.orm import Session, aliased
 
 from masterone.mdm.models import ResolutionPair, ResolutionRecord
 from masterone.mdm.resolution_pairs import pending_pairs
@@ -34,27 +34,21 @@ def decision_distribution(db: Session, run_id: str):
 
 
 def field_conflicts(db: Session, run_id: str):
-    dialect = db.get_bind().dialect.name
-    if dialect == "postgresql":
-        entries = func.json_array_elements(ResolutionPair.field_evidence).table_valued("value").lateral()
-        field = entries.c.value.op("->>")("field")
-        state = entries.c.value.op("->>")("state")
-    else:  # SQLite is the isolated test database.
-        entries = func.json_each(ResolutionPair.field_evidence).table_valued("key", "value")
-        field = func.json_extract(entries.c.value, "$.field")
-        state = func.json_extract(entries.c.value, "$.state")
-    rows = pending_pairs(db, run_id).join(entries, true()).with_entities(
-        field.label("field"),
-        func.count(func.distinct(case((state.in_(["CF", "DF"]), ResolutionPair.id)))).label("diff_count"),
-        func.count(func.distinct(case((state == "CF", ResolutionPair.id)))).label("conflict_count"),
-    ).filter(field.in_(FIELDS)).group_by(field).all()
-    diff_counts = {r[0]: r[1] for r in rows}
-    cf_counts = {r[0]: r[2] for r in rows}
-    return {"basis": "pending_review_pairs", "unit": "pair", "review_pair_count": pending_pairs(db, run_id).count(),
-            "fields": [{"field": field, "count": diff_counts.get(field, 0),
-                        "difference_count": diff_counts.get(field, 0),
-                        "conflict_count": cf_counts.get(field, 0)}
-                       for field in sorted(FIELDS, key=lambda name: (-diff_counts.get(name, 0), -cf_counts.get(name, 0), name))]}
+    left = aliased(ResolutionRecord)
+    right = aliased(ResolutionRecord)
+    # Match the raw-value comparison used by the "Cần xem xét" pair table.
+    counts = [func.coalesce(func.sum(case((
+        func.coalesce(left.raw_fields[field].as_string(), "") !=
+        func.coalesce(right.raw_fields[field].as_string(), ""), 1), else_=0)), 0)
+        for field in FIELDS]
+    total, *differences = pending_pairs(db, run_id).join(
+        left, ResolutionPair.left_record_id == left.id).join(
+        right, ResolutionPair.right_record_id == right.id).with_entities(
+        func.count(ResolutionPair.id), *counts).one()
+    by_field = dict(zip(FIELDS, differences))
+    return {"basis": "pending_review_pairs", "unit": "pair", "review_pair_count": total,
+            "fields": [{"field": field, "count": by_field[field]}
+                       for field in sorted(FIELDS, key=lambda name: (-by_field[name], name))]}
 
 
 def source_quality(db: Session, run_id: str):
