@@ -210,6 +210,9 @@ def test_demo_defaults_to_rule_only_and_never_runs_embedding(client, monkeypatch
     assert read(client, run_id)['workflow_state'] == 'DECIDE_RUNNING'
     run_one(client)
     state = read(client, run_id)
+    assert state['active_operation']['operation_type'] == 'CLUSTER'
+    run_one(client)
+    state = read(client, run_id)
     assert state['active_operation'] is None, state
     with client.session_factory() as db:
         pairs = db.query(WorkflowPair).filter_by(run_id=run_id).all()
@@ -217,6 +220,10 @@ def test_demo_defaults_to_rule_only_and_never_runs_embedding(client, monkeypatch
         assert all(pair.assessment.get('embedding_enabled') is False for pair in pairs)
     # Rechecking the same session must preserve the choice, too.
     from tests.test_mdm.test_workflow_contract import request
+    reopened = client.post(f'/api/v1/mdm/runs/{run_id}/workflow/reopen-decisions',
+        json=request(state['workflow_revision'], reason='Kiểm tra lại dữ liệu mẫu'))
+    assert reopened.status_code == 200, reopened.text
+    state = read(client, run_id)
     response = client.post(f'/api/v1/mdm/runs/{run_id}/workflow/reassess',
         json=request(state['workflow_revision']))
     assert response.status_code == 202, response.text

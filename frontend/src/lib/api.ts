@@ -66,6 +66,7 @@ export const getMe = () => authRequest<AuthUser>("/me");
 export const enterProductDemo = () => authRequest<AuthUser>('/demo', {method:'POST'});
 export const startProductDemo = (useEmbedding=false) => request<{run_id:string;status:string}>('/demo/start', {
   method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({use_embedding:useEmbedding})});
+export const prepareDemoExamples = (signal?:AbortSignal) => request<{status:string;sample_groups:number}>('/demo/examples', {method:'POST',signal});
 export type SampleCatalog = {version:string;title:string;description:string;record_count:number;file_count:number;synthetic:boolean;files:{name:string;source:string;description:string;record_count:number;byte_size:number}[]};
 export const getSampleCatalog = (signal?:AbortSignal) => request<SampleCatalog>('/demo/catalog', {signal});
 export const downloadSampleFile = (name:string) => requestCsv(`/demo/files/${encodeURIComponent(name)}`, 'GET', undefined, name);

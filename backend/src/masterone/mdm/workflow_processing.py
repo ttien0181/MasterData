@@ -87,6 +87,9 @@ def continue_processing(db, run, op):
         return
     if op.operation_type not in ('DECIDE', 'PAIR_ADVICE'):
         return
+    if op.operation_type == 'DECIDE':
+        from masterone.mdm.demo_examples import prepare_examples
+        prepare_examples(db, run)
     if op.payload.get('mvp_step2') or op.payload.get('demo_fast_mode'):
         # Review only needs the published assessment. Explicit preview/cluster
         # commands still run their normal snapshot, revision and safety guards.

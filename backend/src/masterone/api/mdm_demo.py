@@ -38,3 +38,22 @@ def begin_demo(body: DemoStartRequest | None = None,
         raise HTTPException(403, 'Chức năng này dành cho phiên demo.')
     from masterone.mdm.demo_service import start_demo
     return start_demo(db, auth.user.id, use_embedding=body.use_embedding if body else False)
+
+
+@router.post('/examples')
+def demo_examples(auth: CurrentSession = Depends(require_mutation), db: Session = Depends(get_session)):
+    """Resume prepared examples for the caller's fixed demo, including older demos."""
+    if not auth.demo:
+        raise HTTPException(403, 'Chức năng này dành cho phiên demo.')
+    from masterone.auth.models import DemoGrant
+    from masterone.mdm.generation_staging import lock_run
+    from masterone.mdm.demo_examples import prepare_examples
+    grant = db.get(DemoGrant, auth.user.id)
+    if not grant or not grant.run_id:
+        return {'status': 'WAITING', 'sample_groups': 0}
+    run = lock_run(db, grant.run_id)
+    if run.owner_user_id != auth.user.id:
+        raise HTTPException(404, 'Không tìm thấy phiên demo.')
+    result = prepare_examples(db, run)
+    db.commit()
+    return result
