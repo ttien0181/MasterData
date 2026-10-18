@@ -125,6 +125,8 @@ export default function ResolutionIntake({
   const [activity, setActivity] = useState<
     "uploading" | "validating" | "committing" | "starting" | null
   >(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [pendingFileId, setPendingFileId] = useState<string | null>(null);
   const [progress, setProgress] = useState<{
     fileId: string;
     current: number;
@@ -480,7 +482,9 @@ export default function ResolutionIntake({
   }
 
   async function openDraft(sessionId: string) {
+    if (busy) return;
     setBusy(true);
+    setPendingAction(`draft:${sessionId}`);
     setMessage("");
     try {
       const opened = await getUploadSession(sessionId);
@@ -495,6 +499,7 @@ export default function ResolutionIntake({
       );
     } finally {
       setBusy(false);
+      setPendingAction(null);
     }
   }
 
@@ -506,6 +511,7 @@ export default function ResolutionIntake({
     }
     setBusy(true);
     setActivity("uploading");
+    setPendingFileId(target.file_id);
     setMessage("");
     try {
       const updated = await transferFile(session, target, file);
@@ -517,6 +523,7 @@ export default function ResolutionIntake({
     } finally {
       setBusy(false);
       setActivity(null);
+      setPendingFileId(null);
       setProgress(null);
     }
   }
@@ -524,6 +531,7 @@ export default function ResolutionIntake({
   async function saveName() {
     if (!session || busy) return;
     setBusy(true);
+    setPendingAction("save-name");
     try {
       const updated = await renameUploadSession(session.session_id, name);
       setSession(updated);
@@ -534,12 +542,14 @@ export default function ResolutionIntake({
       );
     } finally {
       setBusy(false);
+      setPendingAction(null);
     }
   }
 
   async function removeDraft() {
     if (!session || busy) return;
     setBusy(true);
+    setPendingAction("remove-draft");
     try {
       await deleteUploadSession(session.session_id);
       forgetUpload(session.session_id);
@@ -557,6 +567,7 @@ export default function ResolutionIntake({
       );
     } finally {
       setBusy(false);
+      setPendingAction(null);
     }
   }
 
@@ -640,6 +651,8 @@ export default function ResolutionIntake({
             : session.status === "COMMITTED"
               ? "Tiếp tục đợt xử lý"
               : "Bắt đầu xử lý";
+  const mainWaiting = restoring || validating || activity === "uploading" ||
+    activity === "committing" || activity === "starting";
 
   return (
     <section
@@ -664,9 +677,10 @@ export default function ResolutionIntake({
                 className="upload-text-action"
                 type="button"
                 disabled={busy}
+                aria-busy={pendingAction === "save-name"}
                 onClick={() => void saveName()}
               >
-                Lưu tên
+                {pendingAction === "save-name" ? <><span className="button-spinner" aria-hidden="true" />Đang lưu…</> : "Lưu tên"}
               </button>
             )}
           </div>
@@ -761,6 +775,7 @@ export default function ResolutionIntake({
                     key={draft.session_id}
                     type="button"
                     disabled={busy}
+                    aria-busy={pendingAction === `draft:${draft.session_id}`}
                     onClick={() => void openDraft(draft.session_id)}
                   >
                     <span>
@@ -768,7 +783,9 @@ export default function ResolutionIntake({
                         draft.files.map((file) => file.filename).join(", ")}
                     </span>
                     <small>
-                      {draft.status === "READY"
+                      {pendingAction === `draft:${draft.session_id}`
+                        ? <><span className="button-spinner" aria-hidden="true" />Đang mở…</>
+                        : draft.status === "READY"
                         ? "Tiếp tục →"
                         : "Tiếp tục tải →"}
                     </small>
@@ -798,7 +815,8 @@ export default function ResolutionIntake({
                   !file.replacement &&
                   activity !== "uploading";
                 const fileBusy =
-                  activity === "uploading" && progress?.fileId === file.file_id;
+                  activity === "uploading" &&
+                  (pendingFileId === file.file_id || progress?.fileId === file.file_id);
                 const uploadError = uploadErrors[file.file_id];
                 const failed = !!error || !!uploadError;
                 return (
@@ -830,9 +848,9 @@ export default function ResolutionIntake({
                       <label
                         className="upload-replace-control"
                         aria-disabled={busy || session.status === "COMMITTED"}
+                        aria-busy={fileBusy}
                       >
-                        <ShellIcon name="replace" size={14} />
-                        {error ? "Đổi file" : valid ? "Đổi file" : "Tiếp tục"}
+                        {fileBusy ? <><span className="button-spinner" aria-hidden="true" />Đang tải…</> : <><ShellIcon name="replace" size={14} />{error ? "Đổi file" : valid ? "Đổi file" : "Tiếp tục"}</>}
                         <input
                           aria-label={`Đổi hoặc tiếp tục tải ${candidate.filename}`}
                           type="file"
@@ -922,12 +940,15 @@ export default function ResolutionIntake({
                 Chưa bắt đầu xử lý. Bạn có thể đổi file trước khi xử lý.
               </p>
             )}
-            {!ready && complete && !busy && (
+            {!ready && complete && (!busy || pendingAction === "recheck") && (
               <button
                 type="button"
                 className="upload-recheck"
+                disabled={busy}
+                aria-busy={pendingAction === "recheck"}
                 onClick={async () => {
                   setBusy(true);
+                  setPendingAction("recheck");
                   setMessage("");
                   try {
                     await validateIfComplete(session);
@@ -940,10 +961,11 @@ export default function ResolutionIntake({
                   } finally {
                     setBusy(false);
                     setActivity(null);
+                    setPendingAction(null);
                   }
                 }}
               >
-                Kiểm tra lại dữ liệu
+                {pendingAction === "recheck" ? <><span className="button-spinner" aria-hidden="true" />Đang kiểm tra…</> : "Kiểm tra lại dữ liệu"}
               </button>
             )}
             <div className="upload-secondary-actions">
@@ -964,9 +986,10 @@ export default function ResolutionIntake({
                 type="button"
                 className="upload-text-action danger"
                 disabled={busy || session.status === "COMMITTED"}
+                aria-busy={pendingAction === "remove-draft"}
                 onClick={() => void removeDraft()}
               >
-                Xóa dữ liệu đang chuẩn bị
+                {pendingAction === "remove-draft" ? <><span className="button-spinner" aria-hidden="true" />Đang xóa…</> : "Xóa dữ liệu đang chuẩn bị"}
               </button>
             </div>
           </>
@@ -976,14 +999,19 @@ export default function ResolutionIntake({
             {message}
           </div>
         )}
-        {restoreFailed && (
+        {(restoreFailed || (restoring && restoreAttempt > 0)) && (
           <button
             type="button"
             className="upload-recheck"
             disabled={busy}
-            onClick={() => setRestoreAttempt((attempt) => attempt + 1)}
+            aria-busy={restoring}
+            onClick={() => {
+              setRestoring(true);
+              setRestoreFailed(false);
+              setRestoreAttempt((attempt) => attempt + 1);
+            }}
           >
-            Thử khôi phục lại
+            {restoring ? <><span className="button-spinner" aria-hidden="true" />Đang khôi phục…</> : "Thử khôi phục lại"}
           </button>
         )}
       </div>
@@ -992,8 +1020,10 @@ export default function ResolutionIntake({
           type="button"
           className="button primary"
           disabled={busy || !ready}
+          aria-busy={mainWaiting}
           onClick={() => void commitDraft()}
         >
+          {mainWaiting && <span className="button-spinner" aria-hidden="true" />}
           {actionLabel}
         </button>
         <small>

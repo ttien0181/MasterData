@@ -89,6 +89,11 @@ def _sync_staged_groups(db: Session, run_id: str,
             row.revision += 1
     for row in previous:
         if row.id not in desired:
+            # Audit history must keep the old group ID without referencing a deleted proposal.
+            for event in db.query(ResolutionAuditEvent).filter_by(proposal_id=row.id):
+                event.details = {**event.details, "proposal_id": row.id}
+                event.proposal_id = None
+            db.flush()
             db.delete(row)
     db.flush()
 
@@ -152,7 +157,8 @@ def unstage_group(db: Session, run_id: str, proposal_id: str, actor: str):
         db.execute(update(ResolutionRunSummary).where(ResolutionRunSummary.run_id == run_id)
                    .values(version=ResolutionRunSummary.version + 1))
         db.add(ResolutionAuditEvent(run_id=run_id, actor_user_id=actor,
-            proposal_id=proposal_id, action="PAIR_UNSTAGED_FOR_MERGE", details={"count": changed}))
+            proposal_id=None, action="PAIR_UNSTAGED_FOR_MERGE",
+            details={"count": changed, "proposal_id": proposal_id}))
     db.commit()
     return {"unstaged_count": changed}
 
