@@ -494,10 +494,39 @@ describe("Resolution item flow", () => {
     render(<ResolutionWorkspace user={steward} onLogout={vi.fn()} />);
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(screen.getByText("Đang đối chiếu")).toBeInTheDocument();
+    const progress = screen.getByRole("region", { name: "Tiến trình xử lý" });
+    expect(within(progress).getByRole("list", { name: "Các bước xử lý" }).children).toHaveLength(4);
+    expect(within(progress).queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(within(progress).getByText("Đối chiếu").closest("li")).toHaveAttribute("aria-current", "step");
+    expect(within(progress).getByText("Đối chiếu").closest("li")).toHaveClass("is-working");
+    expect(within(progress).getByText("Chờ xử lý").closest("li")).toHaveClass("is-done");
+    expect(within(progress).getByText("Nạp dữ liệu").closest("li")).toHaveClass("is-done");
+    expect(within(progress).getByText("Lưu kết quả").closest("li")).toHaveClass("is-upcoming");
+    expect(within(progress).queryByText(/Chưa có phần trăm/)).not.toBeInTheDocument();
 
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(screen.getByText("Chưa kết nối được để cập nhật đợt xử lý; đang giữ trạng thái gần nhất.")).toBeInTheDocument();
     expect(screen.getByText("Đang đối chiếu")).toBeInTheDocument();
+    expect(progress).toHaveClass("is-stale");
+  });
+
+  it("shows queued work as waiting without implying active progress", async () => {
+    window.history.replaceState({}, "", "/app?run=run-1");
+    vi.mocked(getResolutionRuns).mockResolvedValue({ total: 0, items: [] });
+    vi.mocked(getResolutionOverview).mockResolvedValue({ run_id: "run-1", status: "QUEUED", phase: "queued",
+      processed_count: 0, total_count: 25000, record_count: 25000, file_count: 3, source_counts: { CRM: 25000 },
+      history_count: 0, candidate_count: 0, counts: { auto: 0, review: 0, separate: 0, rejected: 0,
+        review_cases: 0, manual: 0, hard_blocked: 0, insufficient: 0, group_a: 0, group_c: 0, group_d: 0 } });
+    render(<ResolutionWorkspace user={steward} onLogout={vi.fn()} />);
+
+    const progress = await screen.findByRole("region", { name: "Tiến trình xử lý" });
+    expect(within(progress).getByText("Đã nhận yêu cầu. Đợt xử lý sẽ bắt đầu khi đến lượt.")).toBeInTheDocument();
+    expect(within(progress).getByText("25.000 dòng thông tin · 3 file")).toBeInTheDocument();
+    expect(within(progress).queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(within(progress).getByText("Chờ xử lý").closest("li")).toHaveAttribute("aria-current", "step");
+    expect(within(progress).getByText("Chờ xử lý").closest("li")).not.toHaveClass("is-working");
+    expect(within(progress).getByText("Đang chờ")).toBeInTheDocument();
+    expect(within(progress).getAllByText("Sắp tới")).toHaveLength(3);
   });
 
   it("shows a readable toast and dismisses it after six seconds", async () => {

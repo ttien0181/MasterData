@@ -1,12 +1,22 @@
 "use client";
 
-import { type CSSProperties, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { getResolutionAnalytics } from "@/lib/api";
 import type { ResolutionAnalytics } from "@/lib/contracts";
 
 const fieldLabels: Record<string, string> = { name: "Họ tên", phone: "Điện thoại", email: "Email", address: "Địa chỉ" };
 const number = (value: number) => value.toLocaleString("vi-VN", { maximumFractionDigits: 1 });
 const sourceOrder = (value: string) => ({ CRM: 0, ERP: 1, BILL: 2 }[value] ?? 3);
+const percent = (share: number) => share > 0 && share < 0.001 ? "<0,1%" : `${number(share * 100)}%`;
+function piePoint(share: number, radius: number) {
+  const angle = share * Math.PI * 2 - Math.PI / 2;
+  return { x: 150 + Math.cos(angle) * radius, y: 150 + Math.sin(angle) * radius };
+}
+function pieSlicePath(start: number, end: number) {
+  const from = piePoint(start, 100);
+  const to = piePoint(end, 100);
+  return `M 150 150 L ${from.x} ${from.y} A 100 100 0 ${end - start > 0.5 ? 1 : 0} 1 ${to.x} ${to.y} Z`;
+}
 
 export default function SessionAnalytics({ runId, revision }: { runId: string; revision: string }) {
   const [data, setData] = useState<{ key: string; value: ResolutionAnalytics } | null>(null);
@@ -25,8 +35,12 @@ export default function SessionAnalytics({ runId, revision }: { runId: string; r
   if (error) return <div className="card analytics-state" role="alert"><p>{error}</p><button className="button outline" onClick={() => setRetry((value) => value + 1)}>Tải lại số liệu</button></div>;
   if (data?.key !== key) return <div className="card analytics-state" role="status">Đang tổng hợp số liệu đợt xử lý…</div>;
   const { decisions, conflicts, quality } = data.value;
-  const autoShare = decisions.total ? decisions.automatic / decisions.total * 100 : 0;
-  const reviewEnd = decisions.total ? (decisions.automatic + decisions.review) / decisions.total * 100 : 0;
+  const pieSlices = [
+    { label: "Đề xuất gộp tự động", count: decisions.automatic, className: "is-auto" },
+    { label: "Cần xem xét ban đầu", count: decisions.review, className: "is-review" },
+    { label: "Chưa phát hiện trùng", count: decisions.no_duplicate_detected, className: "is-separate" },
+  ];
+  let pieStart = 0;
   const maxConflict = Math.max(1, ...conflicts.fields.map((entry) => entry.count));
   const maxSourceCount = Math.max(1, ...quality.sources.map((source) => source.record_count));
   const totalSourceRecords = quality.sources.reduce((total, source) => total + source.record_count, 0);
@@ -35,21 +49,35 @@ export default function SessionAnalytics({ runId, revision }: { runId: string; r
       <section className="card overview-insight-card analytics-decisions" aria-label="Phân loại dòng thông tin ban đầu">
         <h3>PHÂN LOẠI BAN ĐẦU</h3>
         <div className="analytics-decision-content">
-          <div className={`analytics-donut ${decisions.total ? "" : "is-empty"}`} role="img" aria-label={`${number(decisions.automatic_percent)}% dòng thông tin được đề xuất gộp tự động ban đầu`}
-            style={{ "--auto-share": `${autoShare}%`, "--review-end": `${reviewEnd}%` } as CSSProperties}>
-            <span><strong>{number(decisions.automatic_percent)}%</strong><small>đề xuất tự động</small></span>
-          </div>
+          <svg className="analytics-pie" viewBox="0 0 300 300" role="img"
+            aria-label={`Phân loại ban đầu: ${pieSlices.map((slice) => `${slice.label} ${percent(decisions.total ? slice.count / decisions.total : 0)}`).join(", ")}`}>
+            {decisions.total ? pieSlices.map((slice) => {
+              if (!slice.count) return null;
+              const share = slice.count / decisions.total;
+              const start = pieStart;
+              pieStart += share;
+              const middle = start + share / 2;
+              const labelPoint = piePoint(middle, 126);
+              const lineStart = piePoint(middle, 103);
+              const lineEnd = piePoint(middle, 115);
+              return <g key={slice.className}>
+                {share >= 1 ? <circle className={`analytics-pie-slice ${slice.className}`} cx="150" cy="150" r="100" />
+                  : <path className={`analytics-pie-slice ${slice.className}`} d={pieSlicePath(start, pieStart)} />}
+                <line className="analytics-pie-leader" x1={lineStart.x} y1={lineStart.y} x2={lineEnd.x} y2={lineEnd.y} />
+                <text className="analytics-pie-label" x={labelPoint.x} y={labelPoint.y} dominantBaseline="central" textAnchor="middle">{percent(share)}</text>
+              </g>;
+            }) : <circle className="analytics-pie-empty" cx="150" cy="150" r="100" />}
+          </svg>
           <dl className="analytics-legend">
             <div><dt><i className="is-auto" />Đề xuất gộp tự động</dt><dd>{number(decisions.automatic)} dòng</dd></div>
             <div><dt><i className="is-review" />Cần xem xét ban đầu</dt><dd>{number(decisions.review)} dòng</dd></div>
             <div><dt><i className="is-separate" />Chưa phát hiện trùng</dt><dd>{number(decisions.no_duplicate_detected)} dòng</dd></div>
           </dl>
         </div>
-        <p>Tổng {number(decisions.total)} dòng thông tin, mỗi dòng chỉ đếm một lần. Biểu đồ giữ nguyên phân loại ban đầu sau khi bạn duyệt.</p>
       </section>
       <section className="card overview-insight-card analytics-conflicts" aria-label="Thông tin không khớp trong các cặp đang chờ">
         <h3>THÔNG TIN KHÔNG KHỚP</h3>
-        <div className="analytics-conflict-list">{conflicts.fields.map((entry) => <div className="analytics-conflict-row" key={entry.field}>
+        <div className="analytics-conflict-list">{conflicts.fields.map((entry) => <div className="analytics-conflict-row" data-field={entry.field} key={entry.field}>
           <span>{fieldLabels[entry.field] || entry.field}</span><div className="analytics-bar-track" aria-hidden="true"><i style={{ width: `${entry.count / maxConflict * 100}%` }} /></div><b>{entry.conflict_count !== undefined && entry.count > 0 ? `${number(entry.count)} (${number(entry.conflict_count)} xung đột)` : number(entry.count)}</b>
         </div>)}</div>
         <p>{conflicts.review_pair_count ? `Trong ${number(conflicts.review_pair_count)} cặp đang chờ xem xét. Mỗi số là số cặp có thông tin khác biệt ở mục đó (kèm số cặp xung đột loại trừ). Một cặp có thể khác ở nhiều mục.` : "Không còn cặp chờ xem xét."}</p>

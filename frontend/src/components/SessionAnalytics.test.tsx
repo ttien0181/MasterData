@@ -18,7 +18,11 @@ afterEach(() => { cleanup(); vi.resetAllMocks(); });
 it("shows source record counts regardless of quality assessments and the actual distribution", async () => {
   vi.mocked(getResolutionAnalytics).mockResolvedValue(metrics);
   render(<SessionAnalytics runId="r" revision="1" />);
-  expect(await screen.findByRole("img", { name: "25% dòng thông tin được đề xuất gộp tự động ban đầu" })).toBeInTheDocument();
+  const chart = await screen.findByRole("img", { name: "Phân loại ban đầu: Đề xuất gộp tự động 25%, Cần xem xét ban đầu 50%, Chưa phát hiện trùng 25%" });
+  expect(within(chart).getAllByText("25%")).toHaveLength(2);
+  expect(within(chart).getByText("50%")).toBeInTheDocument();
+  expect(chart.querySelectorAll("path")).toHaveLength(3);
+  expect(chart.querySelectorAll("line")).toHaveLength(3);
   const sources = within(screen.getByLabelText("Số lượng dòng thông tin theo nguồn"));
   expect(sources.getByTitle("CRM: 2 dòng thông tin")).toHaveTextContent("2");
   expect(sources.getByTitle("ERP: 1 dòng thông tin")).toHaveTextContent("1");
@@ -35,15 +39,17 @@ it("distinguishes initial source rows from pending pairs after a decision", asyn
   vi.mocked(getResolutionAnalytics).mockResolvedValue(initial);
   const { rerender } = render(<SessionAnalytics runId="r" revision="1" />);
   const distribution = await screen.findByLabelText("Phân loại dòng thông tin ban đầu");
-  expect(within(distribution).getByText("Cần xem xét ban đầu").parentElement).toHaveTextContent("1.000 dòng");
-  expect(distribution).toHaveTextContent("Biểu đồ giữ nguyên phân loại ban đầu sau khi bạn duyệt.");
+  expect(within(distribution).getByRole("img")).toHaveAttribute("aria-label", "Phân loại ban đầu: Đề xuất gộp tự động 44,6%, Cần xem xét ban đầu 1%, Chưa phát hiện trùng 54,4%");
+  expect(within(distribution).getByRole("img").querySelectorAll("line")).toHaveLength(3);
+  expect(within(distribution).getByText("Cần xem xét ban đầu").closest("div")?.lastElementChild).toHaveTextContent("1.000 dòng");
+  expect(within(distribution).queryByText(/Biểu đồ giữ nguyên phân loại ban đầu/)).not.toBeInTheDocument();
   expect(screen.getByLabelText("Thông tin không khớp trong các cặp đang chờ")).toHaveTextContent("500 cặp đang chờ xem xét");
   rerender(<SessionAnalytics runId="r" revision="1" />);
   expect(getResolutionAnalytics).toHaveBeenCalledTimes(1);
   vi.mocked(getResolutionAnalytics).mockResolvedValue({ ...initial, conflicts: { ...initial.conflicts, review_pair_count: 400 } });
   rerender(<SessionAnalytics runId="r" revision="2" />);
   await screen.findByText(/Trong 400 cặp đang chờ xem xét/);
-  expect(within(screen.getByLabelText("Phân loại dòng thông tin ban đầu")).getByText("Cần xem xét ban đầu").parentElement).toHaveTextContent("1.000 dòng");
+  expect(within(screen.getByLabelText("Phân loại dòng thông tin ban đầu")).getByText("Cần xem xét ban đầu").closest("div")).toHaveTextContent("1.000 dòng");
   expect(getResolutionAnalytics).toHaveBeenCalledTimes(2);
 });
 it("shows an error and retries instead of substituting sample metrics", async () => {
@@ -75,5 +81,7 @@ it("displays difference count with conflict breakdown for discrepant fields", as
   const conflictsSection = await screen.findByLabelText("Thông tin không khớp trong các cặp đang chờ");
   expect(within(conflictsSection).getByText("16 (16 xung đột)")).toBeInTheDocument();
   expect(within(conflictsSection).getByText("18 (0 xung đột)")).toBeInTheDocument();
+  expect(within(conflictsSection).getByText("Họ tên").closest(".analytics-conflict-row")).toHaveAttribute("data-field", "name");
+  expect(within(conflictsSection).getByText("Địa chỉ").closest(".analytics-conflict-row")).toHaveAttribute("data-field", "address");
   expect(within(conflictsSection).getAllByText("0")).toHaveLength(2);
 });
