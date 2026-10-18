@@ -17,7 +17,7 @@
 .upload-drafts > button:hover:not(:disabled) { border-color: var(--primary-border); background: var(--primary-bg); }
 .upload-drafts > button:disabled { cursor: wait; opacity: .65; }
 .upload-drafts > button span { overflow: hidden; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-.upload-drafts > button small { flex: none; color: var(--ink-3); font-size: 10px; }
+.upload-drafts > button small { display: inline-flex; align-items: center; gap: 6px; flex: none; color: var(--ink-3); font-size: 10px; }
 .upload-session-workflow { display: grid; gap: 16px; }
 .upload-session-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
 .upload-session-heading > div { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
@@ -79,4 +79,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .upload-file-progress > span { transition: none; }
+  .upload-session-intake .button-spinner { animation: none; }
 }

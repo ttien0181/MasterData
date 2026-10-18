@@ -99,11 +99,13 @@
 .upload-file-error { display: flex; gap: 8px; align-items: flex-start; margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--red-border); color: var(--red); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .upload-file-error svg { flex: none; margin-top: 2px; }
 .upload-info-note, .upload-replacement-note { margin: 12px 0 0; padding: 11px 12px; border-radius: 11px; background: var(--surface-hover); color: var(--ink-3); font-size: 11px; line-height: 1.65; }
-.upload-text-action { padding: 5px 0; border: 0; background: transparent; color: var(--primary); font-size: 11px; cursor: pointer; white-space: nowrap; }
+.upload-text-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 5px 0; border: 0; background: transparent; color: var(--primary); font-size: 11px; cursor: pointer; white-space: nowrap; }
 .upload-text-action.danger { color: var(--red); }
 .upload-text-action:disabled { opacity: .45; cursor: wait; }
 .upload-secondary-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 14px; }
-.upload-recheck { width: 100%; margin-top: 12px; padding: 10px; border: 1px solid var(--primary); border-radius: 10px; background: var(--surface); color: var(--primary); font-size: 12px; cursor: pointer; }
+.upload-recheck { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-top: 12px; padding: 10px; border: 1px solid var(--primary); border-radius: 10px; background: var(--surface); color: var(--primary); font-size: 12px; cursor: pointer; }
+.upload-recheck:disabled { cursor: wait; opacity: .65; }
+.upload-session-intake .button-spinner { flex: none; margin-right: 0; border-color: color-mix(in srgb, currentColor 30%, transparent); border-top-color: currentColor; }
 .upload-session-message { margin-top: 12px; font-size: 11px; line-height: 1.6; }
 .upload-intake-footer { flex: none; display: grid; gap: 8px; padding: 16px 20px; border-top: 1px solid var(--line); background: var(--surface); }
 .upload-intake-footer > .button { width: 100%; min-height: 45px; justify-content: center; border-radius: 12px; font-size: 13px; }

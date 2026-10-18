@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ResolutionIntake from "./ResolutionIntake";
 import { ApiError } from "@/lib/api";
@@ -72,6 +72,55 @@ describe("ResolutionIntake", () => {
     expect(api.commitUploadSession).toHaveBeenCalledWith("upload-1");
     expect(api.renameUploadSession).toHaveBeenCalledWith("upload-1", "Customer tháng 10");
     expect(api.renameUploadSession.mock.invocationCallOrder[0]).toBeLessThan(api.commitUploadSession.mock.invocationCallOrder[0]);
+  });
+
+  it("shows the active button loading state while saving a name and starting a run", async () => {
+    const ready = uploadSession(3, "READY", 3);
+    api.getUploadSessions.mockResolvedValue({ items: [ready] });
+    api.getUploadSession.mockResolvedValue(ready);
+    let finishRename!: (session: UploadSession) => void;
+    api.renameUploadSession.mockImplementation(() => new Promise((resolve) => { finishRename = resolve; }));
+    let finishCommit!: (result: unknown) => void;
+    api.commitUploadSession.mockImplementation(() => new Promise((resolve) => { finishCommit = resolve; }));
+    const onRunCreated = vi.fn().mockResolvedValue(undefined);
+    const { container } = render(<ResolutionIntake userId="user-1" onRunCreated={onRunCreated} />);
+
+    await screen.findByRole("button", { name: "Bắt đầu xử lý" });
+    fireEvent.change(screen.getByPlaceholderText("Mặc định dùng tên file"), { target: { value: "Khách hàng" } });
+    fireEvent.click(screen.getByRole("button", { name: "Lưu tên" }));
+    const saving = screen.getByRole("button", { name: "Đang lưu…" });
+    expect(saving).toBeDisabled();
+    expect(saving).toHaveAttribute("aria-busy", "true");
+    expect(saving.querySelector(".button-spinner")).toBeInTheDocument();
+    await act(async () => finishRename({ ...ready, name: "Khách hàng" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Bắt đầu xử lý" }));
+    const starting = screen.getByRole("button", { name: "Đang bắt đầu xử lý…" });
+    expect(starting).toBeDisabled();
+    expect(starting).toHaveAttribute("aria-busy", "true");
+    expect(starting.querySelector(".button-spinner")).toBeInTheDocument();
+    await act(async () => finishCommit({ run_id: "run-1", status: "UPLOADED", profile: {
+      row_count: 1, file_count: 1, source_counts: { CRM: 1 }, files: [],
+    } }));
+    await waitFor(() => expect(onRunCreated).toHaveBeenCalledTimes(1));
+    expect(container.querySelector(".button-spinner")).not.toBeInTheDocument();
+  });
+
+  it("keeps the recheck button visible with a spinner until validation responds", async () => {
+    const incomplete = uploadSession(3, "UPLOADING", 3);
+    const ready = uploadSession(3, "READY", 3);
+    api.getUploadSessions.mockResolvedValue({ items: [incomplete] });
+    api.getUploadSession.mockResolvedValue(incomplete);
+    let finishValidation!: (session: UploadSession) => void;
+    api.validateUploadSession.mockImplementation(() => new Promise((resolve) => { finishValidation = resolve; }));
+    render(<ResolutionIntake userId="user-1" onRunCreated={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Kiểm tra lại dữ liệu" }));
+    const checking = screen.getByRole("button", { name: "Đang kiểm tra…" });
+    expect(checking).toBeDisabled();
+    expect(checking.querySelector(".button-spinner")).toBeInTheDocument();
+    await act(async () => finishValidation(ready));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Bắt đầu xử lý" })).toBeEnabled());
   });
 
   it("automatically uploads three dropped CSVs into one session, then follows validation to its result", async () => {
