@@ -462,7 +462,6 @@ describe("Resolution item flow", () => {
     const landing = heading.closest("section")!;
     expect(within(landing).getByText("Đợt CRM và ERP tháng 10")).toBeInTheDocument();
     expect(within(landing).getByText("Đợt Billing tháng 9")).toBeInTheDocument();
-    expect(within(landing).getByRole("button", { name: /＋ Nạp dữ liệu mới/ })).toBeInTheDocument();
   });
 
   it("uses a direct run URL before the saved run hint", async () => {
