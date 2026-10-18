@@ -448,12 +448,12 @@ describe("Resolution item flow", () => {
         {
           run_id: "run-hub-1", name: "Đợt CRM và ERP tháng 10", status: "COMPLETED",
           created_at: "2026-10-18T10:00:00Z", record_count: 500, file_count: 2,
-          files: ["crm.csv", "erp.csv"], owner_user_id: "user-1", updated_at: "2026-10-18T10:00:00Z",
+          files: ["crm.csv", "erp.csv"],
         },
         {
           run_id: "run-hub-2", name: "Đợt Billing tháng 9", status: "RUNNING",
           created_at: "2026-10-17T09:00:00Z", record_count: 1200, file_count: 1,
-          files: ["billing.csv"], owner_user_id: "user-1", updated_at: "2026-10-17T09:00:00Z",
+          files: ["billing.csv"],
         },
       ],
     });
