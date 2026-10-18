@@ -125,19 +125,21 @@ export default function PairReviewFlow({ user, runId, rejected, onChanged, notif
   const records = active?.member_record_ids.map((id) => active.records.find((record) => record.id === id)).filter((record) => !!record) ?? [];
 
   return <section className="resolution-flow resolution-flow-review">
-    {!rejected && <div className="card review-filters pair-filters">
-      <label>Lý do cần xem xét<select value={group} disabled={busy} onChange={(event) => { resetSelection(); setGroup(event.target.value); setSubgroup(""); setOffset(0); }}>
-        <option value="">Tất cả nhóm</option>{Array.from(new Set(categories.map((item) => item.primary_group))).map((value) =>
-          <option key={value} value={value}>{groupLabel(value)} ({categories.filter((item) => item.primary_group === value).reduce((sum, item) => sum + item.pair_count, 0).toLocaleString("vi-VN")})</option>)}
-      </select></label>
-      <label>Lý do chi tiết<select value={subgroup} disabled={!group || busy} onChange={(event) => { resetSelection(); setSubgroup(event.target.value); setOffset(0); }}>
-        <option value="">Tất cả phân nhóm</option>{categories.filter((item) => item.primary_group === group).map((item) =>
-          <option key={item.subgroup} value={item.subgroup}>{subLabel(item.subgroup)} ({item.pair_count.toLocaleString("vi-VN")})</option>)}
-      </select></label>
-    </div>}
-    <div className="resolution-flow-toolbar"><div><h2>{rejected ? "Đã xác định không gộp" : "Cặp nghi trùng đang chờ xem xét"}</h2>
-      <p>{loading ? "Đang tải…" : `${total.toLocaleString("vi-VN")} cặp${rejected ? "" : " đang chờ xem xét"}`}</p></div>
-      <p>{rejected ? "Mỗi dòng là hai dòng thông tin được giữ riêng với nhau. Một dòng thông tin vẫn có thể gộp với dòng thông tin khác phù hợp." : "Mỗi cặp gồm hai dòng thông tin cần so sánh trước khi xác nhận gộp hoặc không gộp."}</p></div>
+    <div className="resolution-sticky-head is-sticky">
+      {!rejected && <div className="card review-filters pair-filters">
+        <label>Lý do cần xem xét<select value={group} disabled={busy} onChange={(event) => { resetSelection(); setGroup(event.target.value); setSubgroup(""); setOffset(0); }}>
+          <option value="">Tất cả nhóm</option>{Array.from(new Set(categories.map((item) => item.primary_group))).map((value) =>
+            <option key={value} value={value}>{groupLabel(value)} ({categories.filter((item) => item.primary_group === value).reduce((sum, item) => sum + item.pair_count, 0).toLocaleString("vi-VN")})</option>)}
+        </select></label>
+        <label>Lý do chi tiết<select value={subgroup} disabled={!group || busy} onChange={(event) => { resetSelection(); setSubgroup(event.target.value); setOffset(0); }}>
+          <option value="">Tất cả phân nhóm</option>{categories.filter((item) => item.primary_group === group).map((item) =>
+            <option key={item.subgroup} value={item.subgroup}>{subLabel(item.subgroup)} ({item.pair_count.toLocaleString("vi-VN")})</option>)}
+        </select></label>
+      </div>}
+      <div className="resolution-flow-toolbar"><div><h2>{rejected ? "Đã xác định không gộp" : "Cặp nghi trùng đang chờ xem xét"}</h2>
+        <p>{loading ? "Đang tải…" : `${total.toLocaleString("vi-VN")} cặp${rejected ? "" : " đang chờ xem xét"}`}</p></div>
+        <p>{rejected ? "Mỗi dòng là hai dòng thông tin được giữ riêng với nhau. Một dòng thông tin vẫn có thể gộp với dòng thông tin khác phù hợp." : "Mỗi cặp gồm hai dòng thông tin cần so sánh trước khi xác nhận gộp hoặc không gộp."}</p></div>
+    </div>
     <p className="muted-copy">Một dòng thông tin có thể thuộc nhiều cặp. Ví dụ, hai cặp A–B và B–C gồm ba dòng khác nhau. Số cặp ở đây là công việc đang chờ, còn biểu đồ tổng quan đếm các dòng theo phân loại ban đầu.</p>
     {!rejected && can(user, "approve_pair") && <div className="resolution-review-controls">
       <label className="resolution-select-all"><input type="checkbox" disabled={busy || loading || !total}

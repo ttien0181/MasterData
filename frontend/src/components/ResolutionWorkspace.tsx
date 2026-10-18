@@ -384,14 +384,13 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
             <h2>Quản lý các đợt xử lý dữ liệu</h2>
             <p>Chọn một đợt xử lý bên dưới để xem chi tiết hoặc nạp thêm dữ liệu mới.</p>
           </div>
-          {can(user, "create_run") && <button className="button primary btn btn-primary upload-open-button" type="button" onClick={openUploadPanel}>＋ Nạp dữ liệu mới</button>}
         </div>
 
         {runsLoading && <div className="card" style={{ padding: 24 }}><p>Đang tải danh sách đợt xử lý…</p></div>}
         {runsError && <div className="card" role="alert" style={{ padding: 24 }}><p>{runsError}</p><button type="button" className="button outline" onClick={() => void refreshRuns(0)}>Thử lại</button></div>}
 
         {!runsLoading && !runsError && runHistory.length === 0 && (
-          <div className="card empty-state" style={{ padding: "48px 24px", textAlign: "center", display: "grid", placeItems: "center", gap: 12 }}>
+          <div className="card empty-state" style={{ gridColumn: "1 / -1", padding: "48px 24px", textAlign: "center", display: "grid", placeItems: "center", gap: 12 }}>
             <h3 style={{ margin: 0 }}>Chưa có đợt xử lý nào</h3>
             <p className="muted-copy" style={{ maxWidth: 500, margin: 0 }}>Nạp các file CSV để hệ thống tự động nhận diện bản ghi trùng lặp và hỗ trợ hợp nhất dữ liệu.</p>
             {can(user, "create_run") && <button className="button primary btn btn-primary" type="button" style={{ marginTop: 8 }} onClick={openUploadPanel}>＋ Nạp dữ liệu ngay</button>}
@@ -442,20 +441,20 @@ export default function ResolutionWorkspace({ user, onLogout }: { user: AuthUser
       {stage === "overview" && overview && <section className="resolution-overview">
         <div className="resolution-overview-head">
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <button
-                type="button"
-                className="button outline"
-                style={{ padding: "4px 10px", fontSize: "12px", minHeight: "28px" }}
-                onClick={() => void switchRun("")}
-              >
-                ← Danh sách đợt xử lý
-              </button>
-            </div>
             <h2>Tổng quan đợt xử lý</h2>
             <p>{sessionLabel} · {overview.file_count} file</p>
           </div>
-          {can(user, "create_run") && <button className="button primary btn btn-primary upload-open-button" type="button" onClick={openUploadPanel}>＋ Nạp dữ liệu</button>}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              type="button"
+              className="button outline"
+              style={{ padding: "4px 10px", fontSize: "12px", minHeight: "28px" }}
+              onClick={() => void switchRun("")}
+            >
+              ← Danh sách đợt xử lý
+            </button>
+            {can(user, "create_run") && <button className="button primary btn btn-primary upload-open-button" type="button" onClick={openUploadPanel}>＋ Nạp dữ liệu</button>}
+          </div>
         </div>
         <>
           {overviewStale && <div className="run-stale" role="status"><span>Chưa kết nối được để cập nhật đợt xử lý; đang giữ trạng thái gần nhất.</span><button type="button" onClick={() => void refreshOverview(runId).catch(() => setOverviewStale(true))}>Thử cập nhật</button></div>}
