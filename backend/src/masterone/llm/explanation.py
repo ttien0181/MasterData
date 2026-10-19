@@ -7,6 +7,9 @@ review queue keeps working without the model.
 
 from masterone.llm.gateway import generate
 from masterone.llm.policy import PolicyDenied
+from masterone.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def template_explanation(code="LLM_DISABLED", attempts=0):
@@ -30,6 +33,9 @@ def explain_cohort(payload, settings, *, context, factory=None):
     except PolicyDenied as exc:
         if exc.code in {"STALE", "RUN_INACTIVE"}:
             return {"status": "STALE", "explanation": None, "model_version": None, "usage": {}}
+        if exc.code not in {"LLM_DISABLED", "PURPOSE_DISABLED"}:
+            logger.warning("llm_explanation_fallback code=%s attempts=%d", exc.code, exc.attempts,
+                           extra={"event": "llm_explanation_fallback", "run_id": context.get("run_id")})
         return template_explanation(exc.code, attempts=exc.attempts)
     return {
         "status": "READY",

@@ -37,8 +37,7 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.5-flash-lite"
     gemini_max_output_tokens: int = Field(default=512, ge=1, le=8192)
     gemini_max_retries: int = Field(default=1, ge=0, le=3)
-    # 0 disables internal reasoning: classification and short explanations do not need it, and with a
-    # thinking model the reasoning tokens otherwise consume maxOutputTokens and the JSON is cut off.
+    # Used for pre-Gemini-3 models only. Gemini 3 uses its default thinking level.
     gemini_thinking_budget: int | None = Field(default=0, ge=0, le=32768)
     semantic_address_enabled: bool = False
     decision_semantics_v2_enabled: bool = False
@@ -63,7 +62,7 @@ class Settings(BaseSettings):
     semantic_address_max_pairs_per_run: int = Field(default=100, ge=0, le=1000)
     semantic_address_timeout_seconds: int = Field(default=15, ge=1, le=60)
 
-    # LLM gateway policy. Defaults fail closed: no provider, model or price is approved.
+    # Address comparison defaults fail closed; explanations use their own flag and Gemini key.
     llm_enabled: bool = False
     llm_explanation_enabled: bool = False
     llm_approved_providers: str = ""  # CSV, subset of: gemini, openrouter

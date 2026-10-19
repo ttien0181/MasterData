@@ -17,6 +17,7 @@ import {
   validateUploadSession,
 } from "@/lib/api";
 import type { RunCommitProfile, UploadSession, UploadSessionFile } from "@/lib/contracts";
+import { loadSampleFiles } from "@/lib/sampleDatasets";
 import { ShellIcon } from "./ShellIcons";
 
 type CreatedRun = { run_id: string; status: string; profile: RunCommitProfile };
@@ -121,9 +122,11 @@ export default function ResolutionIntake({
   // Validation is a server-side state of the draft, so it survives reloads and is never tied to a button's lifetime.
   const validating = session?.status === "VALIDATING";
   const uploadInFlight = useRef(false);
+  const sampleRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => sampleRequest.current?.abort(), []);
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const [activity, setActivity] = useState<
-    "uploading" | "validating" | "committing" | "starting" | null
+    "loading-sample" | "uploading" | "validating" | "committing" | "starting" | null
   >(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [pendingFileId, setPendingFileId] = useState<string | null>(null);
@@ -397,31 +400,36 @@ export default function ResolutionIntake({
     };
   }, [jobSessionId, jobStatus]);
 
-  async function uploadFiles(incoming: File[]) {
-    if (!incoming.length || busy || uploadInFlight.current || session) return;
-    if (incoming.some((file) => !file.name.toLowerCase().endsWith(".csv"))) {
-      setMessage("Chỉ hỗ trợ file CSV. Hãy chọn lại các file cần xử lý.");
-      return;
-    }
-    const files = incoming.filter(
-      (file, index) =>
-        incoming.findIndex(
-          (candidate) =>
-            candidate.name === file.name &&
-            candidate.size === file.size &&
-            candidate.lastModified === file.lastModified,
-        ) === index,
-    );
-    if (files.length > 10) {
-      setMessage("Mỗi đợt xử lý hiện hỗ trợ tối đa 10 file CSV.");
-      return;
-    }
+  async function uploadFiles(selection: File[] | "sample") {
+    if (busy || uploadInFlight.current || session) return;
     uploadInFlight.current = true;
     let draftId: string | null = null;
     setBusy(true);
-    setActivity("uploading");
+    setActivity(selection === "sample" ? "loading-sample" : "uploading");
     setMessage("");
     try {
+      let incoming: File[];
+      if (selection === "sample") {
+        const controller = new AbortController();
+        sampleRequest.current = controller;
+        incoming = await loadSampleFiles(controller.signal);
+        if (controller.signal.aborted) return;
+      } else {
+        incoming = selection;
+      }
+      if (!incoming.length) return;
+      if (incoming.some((file) => !file.name.toLowerCase().endsWith(".csv"))) {
+        setMessage("Chỉ hỗ trợ file CSV. Hãy chọn lại các file cần xử lý.");
+        return;
+      }
+      const files = incoming.filter((file, index) => incoming.findIndex((candidate) =>
+        candidate.name === file.name && candidate.size === file.size &&
+        candidate.lastModified === file.lastModified) === index);
+      if (files.length > 10) {
+        setMessage("Mỗi đợt xử lý hiện hỗ trợ tối đa 10 file CSV.");
+        return;
+      }
+      setActivity("uploading");
       let created = await createUploadSession(name, files);
       draftId = created.session_id;
       rememberUpload(draftId);
@@ -455,6 +463,7 @@ export default function ResolutionIntake({
       }
       await validateIfComplete(created);
     } catch (error) {
+      if (sampleRequest.current?.signal.aborted) return;
       setMessage(
         error instanceof Error
           ? error.message
@@ -474,6 +483,7 @@ export default function ResolutionIntake({
       }
       await refreshDrafts();
     } finally {
+      sampleRequest.current = null;
       uploadInFlight.current = false;
       setBusy(false);
       setActivity(null);
@@ -693,12 +703,24 @@ export default function ResolutionIntake({
         </div>
         <div className="upload-files-heading">
           <span className="upload-field-label">File dữ liệu</span>
+          {!session && (
+            <button type="button" className="upload-text-action upload-sample-action"
+              disabled={busy} aria-busy={activity === "loading-sample"}
+              aria-describedby="sample-data-description"
+              onClick={() => void uploadFiles("sample")}>
+              {activity === "loading-sample" && <span className="button-spinner" aria-hidden="true" />}
+              {activity === "loading-sample" ? "Đang lấy dữ liệu mẫu…" : "Dùng dữ liệu mẫu"}
+            </button>
+          )}
           {session && (
             <small>
               {session.files.length} file · {formatBytes(session.total_bytes)}
             </small>
           )}
         </div>
+        {!session && <p id="sample-data-description" className="upload-sample-description">
+          Bộ mẫu ERP và BILL · 2 file · 25.000 dòng · 3,6 MB
+        </p>}
         {!session && (
           <>
             <label
@@ -722,7 +744,7 @@ export default function ResolutionIntake({
                 <ShellIcon name="import" size={25} />
               </span>
               <strong>
-                {busy ? "Đang chuẩn bị tải lên…" : "Kéo thả file vào đây"}
+                {activity === "loading-sample" ? "Đang lấy dữ liệu mẫu…" : busy ? "Đang chuẩn bị tải lên…" : "Kéo thả file vào đây"}
               </strong>
               <span className="upload-drop-hint">
                 hoặc <b>chọn file</b>

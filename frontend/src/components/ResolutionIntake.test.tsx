@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ResolutionIntake from "./ResolutionIntake";
 import { ApiError } from "@/lib/api";
 import type { UploadSession } from "@/lib/contracts";
+import { loadSampleFiles } from "@/lib/sampleDatasets";
+
+vi.mock("@/lib/sampleDatasets", () => ({ loadSampleFiles: vi.fn() }));
 
 const api = vi.hoisted(() => ({
   commitUploadPart: vi.fn(), commitUploadSession: vi.fn(), createUploadSession: vi.fn(), deleteUploadSession: vi.fn(),
@@ -48,6 +51,45 @@ describe("ResolutionIntake", () => {
     } });
   });
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks(); localStorage.clear(); });
+
+  it("loads both samples into the existing upload and validation flow without automatically committing", async () => {
+    const files = ["erp-2.csv", "bill-1.csv"].map((name) => new File(["csv"], name));
+    let finishFetch!: (files: File[]) => void;
+    vi.mocked(loadSampleFiles).mockImplementation(() => new Promise((resolve) => { finishFetch = resolve; }));
+    const pending = uploadSession(6, "UPLOADING");
+    pending.files = files.map((file, index) => ({ ...pending.files[0], file_id: `sample-${index}`,
+      filename: file.name, position: index, expected_size: file.size }));
+    const uploaded = { ...pending, files: pending.files.map((file) => ({ ...file, received_size: file.expected_size })) };
+    api.createUploadSession.mockResolvedValue(pending);
+    api.getUploadSession.mockResolvedValue(uploaded);
+    api.validateUploadSession.mockResolvedValue({ ...uploaded, status: "READY" });
+    const { container } = render(<ResolutionIntake onRunCreated={vi.fn()} />);
+    const button = screen.getByRole("button", { name: "Dùng dữ liệu mẫu" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(loadSampleFiles).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Đang lấy dữ liệu mẫu…" })).toBeDisabled();
+    expect(container.querySelector('input[type="file"][multiple]')).toBeDisabled();
+    expect(api.createUploadSession).not.toHaveBeenCalled();
+    await act(async () => finishFetch(files));
+    await waitFor(() => expect(api.validateUploadSession).toHaveBeenCalledWith("upload-1"));
+    expect(api.createUploadSession).toHaveBeenCalledExactlyOnceWith("", files);
+    expect(api.uploadResolutionUploadPart).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Bắt đầu xử lý" })).toBeEnabled();
+    expect(api.commitUploadSession).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Dùng dữ liệu mẫu" })).not.toBeInTheDocument();
+  });
+
+  it("allows retry after a sample download fails without creating a partial session", async () => {
+    vi.mocked(loadSampleFiles).mockRejectedValue(new Error("Không lấy được dữ liệu mẫu. Hãy thử lại."));
+    render(<ResolutionIntake onRunCreated={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Dùng dữ liệu mẫu" }));
+    expect(await screen.findByText("Không lấy được dữ liệu mẫu. Hãy thử lại.")).toBeInTheDocument();
+    expect(api.createUploadSession).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Dùng dữ liệu mẫu" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Dùng dữ liệu mẫu" }));
+    await waitFor(() => expect(loadSampleFiles).toHaveBeenCalledTimes(2));
+  });
 
   it("uploads and commits a file larger than the old 5 MiB limit", async () => {
     const onRunCreated = vi.fn().mockResolvedValue(undefined);

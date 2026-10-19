@@ -491,8 +491,7 @@ def _explanation_context(db, run_id, owner_user_id):
 def _explanation_model_identity(settings):
     from masterone.llm.gateway import PROMPT_VERSION, SCHEMA_VERSION
     from masterone.llm.policy import digest
-    return digest([settings.gemini_model, settings.openrouter_model, settings.llm_policy_revision,
-                   PROMPT_VERSION["EXPLANATION"], SCHEMA_VERSION["EXPLANATION"]])
+    return digest([settings.gemini_model, PROMPT_VERSION["EXPLANATION"], SCHEMA_VERSION["EXPLANATION"]])
 
 
 def _explanation_payload(row):
@@ -511,11 +510,11 @@ def _guarded_explanation(db, run_id, signature, primary_group, subgroup, aggrega
         row = ResolutionExplanation(run_id=run_id, signature_hash=signature, primary_group=primary_group,
                                     subgroup=subgroup, status="PENDING")
         db.add(row)
-    if row.status == "READY" and row.updated_at is not None:
+    if settings.llm_explanation_enabled and row.status == "READY" and row.updated_at is not None:
         updated = row.updated_at if row.updated_at.tzinfo else row.updated_at.replace(tzinfo=now_utc().tzinfo)
         if updated + timedelta(seconds=settings.llm_cache_ttl_seconds) >= now_utc():
             return _explanation_payload(row)
-    if not settings.llm_enabled or not settings.llm_explanation_enabled:
+    if not settings.llm_explanation_enabled:
         result = template_explanation("LLM_DISABLED")
     else:
         run = db.get(ResolutionRun, run_id)
