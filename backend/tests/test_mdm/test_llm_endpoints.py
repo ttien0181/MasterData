@@ -13,7 +13,7 @@ def _url(run_id):
 def test_disabled_explanations_return_a_rule_template_without_any_provider_call(client, monkeypatch):
     run_id = seed_run(client)
     calls = []
-    monkeypatch.setattr(get_settings(), "llm_enabled", False)
+    monkeypatch.setattr(get_settings(), "llm_explanation_enabled", False)
     monkeypatch.setattr("masterone.api.mdm_resolution.explain_cohort",
                         lambda *args, **kwargs: calls.append(args) or {"status": "READY"})
     response = client.post(_url(run_id))
@@ -22,6 +22,24 @@ def test_disabled_explanations_return_a_rule_template_without_any_provider_call(
     assert body["status"] == "TEMPLATE"
     assert body["model_version"] == "deterministic-template-v1"
     assert calls == []
+
+
+def test_explanations_do_not_need_the_address_compare_master_flag(client, monkeypatch):
+    run_id = seed_run(client)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "llm_enabled", False)
+    monkeypatch.setattr(settings, "llm_explanation_enabled", True)
+    monkeypatch.setattr("masterone.api.mdm_resolution.explain_cohort",
+                        lambda *args, **kwargs: {"status": "READY", "explanation": {
+                            "summary_vi": "Tín hiệu tổng hợp.", "attention_fields": [], "limitations": []},
+                            "model_version": "gemini-test", "usage": {}})
+    response = client.post(_url(run_id))
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "READY"
+    monkeypatch.setattr(settings, "llm_explanation_enabled", False)
+    disabled = client.post(_url(run_id))
+    assert disabled.status_code == 200, disabled.text
+    assert disabled.json()["status"] == "TEMPLATE"
 
 
 def test_provider_failure_becomes_a_template_not_an_error(client, monkeypatch):

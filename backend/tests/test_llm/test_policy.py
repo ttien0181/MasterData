@@ -4,10 +4,29 @@ import pytest
 from masterone.llm.policy import PolicyDenied, allowed_payload, digest, enforce, validate_output
 
 
-def test_disabled_llm_is_denied_before_provider_checks(llm_settings):
+def test_disabled_llm_is_denied_for_address_compare(llm_settings):
     with pytest.raises(PolicyDenied) as info:
-        enforce(llm_settings.model_copy(update={"llm_enabled": False}), "gemini", "EXPLANATION")
+        enforce(llm_settings.model_copy(update={"llm_enabled": False}), "gemini", "ADDRESS_COMPARE")
     assert info.value.code == "LLM_DISABLED"
+
+
+def test_explanation_only_needs_its_flag_gemini_model_and_key(llm_settings):
+    settings = llm_settings.model_copy(update={
+        "llm_enabled": False,
+        "llm_approved_providers": "",
+        "llm_approved_models": "",
+        "gemini_retention_verified": False,
+        "gemini_retention_contract": "",
+        "gemini_token_price_microusd": 0,
+        "openrouter_api_key": "",
+    })
+    enforce(settings, "gemini", "EXPLANATION")
+    with pytest.raises(PolicyDenied) as info:
+        enforce(settings, "openrouter", "EXPLANATION")
+    assert info.value.code == "PROVIDER_DENIED"
+    with pytest.raises(PolicyDenied) as info:
+        enforce(settings.model_copy(update={"gemini_api_key": ""}), "gemini", "EXPLANATION")
+    assert info.value.code == "PROVIDER_UNAVAILABLE"
 
 
 @pytest.mark.parametrize("update,code", [

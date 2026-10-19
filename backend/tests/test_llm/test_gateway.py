@@ -3,12 +3,13 @@
 The transport is replaced at the opener boundary, so request bodies, status codes and timeouts are exact.
 """
 
+import io
 import json
 from datetime import UTC, datetime
 from urllib.error import HTTPError
 
 import pytest
-from masterone.llm.gateway import generate
+from masterone.llm.gateway import EXPLANATION_SCHEMA, _gemini_request, generate
 from masterone.llm.policy import PolicyDenied
 from masterone.mdm.models import LLMPolicyControl, LLMRequest, LLMReservation, ResolutionTask
 
@@ -99,6 +100,16 @@ def test_gemini_request_uses_documented_json_output_fields(llm_factory, llm_sett
     assert "additionalProperties" not in json.dumps(config["responseSchema"])
     assert result["provider"] == "gemini"
     assert result["output"] == ADDRESS_OUTPUT
+
+
+def test_gemini_3_request_omits_legacy_thinking_and_sampling_settings(llm_settings):
+    request = _gemini_request(llm_settings, "gemini-3.5-flash-lite", "Explain briefly", EXPLANATION_SCHEMA)
+    config = json.loads(request.data)["generationConfig"]
+    assert config["responseMimeType"] == "application/json"
+    assert config["responseSchema"]["type"] == "OBJECT"
+    assert config["maxOutputTokens"] == 512
+    assert "temperature" not in config
+    assert "thinkingConfig" not in config
 
 
 def test_success_is_recorded_and_identical_request_is_served_from_cache(llm_factory, llm_settings, monkeypatch):
@@ -193,6 +204,24 @@ def test_server_errors_retry_inside_the_provider_then_stop(llm_factory, llm_sett
     assert len(transport.requests) == 2
 
 
+def test_explanation_http_error_logs_bounded_redacted_provider_detail(llm_factory, llm_settings, monkeypatch,
+                                                                      caplog):
+    body = json.dumps({"error": {"status": "INVALID_ARGUMENT", "message":
+                       "Invalid response schema for gemini-test; key gemini-test-key; contact x@example.com"}}).encode()
+    transport = ScriptedTransport(monkeypatch, [HTTPError(GEMINI_URL, 400, "bad request", {}, io.BytesIO(body))])
+    with pytest.raises(PolicyDenied) as info:
+        generate("EXPLANATION", EXPLANATION_PAYLOAD, llm_settings, context=run_context(llm_factory),
+                 factory=llm_factory)
+    assert info.value.code == "PROVIDER_HTTP_ERROR"
+    assert len(transport.requests) == 1
+    logs = [record.getMessage() for record in caplog.records
+            if getattr(record, "event", None) == "llm_provider_http_error"]
+    assert len(logs) == 1
+    assert "http_status=400" in logs[0] and "api_status=INVALID_ARGUMENT" in logs[0]
+    assert "Invalid response schema" in logs[0]
+    assert "gemini-test-key" not in logs[0] and "x@example.com" not in logs[0]
+
+
 def test_disabled_switch_denies_before_any_network_call(llm_factory, llm_settings, monkeypatch):
     transport = ScriptedTransport(monkeypatch, [])
     context = run_context(llm_factory)
@@ -284,7 +313,6 @@ def test_rate_limit_that_persists_through_all_retries_becomes_quota_and_falls_ba
 
 
 def test_daily_quota_is_not_retried_and_falls_back_at_once(llm_factory, llm_settings, monkeypatch):
-    import io
     from masterone.mdm.models import LLMPolicyControl
     sleeps = []
     monkeypatch.setattr("masterone.llm.gateway.time.sleep", lambda seconds: sleeps.append(seconds))

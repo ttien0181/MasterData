@@ -130,9 +130,10 @@
 .auth-error { margin: 2px 0 0; padding: 9px 11px; border: 1px solid var(--red-border); border-radius: 8px; background: var(--red-bg); color: var(--red); font-size: 11px; line-height: 1.5; }
 .auth-divider { display: flex; align-items: center; gap: 13px; margin: 19px 0 13px; color: var(--ink-4); font-size: 10px; }
 .auth-divider::before, .auth-divider::after { height: 1px; flex: 1; background: var(--line); content: ""; }
-.auth-sso-button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; width: 100%; min-height: 43px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); color: var(--ink-2); font-size: 10px; font-weight: 600; }
-.auth-sso-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
-.auth-sso-button:disabled { cursor: not-allowed; opacity: .57; }
+.auth-demo-button { display: inline-flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); color: var(--ink-2); font-size: 11px; font-weight: 600; }
+.auth-demo-button:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.auth-demo-button:focus-visible { outline: 3px solid var(--color-focus-shadow); outline-offset: 2px; }
+.auth-demo-button:disabled { cursor: wait; opacity: .57; }
 .auth-switch { margin: 22px 0 0; color: var(--ink-3); text-align: center; font-size: 10px; }
 .auth-switch a { color: var(--primary); font-weight: 700; text-decoration: none; }
 .auth-switch a:hover { text-decoration: underline; }

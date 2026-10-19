@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ApiError, getBackendHealth, login, register, setCsrfToken } from "@/lib/api";
@@ -9,13 +9,15 @@ import MoMark from "./MoMark";
 import ThemeToggle from "./ThemeToggle";
 
 type HealthState = "checking" | "online" | "unavailable";
+type AuthAction = "form" | "demo";
 
 export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [activeAction, setActiveAction] = useState<AuthAction | null>(null);
+  const busyRef = useRef(false);
   const [error, setError] = useState("");
   const [health, setHealth] = useState<HealthState>("checking");
   const isRegister = mode === "register";
@@ -30,21 +32,30 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
     return () => { active = false; };
   }, []);
 
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
+  async function authenticate(action: AuthAction) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setActiveAction(action);
     setError("");
     try {
-      if (isRegister) await register(email, password);
-      const user = await login(email, password);
+      const loginEmail = action === "demo" ? "demo@gmail.com" : email;
+      const loginPassword = action === "demo" ? "demopassword" : password;
+      if (action === "form" && isRegister) await register(loginEmail, loginPassword);
+      const user = await login(loginEmail, loginPassword);
       setCsrfToken(user.csrf_token);
       setActiveImportUser(user.id);
       router.replace("/app");
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : "Không thể kết nối máy chủ. Hãy thử lại.");
     } finally {
-      setBusy(false);
+      busyRef.current = false;
+      setActiveAction(null);
     }
+  }
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void authenticate("form");
   }
 
   const healthLabel = health === "online" ? "Hệ thống hoạt động" : health === "checking" ? "Đang kiểm tra hệ thống" : "Không thể kết nối hệ thống";
@@ -91,7 +102,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           <p className="auth-eyebrow">MASTERONE WORKSPACE</p>
           <h2 id="auth-title">{isRegister ? "Tạo tài khoản" : "Đăng nhập"}</h2>
           <p className="auth-description">{isRegister ? "Tạo tài khoản để bắt đầu làm việc với dữ liệu của bạn." : "Truy cập không gian xử lý dữ liệu của bạn."}</p>
-          <form onSubmit={(event) => void submit(event)}>
+          <form onSubmit={submit}>
             <label htmlFor="email">Email</label>
             <input className="auth-input" id="email" type="email" autoComplete="email" required value={email}
               onChange={(event) => setEmail(event.target.value)} placeholder="ten.ban@congty.com" />
@@ -110,19 +121,16 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
             {!isRegister && <button className="auth-secondary-link" type="button" disabled title="Chức năng khôi phục mật khẩu chưa được cấu hình">
               Quên mật khẩu?
             </button>}
-            <button className="button primary auth-submit" type="submit" disabled={busy}>
-              {busy ? "Đang xác thực…" : isRegister ? "Tạo tài khoản" : "Đăng nhập"}
+            <button className="button primary auth-submit" type="submit" disabled={activeAction !== null}>
+              {activeAction === "form" ? "Đang xác thực…" : isRegister ? "Tạo tài khoản" : "Đăng nhập"}
               <span aria-hidden="true">→</span>
             </button>
           </form>
-          {!isRegister && <>
-            <div className="auth-divider" aria-hidden="true">Hoặc</div>
-            <button className="auth-sso-button" type="button" disabled
-              title="Đăng nhập SSO chưa được cấu hình">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4" /></svg>
-              Đăng nhập bằng SSO
-            </button>
-          </>}
+          <div className="auth-divider" aria-hidden="true">Hoặc</div>
+          <button className="auth-demo-button" type="button" disabled={activeAction !== null}
+            onClick={() => void authenticate("demo")}>
+            {activeAction === "demo" ? "Đang vào tài khoản demo…" : "Dùng tài khoản demo"}
+          </button>
           <p className="auth-switch">{isRegister ? "Đã có tài khoản?" : "Chưa có tài khoản?"} <Link href={isRegister ? "/login" : "/register"}>{isRegister ? "Đăng nhập" : "Đăng ký"}</Link></p>
         </div>
         <footer className="auth-footer">© 2026 MasterOne <span>·</span> Đối chiếu và gộp dữ liệu</footer>

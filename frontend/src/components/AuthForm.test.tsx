@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { AnchorHTMLAttributes } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AuthForm from "./AuthForm";
-import { getBackendHealth, login, setCsrfToken } from "@/lib/api";
+import { getBackendHealth, login, register, setCsrfToken } from "@/lib/api";
 import { setActiveImportUser } from "@/lib/activeImport";
 
 const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));
@@ -41,13 +41,39 @@ describe("authentication presentation", () => {
     expect(replace).toHaveBeenCalledWith("/app");
   });
 
-  it("provides an accessible password visibility control and labels unavailable auth options", () => {
+  it("provides an accessible password visibility control", () => {
     render(<AuthForm mode="login" />);
     const password = screen.getByLabelText("Mật khẩu");
     expect(password).toHaveAttribute("type", "password");
     fireEvent.click(screen.getByRole("button", { name: "Hiện mật khẩu" }));
     expect(password).toHaveAttribute("type", "text");
     expect(screen.getByRole("button", { name: "Quên mật khẩu?" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Đăng nhập bằng SSO/ })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /SSO/ })).not.toBeInTheDocument();
+  });
+
+  it.each(["login", "register"] as const)("logs in with the demo account from the %s page", async (mode) => {
+    render(<AuthForm mode={mode} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Dùng tài khoản demo" }));
+
+    await waitFor(() => expect(login).toHaveBeenCalledWith("demo@gmail.com", "demopassword"));
+    expect(register).not.toHaveBeenCalled();
+    expect(setCsrfToken).toHaveBeenCalledWith("csrf");
+    expect(setActiveImportUser).toHaveBeenCalledWith("user-1");
+    expect(replace).toHaveBeenCalledWith("/app");
+  });
+
+  it("prevents a repeated demo login while the first request is pending", async () => {
+    let finishLogin: ((user: Awaited<ReturnType<typeof login>>) => void) | undefined;
+    vi.mocked(login).mockImplementation(() => new Promise((resolve) => { finishLogin = resolve; }));
+    render(<AuthForm mode="login" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Dùng tài khoản demo" }));
+    expect(screen.getByRole("button", { name: "Đang vào tài khoản demo…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Đăng nhập" })).toBeDisabled();
+    expect(login).toHaveBeenCalledTimes(1);
+
+    finishLogin?.({ id: "user-1", email: "demo@gmail.com", csrf_token: "csrf", role: "STEWARD", capabilities: ["read"] });
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/app"));
   });
 });

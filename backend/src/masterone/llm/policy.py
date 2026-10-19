@@ -1,8 +1,9 @@
 """Single gate for every outbound LLM call.
 
 Nothing here sends a request. A caller reserves one logical request, attempts one dispatch per provider
-and finishes it. Approval, retention, prices, budgets, freshness and Gemini cooldown are checked here,
-so a transport cannot bypass them. Raw prompts and provider bodies are never stored.
+and finishes it. Address comparison keeps provider approval, retention and price checks. Explanations
+need only their own enable flag and Gemini key; both purposes retain budgets, freshness and cooldown.
+Raw prompts and provider bodies are never stored.
 
 Freshness uses a cheap fence per call. The full run fingerprint is computed once per stage start and once
 at publication, so the cost does not grow with the number of batches.
@@ -20,6 +21,7 @@ from sqlalchemy import func, select, text
 
 from masterone.db.base import now_utc
 from masterone.db.session import create_database
+from masterone.logging_config import get_logger
 from masterone.mdm.models import (
     LLMPolicyControl,
     LLMRequest,
@@ -28,6 +30,8 @@ from masterone.mdm.models import (
     ResolutionRun,
     ResolutionTask,
 )
+
+logger = get_logger(__name__)
 
 PURPOSES = ("ADDRESS_COMPARE", "EXPLANATION")
 PROVIDERS = ("gemini", "openrouter")
@@ -65,7 +69,7 @@ _ADDRESS_CONTEXT = re.compile(
 _CODE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,47}")
 _MODEL = re.compile(r"[A-Za-z0-9_./-]{1,100}")
 _FIELDS = frozenset({"name", "phone", "email", "address"})
-_STATES = frozenset({"EX", "NX", "NA", "HS", "MS", "WS", "DF", "CF", "MI", "IV", "SH", "NC"})
+_STATES = frozenset({"EX", "NX", "NA", "HS", "MS", "WS", "CL", "DF", "CF", "MI", "IV", "SH", "NC"})
 _BANDS = frozenset({"exact", "similar", "different", "ambiguous", "missing"})
 _MAX_COUNT = 10_000_000
 
@@ -106,13 +110,21 @@ def provider_key(settings, provider):
 
 def enforce(settings, provider, purpose):
     """Static approval with fixed codes. Touches neither the database nor the network."""
-    if not settings.llm_enabled:
-        raise PolicyDenied("LLM_DISABLED")
     if purpose not in PURPOSES:
         raise PolicyDenied("PURPOSE_DENIED")
-    if purpose == "ADDRESS_COMPARE" and not settings.semantic_address_enabled:
-        raise PolicyDenied("PURPOSE_DISABLED")
-    if purpose == "EXPLANATION" and not settings.llm_explanation_enabled:
+    if purpose == "EXPLANATION":
+        if not settings.llm_explanation_enabled:
+            raise PolicyDenied("PURPOSE_DISABLED")
+        if provider != "gemini":
+            raise PolicyDenied("PROVIDER_DENIED")
+        if not _MODEL.fullmatch(settings.gemini_model):
+            raise PolicyDenied("MODEL_DENIED")
+        if not settings.gemini_api_key:
+            raise PolicyDenied("PROVIDER_UNAVAILABLE")
+        return
+    if not settings.llm_enabled:
+        raise PolicyDenied("LLM_DISABLED")
+    if not settings.semantic_address_enabled:
         raise PolicyDenied("PURPOSE_DISABLED")
     if provider not in PROVIDERS or provider not in _approved(settings.llm_approved_providers):
         raise PolicyDenied("PROVIDER_DENIED")
@@ -131,7 +143,7 @@ def enforce(settings, provider, purpose):
 def require_some_provider(settings, purpose):
     """Logical identity needs at least one approved provider; global denials propagate."""
     last = None
-    for provider in PROVIDERS:
+    for provider in ("gemini",) if purpose == "EXPLANATION" else PROVIDERS:
         try:
             enforce(settings, provider, purpose)
             return
@@ -356,11 +368,16 @@ class PolicyEnforcer:
         stable = {key: context[key] for key in ("run_id", "user_id", "input_hash", "review_hash",
                                                 "reference_version", "reference_hash")}
         # Logical identity excludes attempt and worker ids, so a crashed dispatch cannot be resent.
-        request_id = digest([stable, payload, purpose, s.gemini_model, s.openrouter_model, prompt_version,
-                             schema_version, s.llm_policy_revision, s.gemini_retention_contract,
-                             s.openrouter_retention_contract])
+        if purpose == "EXPLANATION":
+            identity = [stable, payload, purpose, s.gemini_model, prompt_version, schema_version]
+        else:
+            identity = [stable, payload, purpose, s.gemini_model, s.openrouter_model, prompt_version,
+                        schema_version, s.llm_policy_revision, s.gemini_retention_contract,
+                        s.openrouter_retention_contract]
+        request_id = digest(identity)
         with accounting_transaction(self.factory) as db:
-            self.check_control(db)
+            if purpose != "EXPLANATION":
+                self.check_control(db)
             assert_fresh(db, context["run_id"], context["fence"])
             existing = db.get(LLMReservation, request_id)
             if existing is not None:
@@ -383,16 +400,18 @@ class PolicyEnforcer:
         if tokens > s.llm_max_input_tokens_per_request:
             raise PolicyDenied("INPUT_CAP")
         tokens += s.gemini_max_output_tokens
-        cost = tokens * provider_price(s, provider)
+        cost = 0 if purpose == "EXPLANATION" else tokens * provider_price(s, provider)
         with accounting_transaction(self.factory) as db:
-            control = self.check_control(db)
+            control = (db.get(LLMPolicyControl, "global", populate_existing=True)
+                       if purpose == "EXPLANATION" else self.check_control(db))
             row = db.get(LLMReservation, request_id)
             if row is None or row.state not in {"RESERVED", "RETRYABLE"}:
                 raise PolicyDenied("REQUEST_" + (row.state if row is not None else "MISSING"))
             assert_fresh(db, context["run_id"], context["fence"])
             now = now_utc()
-            if provider == "gemini" and _aware(control.gemini_blocked_until) is not None and _aware(
-                    control.gemini_blocked_until) > now:
+            if (provider == "gemini" and control is not None
+                    and _aware(control.gemini_blocked_until) is not None
+                    and _aware(control.gemini_blocked_until) > now):
                 raise PolicyDenied("PROVIDER_COOLDOWN")
             scopes = [
                 ([], s.llm_global_call_cap),
@@ -406,7 +425,8 @@ class PolicyEnforcer:
             total_tokens, total_cost = db.execute(select(
                 func.coalesce(func.sum(LLMReservation.reserved_tokens), 0),
                 func.coalesce(func.sum(LLMReservation.reserved_cost_microusd), 0))).one()
-            if total_tokens + tokens > s.llm_token_cap or total_cost + cost > s.llm_cost_cap_microusd:
+            if total_tokens + tokens > s.llm_token_cap or (purpose != "EXPLANATION" and
+                    total_cost + cost > s.llm_cost_cap_microusd):
                 raise PolicyDenied("BUDGET_CAP")
             from masterone.mdm.job_queue import database_now
             database_time = database_now(db)
@@ -436,6 +456,7 @@ class PolicyEnforcer:
     def finish(self, request_id, attempt_id, status, context, *, response=None, usage=None,
                latency_ms=None, error_code=None):
         stale = False
+        attempt_log = None
         with accounting_transaction(self.factory) as db:
             row = db.get(LLMReservation, request_id)
             attempt = db.get(LLMRequest, attempt_id)
@@ -444,7 +465,8 @@ class PolicyEnforcer:
             except PolicyDenied:
                 stale = True
             control = db.get(LLMPolicyControl, "global", populate_existing=True)
-            disabled = not self.settings.llm_enabled or control is None or not control.enabled
+            disabled = (not self.settings.llm_explanation_enabled if row.purpose == "EXPLANATION"
+                        else not self.settings.llm_enabled or control is None or not control.enabled)
             if stale:
                 status, response = "STALE", None
             if disabled:
@@ -465,6 +487,12 @@ class PolicyEnforcer:
                     value = usage.get(source)
                     if type(value) is int and value >= 0:
                         setattr(attempt, target, value)
+            if row.purpose == "EXPLANATION" and status not in {"SUCCESS", "STALE", "DISCARDED"}:
+                attempt_log = (row.run_id, status, attempt.error_code)
+        if attempt_log is not None:
+            run_id, attempt_status, attempt_code = attempt_log
+            logger.warning("llm_explanation_attempt status=%s code=%s", attempt_status, attempt_code,
+                           extra={"event": "llm_explanation_attempt", "run_id": run_id})
         if stale:
             raise PolicyDenied("STALE")
         if disabled:

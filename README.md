@@ -48,6 +48,7 @@ Tạo `.env` từ `.env.example`; **không commit key hoặc file `.env`**.
 | `AUTH_CSRF_SECRET` | Bắt buộc là bí mật ít nhất 32 ký tự khi `APP_ENV=production`. |
 | `GEMINI_API_KEY` | Chỉ cần khi dùng nút giải thích bằng Gemini hoặc bật đối chiếu địa chỉ. |
 | `GEMINI_MODEL` | Model Gemini; mặc định `gemini-3.5-flash-lite`. |
+| `LLM_EXPLANATION_ENABLED` | Đặt `true` để dùng Gemini cho nút giải thích; chỉ cần thêm `GEMINI_API_KEY`. Nếu tắt hoặc Gemini không khả dụng, nút trả giải thích theo quy tắc. |
 | `SEMANTIC_ADDRESS_ENABLED` | Mặc định `false`; khi bật, Gemini hỗ trợ so sánh địa chỉ ở một số cặp Cần review, không tự quyết định gộp. |
 | `SEMANTIC_ADDRESS_MAX_PAIRS_PER_RUN`, `SEMANTIC_ADDRESS_TIMEOUT_SECONDS` | Giới hạn số cặp và thời gian chờ khi dùng đối chiếu địa chỉ. |
 | `AI_LOG_API_KEY` | Key ghi log quá trình dùng công cụ AI cho chương trình; tách biệt với `GEMINI_API_KEY` của ứng dụng. |
